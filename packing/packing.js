@@ -1,6 +1,5 @@
 (function initPackingApp() {
-    const API_URL = (String(window.APPS_SCRIPT_API_URL || '').trim()
-        || 'https://script.google.com/macros/s/AKfycbwdC1lwuGNT01xfLE_0jI31oXU13rBinYPKwlVfkZwqmIJGqSRuvPnq4-A9b6tHZThN/exec');
+    const API_URL = String(window.APPS_SCRIPT_API_URL || '').trim();
     const SYNC_QUEUE_KEY = 'tiempos-sync-queue-v1';
     const SYNC_HISTORY_KEY = 'tiempos-sync-history-v1';
     const SYNC_MAX_HISTORY = 200;

@@ -29,6 +29,7 @@
         'historial/index.html',
         'recomendaciones/index.html',
         'styles.css',
+        'api-config.js',
         'app.js',
         'campo-pdf.js',
         'librerias/jspdf.umd.min.js',

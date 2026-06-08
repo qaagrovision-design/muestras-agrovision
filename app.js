@@ -118,9 +118,7 @@ const META_SAVE_IDS = [
             'visual-placa-vehiculo',
             'visual-observacion-formato'
         ];
-        /** Web App de Apps Script: pega aquí tu URL completa (ej. https://script.google.com/macros/s/.../exec). */
-        const APPS_SCRIPT_API_URL = 'https://script.google.com/macros/s/AKfycbwdC1lwuGNT01xfLE_0jI31oXU13rBinYPKwlVfkZwqmIJGqSRuvPnq4-A9b6tHZThN/exec';
-        const API_URL = (String(APPS_SCRIPT_API_URL || '').trim()
+        const API_URL = (String((typeof window !== 'undefined' && window.APPS_SCRIPT_API_URL) || '').trim()
             || String((typeof window !== 'undefined' && (window.API_URL || window.__API_URL)) || '').trim());
         const metaForm = document.getElementById('form-operativo-meta');
         const metaAccordion = document.getElementById('meta-accordion');
@@ -4738,7 +4736,7 @@ const META_SAVE_IDS = [
         /** Opción 1: sincronizar con planilla (no borra datos locales). Opción 2: borrarTodo = forzar desde cero. */
         async function sincronizarConPlanillaAhora() {
             if (!API_URL) {
-                mostrarToast('warning', 'Sin API', 'Configura la URL de Apps Script en app.js');
+                mostrarToast('warning', 'Sin API', 'Configura la URL de Apps Script en api-config.js');
                 return false;
             }
             if (!navigator.onLine) {
@@ -5710,7 +5708,7 @@ const META_SAVE_IDS = [
             opts = opts || {};
             const bumpIdx = Number(opts.bumpReasignaNum || 0);
             if (!API_URL) {
-                mostrarAlertaRegla('Falta API', 'En app.js asigna APPS_SCRIPT_API_URL con la URL de tu Web App de Apps Script (o define window.API_URL).');
+                mostrarAlertaRegla('Falta API', 'En api-config.js asigna APPS_SCRIPT_API_URL con la URL de tu Web App de Apps Script (o define window.API_URL).');
                 return null;
             }
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');

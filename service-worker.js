@@ -1,4 +1,4 @@
-const SW_VERSION = 'v226';
+const SW_VERSION = 'v227';
 const STATIC_CACHE = `tiempos-static-${SW_VERSION}`;
 const RUNTIME_CACHE = `tiempos-runtime-${SW_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 120;
@@ -8,6 +8,7 @@ const APP_SHELL = [
     './',
     './index.html',
     './styles.css',
+    './api-config.js',
     './app.js',
     './campo-pdf.js',
     './packing-pdf.js',

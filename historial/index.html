@@ -131,6 +131,7 @@
         </a>
     </nav>
 
+    <script src="../api-config.js"></script>
     <script src="../script.js"></script>
     <script src="../librerias/lucide.min.js"></script>
     <script src="../librerias/sweetalert2.all.min.js"></script>
@@ -139,7 +140,7 @@
             window.lucide.createIcons();
         }
 
-        const API_URL = 'https://script.google.com/macros/s/AKfycbwdC1lwuGNT01xfLE_0jI31oXU13rBinYPKwlVfkZwqmIJGqSRuvPnq4-A9b6tHZThN/exec';
+        const API_URL = String(window.APPS_SCRIPT_API_URL || '').trim();
         const SYNC_QUEUE_KEY = 'tiempos-sync-queue-v1';
         const SYNC_HISTORY_KEY = 'tiempos-sync-history-v1';
         const HIST_PER_PAGE = 8;
