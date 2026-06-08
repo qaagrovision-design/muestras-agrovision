@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="application-name" content="Muestras Web">
+    <meta name="apple-mobile-web-app-title" content="Muestras Web">
+    <meta name="theme-color" content="#164C7C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+    <title>Historial</title>
+    <link rel="icon" href="../QA2026-2.0.png" type="image/png">
+    <link rel="apple-touch-icon" href="../QA2026-2.0.png">
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body class="modulo-aux-page">
+
+    <header>
+        <div class="header-top-row">
+            <h2 class="header-title">
+                <span class="header-title-prefix">Módulo:</span>
+                <span class="header-modulo-pill">Historial</span>
+            </h2>
+            <div class="header-status-card header-status-card--solo-conn is-online" id="hist-header-status" aria-live="polite" aria-label="Conexión">
+                <div class="header-status-ring" aria-hidden="true">
+                    <span class="header-status-ring-inner">
+                        <i data-lucide="wifi" class="header-status-wifi" id="hist-header-wifi"></i>
+                    </span>
+                </div>
+                <div class="header-status-body">
+                    <div class="header-status-conn">
+                        <span class="header-status-conn-dot" aria-hidden="true"></span>
+                        <span class="header-status-conn-text" id="hist-conn-label">En línea</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p class="modulo-header-desc">Muestras con Campo, Packing o ambos — y hora guardada.</p>
+    </header>
+
+    <div class="container modulo-aux-wrap hist-page">
+        <section class="hist-hero" aria-labelledby="hist-hero-title">
+            <span class="hist-hero-badge">Resumen · sincronización</span>
+            <h1 class="hist-hero-title" id="hist-hero-title">Historial de muestras</h1>
+            <p class="hist-hero-lead">Solo registros de hoy y ayer — Campo, Packing o ambos.</p>
+            <div class="hist-stats" aria-label="Indicadores">
+                <article class="hist-stat hist-stat--server">
+                    <span class="hist-stat-icon" aria-hidden="true"><i data-lucide="cloud-check"></i></span>
+                    <div class="hist-stat-body">
+                        <b id="kpi-servidor">0</b>
+                        <span id="kpi-servidor-label">Servidor (total)</span>
+                    </div>
+                </article>
+                <article class="hist-stat hist-stat--pend">
+                    <span class="hist-stat-icon" aria-hidden="true"><i data-lucide="wifi-off"></i></span>
+                    <div class="hist-stat-body">
+                        <b id="kpi-pendientes">0</b>
+                        <span>Pendiente</span>
+                    </div>
+                </article>
+                <article class="hist-stat hist-stat--block">
+                    <span class="hist-stat-icon" aria-hidden="true"><i data-lucide="shield-alert"></i></span>
+                    <div class="hist-stat-body">
+                        <b id="kpi-bloqueados">0</b>
+                        <span>Bloqueado</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="hist-block" aria-labelledby="hist-server-title">
+            <div class="hist-block-head">
+                <span class="hist-block-icon hist-block-icon--server" aria-hidden="true"><i data-lucide="database"></i></span>
+                <div class="hist-block-titles">
+                    <h2 class="hist-block-title" id="hist-server-title">Planilla (servidor)</h2>
+                    <p class="hist-block-desc" id="hist-server-desc">Confirmados en Google Sheets</p>
+                </div>
+            </div>
+            <div id="server-list" class="hist-list"></div>
+            <nav id="server-pagination" class="hist-pagination" aria-label="Paginación servidor" hidden>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="prev" disabled aria-label="Atrás">
+                    <i data-lucide="chevron-left" aria-hidden="true"></i><span>Atrás</span>
+                </button>
+                <span class="hist-page-count">1 / 1</span>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="next" disabled aria-label="Avanzar">
+                    <span>Avanzar</span><i data-lucide="chevron-right" aria-hidden="true"></i>
+                </button>
+            </nav>
+        </section>
+
+        <section class="hist-block" aria-labelledby="hist-local-title">
+            <div class="hist-block-head">
+                <span class="hist-block-icon hist-block-icon--local" aria-hidden="true"><i data-lucide="smartphone"></i></span>
+                <div class="hist-block-titles">
+                    <h2 class="hist-block-title" id="hist-local-title">Cola en el teléfono</h2>
+                    <p class="hist-block-desc" id="hist-local-desc">Aún no subidos — esperan internet</p>
+                </div>
+            </div>
+            <div id="local-list" class="hist-list"></div>
+            <nav id="local-pagination" class="hist-pagination" aria-label="Paginación cola local" hidden>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="prev" disabled aria-label="Atrás">
+                    <i data-lucide="chevron-left" aria-hidden="true"></i><span>Atrás</span>
+                </button>
+                <span class="hist-page-count">1 / 1</span>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="next" disabled aria-label="Avanzar">
+                    <span>Avanzar</span><i data-lucide="chevron-right" aria-hidden="true"></i>
+                </button>
+            </nav>
+        </section>
+    </div>
+
+    <nav id="main-bottom-nav">
+        <a class="nav-btn nav-link" id="nav-campo" data-nav-index="0" href="../" aria-label="Campo">
+            <i data-lucide="house"></i>
+            <span>Campo</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-packing" data-nav-index="1" href="../packing/" aria-label="Packing">
+            <i data-lucide="scan-line"></i>
+            <span>Packing</span>
+        </a>
+        <a class="nav-btn nav-link active" id="nav-historial" data-nav-index="2" href="./" aria-label="Historial">
+            <i data-lucide="clock-3"></i>
+            <span>Historial</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-recomendaciones" data-nav-index="3" href="../recomendaciones/" aria-label="Recomendaciones">
+            <i data-lucide="settings"></i>
+            <span>Recom.</span>
+        </a>
+    </nav>
+
+    <script src="../script.js"></script>
+    <script src="../librerias/lucide.min.js"></script>
+    <script src="../librerias/sweetalert2.all.min.js"></script>
+    <script>
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+
+        const API_URL = 'https://script.google.com/macros/s/AKfycbwdC1lwuGNT01xfLE_0jI31oXU13rBinYPKwlVfkZwqmIJGqSRuvPnq4-A9b6tHZThN/exec';
+        const SYNC_QUEUE_KEY = 'tiempos-sync-queue-v1';
+        const SYNC_HISTORY_KEY = 'tiempos-sync-history-v1';
+        const HIST_PER_PAGE = 8;
+        const HIST_TEXTO_SERVIDOR = 'Confirmados en Google Sheets · hoy y ayer';
+        const HIST_TEXTO_LOCAL = 'Aún no subidos · hoy y ayer';
+
+        let histServerRows = [];
+        let histLocalRows = [];
+        let histServerPage = 0;
+        let histLocalPage = 0;
+
+        function hoyIsoLocal() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + day;
+        }
+
+        function ayerIsoLocal() {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + day;
+        }
+
+        function normalizarFechaHist(val) {
+            const s = String(val || '').trim();
+            if (!s) return '';
+            const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (iso) return iso[0];
+            const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (slash) {
+                return slash[3] + '-' + String(slash[2]).padStart(2, '0') + '-' + String(slash[1]).padStart(2, '0');
+            }
+            const dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+            if (dash) {
+                return dash[3] + '-' + String(dash[2]).padStart(2, '0') + '-' + String(dash[1]).padStart(2, '0');
+            }
+            return s;
+        }
+
+        function fechasHistorialPermitidas() {
+            const hoy = hoyIsoLocal();
+            const ayer = ayerIsoLocal();
+            return { hoy: hoy, ayer: ayer, set: new Set([hoy, ayer]) };
+        }
+
+        function esFechaHistorialVisible(fecha) {
+            return fechasHistorialPermitidas().set.has(normalizarFechaHist(fecha));
+        }
+
+        function rangoHistorialEtiqueta() {
+            const f = fechasHistorialPermitidas();
+            return 'Hoy ' + formatFechaHist(f.hoy) + ' y ayer ' + formatFechaHist(f.ayer);
+        }
+
+        function actualizarHeaderHistorial() {
+            const card = document.getElementById('hist-header-status');
+            const label = document.getElementById('hist-conn-label');
+            const wifi = document.getElementById('hist-header-wifi');
+            const on = navigator.onLine;
+            if (card) {
+                card.classList.toggle('is-online', on);
+                card.classList.toggle('is-offline', !on);
+            }
+            if (label) label.textContent = on ? 'En línea' : 'Sin internet';
+            if (wifi) {
+                wifi.setAttribute('data-lucide', on ? 'wifi' : 'wifi-off');
+                if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                    window.lucide.createIcons();
+                }
+            }
+        }
+
+        window.addEventListener('online', () => actualizarHeaderHistorial());
+        window.addEventListener('offline', () => actualizarHeaderHistorial());
+
+        function cbJsonp(urlBase, params) {
+            return new Promise((resolve, reject) => {
+                const cb = '__hist_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                const noopCb = function () { };
+                const qs = new URLSearchParams(params || {});
+                qs.set('callback', cb);
+                const src = urlBase + (urlBase.includes('?') ? '&' : '?') + qs.toString();
+                const script = document.createElement('script');
+                let done = false;
+                const timeoutId = setTimeout(() => {
+                    if (done) return;
+                    done = true;
+                    window[cb] = noopCb;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(new Error('Timeout JSONP'));
+                }, 12000);
+                window[cb] = (payload) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timeoutId);
+                    window[cb] = noopCb;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    resolve(payload);
+                };
+                script.onerror = () => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timeoutId);
+                    window[cb] = noopCb;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(new Error('Error JSONP'));
+                };
+                script.src = src;
+                document.body.appendChild(script);
+            });
+        }
+
+        function readJsonLs(key) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return [];
+                const arr = JSON.parse(raw);
+                return Array.isArray(arr) ? arr : [];
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function pillForEstado(e) {
+            const x = String(e || '').toLowerCase();
+            if (x === 'subido') return '<span class="hist-pill hist-pill-ok"><i data-lucide="check-circle-2" aria-hidden="true"></i>Subido</span>';
+            if (x === 'pendiente') return '<span class="hist-pill hist-pill-pend"><i data-lucide="cloud-upload" aria-hidden="true"></i>Pendiente</span>';
+            return '<span class="hist-pill hist-pill-stop"><i data-lucide="alert-circle" aria-hidden="true"></i>' + escHistText(x || 'otro') + '</span>';
+        }
+
+        function escHistText(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function formatHoraHist(val) {
+            if (val === null || val === undefined || val === '') return '';
+            if (typeof val === 'number' && val > 0) {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+                }
+            }
+            const s = String(val).trim();
+            const m = s.match(/^(\d{1,2}):(\d{2})/);
+            if (m) return (m[1].length < 2 ? '0' + m[1] : m[1]) + ':' + m[2];
+            return s;
+        }
+
+        function formatFechaHist(iso) {
+            const s = String(iso || '').trim();
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) return m[3] + '/' + m[2] + '/' + m[1];
+            return s || '--';
+        }
+
+        function numeroEnsayoDesdeTexto(txt) {
+            const m = String(txt || '').trim().match(/\d+/);
+            return m ? m[0] : '';
+        }
+
+        function etiquetaMuestra(ensayoNumero, ensayoNombre) {
+            const n = String(ensayoNumero || '').trim() || numeroEnsayoDesdeTexto(ensayoNombre);
+            if (n) return 'Muestra ' + n;
+            const nom = String(ensayoNombre || '').trim();
+            if (nom) return nom;
+            return 'Muestra';
+        }
+
+        function tipoDatoDesdeFlags(tieneCampo, tienePacking, tipoServidor) {
+            const t = String(tipoServidor || '').toLowerCase();
+            if (t === 'ambos' || t === 'campo' || t === 'packing') return t;
+            const c = !!tieneCampo;
+            const p = !!tienePacking;
+            if (c && p) return 'ambos';
+            if (p) return 'packing';
+            return 'campo';
+        }
+
+        function badgeTipoDato(tipo) {
+            const t = String(tipo || 'campo').toLowerCase();
+            if (t === 'ambos') {
+                return '<span class="hist-tipo hist-tipo--ambos" title="Campo y Packing">'
+                    + '<span class="hist-tipo-icon" aria-hidden="true"><i data-lucide="waypoints"></i></span>'
+                    + '<span class="hist-tipo-name">Campo + Packing</span></span>';
+            }
+            if (t === 'packing') {
+                return '<span class="hist-tipo hist-tipo--packing" title="Solo Packing">'
+                    + '<span class="hist-tipo-icon" aria-hidden="true"><i data-lucide="package-check"></i></span>'
+                    + '<span class="hist-tipo-name">Packing</span></span>';
+            }
+            return '<span class="hist-tipo hist-tipo--campo" title="Solo Campo">'
+                + '<span class="hist-tipo-icon" aria-hidden="true"><i data-lucide="sprout"></i></span>'
+                + '<span class="hist-tipo-name">Campo</span></span>';
+        }
+
+        function iconoTipoDato(tipo) {
+            const t = String(tipo || 'campo').toLowerCase();
+            if (t === 'ambos') return 'waypoints';
+            if (t === 'packing') return 'package';
+            return 'sprout';
+        }
+
+        function claseIconoTipo(tipo) {
+            const t = String(tipo || 'campo').toLowerCase();
+            if (t === 'ambos') return 'hist-card-icon--teal';
+            if (t === 'packing') return 'hist-card-icon--indigo';
+            return 'hist-card-icon--blue';
+        }
+
+        function histCardHtml(r, opts) {
+            const label = etiquetaMuestra(r.ensayo_numero, r.ensayo_nombre || r.ensayo);
+            const horaTxt = formatHoraHist(r.hora_registro || r.hora_guardada);
+            const extra = opts && opts.extra ? String(opts.extra) : '';
+            const estadoHtml = opts && opts.estadoHtml ? opts.estadoHtml : '';
+            return ''
+                + '<article class="hist-card hist-card--' + escHistText(String(r.tipo_dato || 'campo').toLowerCase()) + '">'
+                + '<header class="hist-card-header">'
+                + '<div class="hist-card-icon ' + claseIconoTipo(r.tipo_dato) + '" aria-hidden="true">'
+                + '<i data-lucide="' + iconoTipoDato(r.tipo_dato) + '"></i>'
+                + '</div>'
+                + '<div class="hist-card-main">'
+                + '<div class="hist-card-topline">'
+                + '<h3 class="hist-card-title">' + escHistText(label) + '</h3>'
+                + '<div class="hist-card-numchip">'
+                + '<span class="hist-card-numchip-label">N°</span>'
+                + '<strong class="hist-card-numchip-value">' + escHistText(r.num_muestra || '--') + '</strong>'
+                + '</div>'
+                + badgeTipoDato(r.tipo_dato)
+                + '</div>'
+                + '</div>'
+                + '</header>'
+                + '<div class="hist-card-meta">'
+                + '<div class="hist-meta-item"><i data-lucide="calendar-days" aria-hidden="true"></i>'
+                + '<span>' + escHistText(formatFechaHist(r.fecha)) + '</span></div>'
+                + '<div class="hist-meta-item hist-meta-item--time"><i data-lucide="timer" aria-hidden="true"></i>'
+                + '<span>' + escHistText(horaTxt || 'Sin hora') + '</span></div>'
+                + '</div>'
+                + '<footer class="hist-card-footer">'
+                + (extra ? '<span class="hist-card-note">' + escHistText(extra) + '</span>' : '<span class="hist-card-note"></span>')
+                + (estadoHtml ? '<div class="hist-card-status">' + estadoHtml + '</div>' : '')
+                + '</footer>'
+                + '</article>';
+        }
+
+        function refrescarIconosHistorial() {
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                window.lucide.createIcons();
+            }
+        }
+
+        function totalPaginasHistorial(total) {
+            return Math.max(1, Math.ceil(Math.max(0, total) / HIST_PER_PAGE));
+        }
+
+        function acotarPaginaHistorial(page, totalItems) {
+            const maxPage = Math.max(0, totalPaginasHistorial(totalItems) - 1);
+            return Math.min(Math.max(0, page), maxPage);
+        }
+
+        function scrollAlInicioListaHistorial(listId) {
+            const list = document.getElementById(listId);
+            if (!list) return;
+            const block = list.closest('.hist-block');
+            if (block && typeof block.scrollIntoView === 'function') {
+                block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function actualizarDescBloqueHistorial(descId, total, page, textoBase) {
+            const el = document.getElementById(descId);
+            if (!el) return;
+            if (!total) {
+                el.textContent = textoBase + ' · ' + rangoHistorialEtiqueta();
+                return;
+            }
+            if (total <= HIST_PER_PAGE) {
+                el.textContent = total + (total === 1 ? ' registro' : ' registros') + ' · ' + textoBase;
+                return;
+            }
+            const inicio = page * HIST_PER_PAGE + 1;
+            const fin = Math.min(total, (page + 1) * HIST_PER_PAGE);
+            const totalPages = totalPaginasHistorial(total);
+            el.textContent = total + ' registros · viendo ' + inicio + '–' + fin
+                + ' (pág. ' + (page + 1) + '/' + totalPages + ') · ' + textoBase;
+        }
+
+        function fechaHistMs(fecha, hora) {
+            const s = String(fecha || '').trim();
+            if (!s) return 0;
+            let y = 0;
+            let mo = 0;
+            let d = 0;
+            let iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (iso) {
+                y = Number(iso[1]);
+                mo = Number(iso[2]) - 1;
+                d = Number(iso[3]);
+            } else {
+                let slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (slash) {
+                    d = Number(slash[1]);
+                    mo = Number(slash[2]) - 1;
+                    y = Number(slash[3]);
+                } else {
+                    let dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+                    if (dash) {
+                        d = Number(dash[1]);
+                        mo = Number(dash[2]) - 1;
+                        y = Number(dash[3]);
+                    }
+                }
+            }
+            if (!y) return 0;
+            const dt = new Date(y, mo, d);
+            const hm = String(hora || '').trim().match(/^(\d{1,2}):(\d{2})/);
+            if (hm) dt.setHours(Number(hm[1]), Number(hm[2]), 0, 0);
+            return dt.getTime();
+        }
+
+        function scrollAlPaginacionHistorial(navId) {
+            const nav = document.getElementById(navId);
+            if (nav && typeof nav.scrollIntoView === 'function') {
+                nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        function actualizarPaginacionHistorial(navId, page, totalItems, onPageChange) {
+            const nav = document.getElementById(navId);
+            if (!nav) return;
+            const prevBtn = nav.querySelector('[data-hist-page-dir="prev"]');
+            const nextBtn = nav.querySelector('[data-hist-page-dir="next"]');
+            const countEl = nav.querySelector('.hist-page-count');
+
+            if (!totalItems) {
+                nav.hidden = true;
+                return;
+            }
+
+            const totalPages = totalPaginasHistorial(totalItems);
+            if (totalPages <= 1) {
+                nav.hidden = true;
+                return;
+            }
+
+            nav.hidden = false;
+            const safePage = acotarPaginaHistorial(page, totalItems);
+
+            if (countEl) countEl.textContent = (safePage + 1) + ' / ' + totalPages;
+            if (prevBtn) prevBtn.disabled = safePage <= 0;
+            if (nextBtn) nextBtn.disabled = safePage >= totalPages - 1;
+
+            nav.querySelectorAll('[data-hist-page-dir]').forEach((btn) => {
+                btn.onclick = () => {
+                    const dir = btn.getAttribute('data-hist-page-dir');
+                    if (dir === 'prev' && safePage > 0) {
+                        onPageChange(safePage - 1);
+                        scrollAlPaginacionHistorial(navId);
+                    }
+                    if (dir === 'next' && safePage < totalPages - 1) {
+                        onPageChange(safePage + 1);
+                        scrollAlPaginacionHistorial(navId);
+                    }
+                };
+            });
+            refrescarIconosHistorial();
+        }
+
+        function pintarListaServidor() {
+            const box = document.getElementById('server-list');
+            if (!box) return;
+            histServerPage = acotarPaginaHistorial(histServerPage, histServerRows.length);
+            if (!histServerRows.length) {
+                box.innerHTML = '<div class="hist-empty"><i data-lucide="inbox" aria-hidden="true"></i><span>Sin registros de hoy ni ayer en planilla.</span></div>';
+                refrescarIconosHistorial();
+                actualizarDescBloqueHistorial('hist-server-desc', 0, 0, HIST_TEXTO_SERVIDOR);
+                actualizarPaginacionHistorial('server-pagination', 0, 0, () => {});
+                return;
+            }
+            const start = histServerPage * HIST_PER_PAGE;
+            const pageRows = histServerRows.slice(start, start + HIST_PER_PAGE);
+            box.innerHTML = pageRows.map((r) => {
+                const extra = r.total > 1 ? r.total + ' filas en planilla' : '1 fila en planilla';
+                return histCardHtml(r, {
+                    extra: extra,
+                    estadoHtml: '<span class="hist-pill hist-pill-ok"><i data-lucide="sheet" aria-hidden="true"></i>En planilla</span>'
+                });
+            }).join('');
+            refrescarIconosHistorial();
+            actualizarDescBloqueHistorial('hist-server-desc', histServerRows.length, histServerPage, HIST_TEXTO_SERVIDOR);
+            actualizarPaginacionHistorial('server-pagination', histServerPage, histServerRows.length, (p) => {
+                histServerPage = p;
+                pintarListaServidor();
+            });
+        }
+
+        function pintarListaLocal() {
+            const box = document.getElementById('local-list');
+            if (!box) return;
+            histLocalPage = acotarPaginaHistorial(histLocalPage, histLocalRows.length);
+            if (!histLocalRows.length) {
+                box.innerHTML = '<div class="hist-empty"><i data-lucide="check-circle-2" aria-hidden="true"></i><span>Cola vacía para hoy y ayer — todo sincronizado.</span></div>';
+                refrescarIconosHistorial();
+                actualizarDescBloqueHistorial('hist-local-desc', 0, 0, HIST_TEXTO_LOCAL);
+                actualizarPaginacionHistorial('local-pagination', 0, 0, () => {});
+                return;
+            }
+            const start = histLocalPage * HIST_PER_PAGE;
+            const pageRows = histLocalRows.slice(start, start + HIST_PER_PAGE);
+            box.innerHTML = pageRows.map((r) => {
+                const extra = 'Intentos: ' + r.intentos + (r.error ? ' · ' + r.error : '');
+                return histCardHtml(r, {
+                    extra: extra,
+                    estadoHtml: pillForEstado(r.estado)
+                });
+            }).join('');
+            refrescarIconosHistorial();
+            actualizarDescBloqueHistorial('hist-local-desc', histLocalRows.length, histLocalPage, HIST_TEXTO_LOCAL);
+            actualizarPaginacionHistorial('local-pagination', histLocalPage, histLocalRows.length, (p) => {
+                histLocalPage = p;
+                pintarListaLocal();
+            });
+        }
+
+        function renderServer(registrados) {
+            const permitidas = fechasHistorialPermitidas();
+            const list = Array.isArray(registrados) ? registrados.slice(0) : [];
+            const grouped = {};
+            list.forEach((r, idx) => {
+                const fecha = normalizarFechaHist(r?.fecha);
+                const num = String(r?.num_muestra || '').trim();
+                const clamshell = String(r?.n_clamshell || '').trim();
+                const en = String(r?.ensayo_numero || '').trim();
+                const tieneCampo = !!r?.tiene_campo;
+                const tienePacking = !!r?.tiene_packing;
+                if (!fecha || !en || !permitidas.set.has(fecha)) return;
+                const idMuestra = num || clamshell;
+                if (!idMuestra && !tieneCampo && !tienePacking) return;
+                const key = fecha + '||' + en + '||' + (idMuestra || ('idx-' + idx));
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        fecha: fecha,
+                        num_muestra: idMuestra || '--',
+                        ensayo_numero: en,
+                        ensayo_nombre: String(r?.ensayo_nombre || '').trim(),
+                        total: 0,
+                        hora_registro: '',
+                        tiene_campo: false,
+                        tiene_packing: false,
+                        tipo_dato: 'campo',
+                        orden_ms: 0
+                    };
+                }
+                const g = grouped[key];
+                g.total += 1;
+                if (!g.hora_registro && r?.hora_registro) g.hora_registro = String(r.hora_registro).trim();
+                g.tiene_campo = g.tiene_campo || tieneCampo;
+                g.tiene_packing = g.tiene_packing || tienePacking;
+                g.tipo_dato = tipoDatoDesdeFlags(g.tiene_campo, g.tiene_packing, r?.tipo_dato);
+                g.orden_ms = Math.max(g.orden_ms, fechaHistMs(fecha, g.hora_registro));
+            });
+            const view = Object.values(grouped).sort((a, b) => {
+                const ta = a.orden_ms || fechaHistMs(a.fecha, a.hora_registro);
+                const tb = b.orden_ms || fechaHistMs(b.fecha, b.hora_registro);
+                if (tb !== ta) return tb - ta;
+                const f = String(b.fecha || '').localeCompare(String(a.fecha || ''));
+                if (f !== 0) return f;
+                const na = Number(a.ensayo_numero) || 0;
+                const nb = Number(b.ensayo_numero) || 0;
+                if (na !== nb) return nb - na;
+                return String(b.num_muestra || '').localeCompare(String(a.num_muestra || ''));
+            });
+
+            document.getElementById('kpi-servidor').textContent = String(view.length);
+            histServerRows = view;
+            histServerPage = 0;
+            pintarListaServidor();
+        }
+
+        function renderLocal() {
+            const queue = readJsonLs(SYNC_QUEUE_KEY);
+            const hist = readJsonLs(SYNC_HISTORY_KEY);
+            const byUid = {};
+            hist.forEach((h) => { if (h && h.uid) byUid[h.uid] = h; });
+            const rows = queue.map((q) => {
+                const events = hist.filter((h) => h && h.uid && q && q.uid && h.uid === q.uid);
+                const last = events.length ? events[events.length - 1] : (q && q.uid ? byUid[q.uid] : null);
+                const esPacking = String(q?.modo || q?.payload?.mode || '').toLowerCase() === 'packing';
+                const tipoDato = esPacking ? 'packing' : 'campo';
+                const ts = Number(last?.ts || q?.actualizado_en || q?.creado_en || 0);
+                const horaRows = q?.rows;
+                let horaCampo = '';
+                if (Array.isArray(horaRows) && horaRows.length && horaRows[0].length >= 48) {
+                    horaCampo = String(horaRows[0][47] || '').trim();
+                }
+                return {
+                    uid: q?.uid || '',
+                    fecha: q?.fecha || '',
+                    ensayo: q?.ensayo || '',
+                    ensayo_numero: String(q?.ensayo_numero || '').trim() || numeroEnsayoDesdeTexto(q?.ensayo),
+                    num_muestra: q?.num_muestra || '',
+                    tipo_dato: tipoDato,
+                    estado: (last?.estado || q?.estado || '').toLowerCase(),
+                    error: last?.error || q?.error || '',
+                    intentos: Number(last?.intentos || q?.intentos || 0),
+                    hora_guardada: horaCampo || ts,
+                    ts: ts
+                };
+            });
+            const rowsRecientes = rows.filter((r) => esFechaHistorialVisible(r.fecha));
+            const pendientes = rowsRecientes.filter((r) => r.estado === 'pendiente').length;
+            const bloqueados = rowsRecientes.filter((r) => r.estado && r.estado !== 'pendiente' && r.estado !== 'subido').length;
+            document.getElementById('kpi-pendientes').textContent = String(pendientes);
+            document.getElementById('kpi-bloqueados').textContent = String(bloqueados);
+            actualizarHeaderHistorial();
+
+            histLocalRows = rowsRecientes.slice(0).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+            histLocalPage = 0;
+            pintarListaLocal();
+        }
+
+        async function initHistorial() {
+            actualizarHeaderHistorial();
+            renderLocal();
+            try {
+                const permitidas = fechasHistorialPermitidas();
+                const r = await cbJsonp(API_URL, {
+                    listado_registrados: '1',
+                    fecha_desde: permitidas.ayer,
+                    fecha_hasta: permitidas.hoy
+                });
+                if (!r || r.ok !== true) throw new Error('Respuesta inválida');
+                renderServer(r.registrados || []);
+            } catch (_) {
+                document.getElementById('server-list').innerHTML = '<div class="hist-empty hist-empty--warn"><i data-lucide="cloud-off" aria-hidden="true"></i><span>No se pudo consultar el servidor. Revisa internet.</span></div>';
+                refrescarIconosHistorial();
+                actualizarPaginacionHistorial('server-pagination', 0, 0, () => {});
+            }
+        }
+
+        initHistorial();
+    </script>
+</body>
+</html>
