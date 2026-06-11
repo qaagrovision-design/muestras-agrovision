@@ -35,6 +35,7 @@
                         <span class="header-status-conn-dot" aria-hidden="true"></span>
                         <span class="header-status-conn-text" id="rec-conn-label">En línea</span>
                     </div>
+                    <span class="header-app-version" id="rec-app-version" aria-label="Versión de la aplicación"></span>
                 </div>
             </div>
         </div>
@@ -114,6 +115,7 @@
             <i data-lucide="messages-square" class="rec-footer-icon" aria-hidden="true"></i>
             <p>Comuníquese ante cualquier consulta con el <strong>área de Manejo de la Información</strong>.</p>
         </footer>
+
     </div>
 
     <nav id="main-bottom-nav">
@@ -135,6 +137,7 @@
         </a>
     </nav>
 
+    <script src="../app-version.js"></script>
     <script src="../script.js"></script>
     <script src="../librerias/lucide.min.js"></script>
     <script>
@@ -160,7 +163,15 @@
             }
         }
 
+        function mostrarVersionAppRecomendaciones() {
+            const el = document.getElementById('rec-app-version');
+            if (!el) return;
+            const v = String(window.APP_VERSION || '').trim();
+            el.textContent = v ? ('App ' + v) : 'App sin versión';
+        }
+
         actualizarHeaderRecomendaciones();
+        mostrarVersionAppRecomendaciones();
         window.addEventListener('online', actualizarHeaderRecomendaciones);
         window.addEventListener('offline', actualizarHeaderRecomendaciones);
     </script>

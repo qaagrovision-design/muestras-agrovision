@@ -1,4 +1,4 @@
-# Muestras Web · AGROVISION
+# Muestras Web · AGROVISION 2026
 
 **Registro digital de tiempos, mediciones y packing** para seguimiento de cosecha de arándano.  
 PWA **offline-first** orientada a **celular y tablet**, sincronizada con Google Sheets.

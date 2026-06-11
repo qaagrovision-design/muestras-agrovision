@@ -192,16 +192,54 @@ function extraerNumMuestraDesdeRowPost_(row) {
   return normalizarNumMuestraClave(row[2]);
 }
 
-/** Solo dígitos en NUM_MUESTRA; 0 si no aplica. Acepta número de celda (hoja). */
+/**
+ * Secuencia numérica de NUM_MUESTRA: últimos 4 caracteres (ej. C260001 → 1, 0001 → 1).
+ * Acepta número de celda (hoja) si es entero.
+ */
 function parseNumMuestraDigitosGs_(v) {
   if (typeof v === 'number' && !isNaN(v) && isFinite(v) && v >= 0) {
     var fl = Math.floor(v);
     if (Math.abs(v - fl) < 1e-6) return fl;
   }
-  var s = (v != null && v !== undefined) ? String(v).trim() : '';
-  if (!/^\d+$/.test(s)) return 0;
-  var n = parseInt(s, 10);
+  var s = (v != null && v !== undefined) ? String(v).trim().toUpperCase() : '';
+  if (!s) return 0;
+  var tail = s.length <= 4 ? s : s.slice(-4);
+  if (!/^\d{1,4}$/.test(tail)) return 0;
+  var n = parseInt(tail, 10);
   return (isNaN(n) || n < 0) ? 0 : n;
+}
+
+/** Prefijo antes de los 4 dígitos finales (ej. C260001 → C26). */
+function prefijoNumMuestraGs_(v) {
+  var s = (v != null && v !== undefined) ? String(v).trim().toUpperCase() : '';
+  if (!s || s.length <= 4) return '';
+  return s.slice(0, -4);
+}
+
+/** Planilla vacía: C + año (2 dígitos), ej. 2026 → C26 → primer N° C260001. */
+function prefijoDefaultNumMuestraCampoGs_() {
+  var y = new Date().getFullYear() % 100;
+  return 'C' + (y < 10 ? '0' + y : String(y));
+}
+
+/** Prefijo desde última celda; si la hoja está vacía, el default C26… */
+function resolverPrefijoNumMuestraGs_(ultimoCelda, sheetMax, baseUltimo) {
+  if (ultimoCelda && ultimoCelda.valorTexto) {
+    return prefijoNumMuestraGs_(ultimoCelda.valorTexto);
+  }
+  if (baseUltimo === 0 && sheetMax === 0) {
+    return prefijoDefaultNumMuestraCampoGs_();
+  }
+  return '';
+}
+
+/** Arma NUM_MUESTRA completo: prefijo + secuencia de 4 dígitos (mínimo). */
+function formatearNumMuestraDesdeSecuenciaGs_(seq, prefijo) {
+  if (!seq || seq < 1) return '';
+  var p = prefijo != null ? String(prefijo) : '';
+  var s = String(Math.floor(seq));
+  if (s.length < 4) s = s.padStart(4, '0');
+  return p + s;
 }
 
 /** Índice 0-based de la columna NUM_MUESTRA según fila 1 (por si hubo columnas extra a la izquierda). */
@@ -282,16 +320,17 @@ function resolverProximoNumMuestraJson_(sheet, soloDesdeHoja) {
   var ultimoCelda = ultimoNumMuestraCeldaHoja_(sheet);
   var sheetMax = maxNumMuestraEnHoja_(sheet);
   var baseUltimo = ultimoCelda.digitos > 0 ? ultimoCelda.digitos : sheetMax;
+  var prefijo = resolverPrefijoNumMuestraGs_(ultimoCelda, sheetMax, baseUltimo);
   if (soloDesdeHoja) {
     var nextSolo = baseUltimo + 1;
-    var nextStrSolo = String(nextSolo);
-    if (nextStrSolo.length < 4) nextStrSolo = String(nextSolo).padStart(4, '0');
+    var nextStrSolo = formatearNumMuestraDesdeSecuenciaGs_(nextSolo, prefijo);
     return {
       max_en_hoja: baseUltimo,
       ultimo_num_muestra_celda: ultimoCelda.valorTexto,
       ultimo_num_muestra_fila: ultimoCelda.fila,
       ultimo_num_muestra_en_hoja: baseUltimo,
       max_digitos_columna: sheetMax,
+      num_muestra_prefijo: prefijo,
       proximo_num_muestra: nextStrSolo
     };
   }
@@ -299,9 +338,8 @@ function resolverProximoNumMuestraJson_(sheet, soloDesdeHoja) {
   var M = Math.max(sheetMax, wm);
   fusionarWatermarkNumMuestra_(M);
   var nextN = M + 1;
-  var nextStr = String(nextN);
-  if (nextStr.length < 4) nextStr = String(nextN).padStart(4, '0');
-  return { max_en_hoja: M, proximo_num_muestra: nextStr };
+  var nextStr = formatearNumMuestraDesdeSecuenciaGs_(nextN, prefijo);
+  return { max_en_hoja: M, num_muestra_prefijo: prefijo, proximo_num_muestra: nextStr };
 }
 
 /**
@@ -625,6 +663,7 @@ function doPost(e) {
     var filasHoja2 = [];
     rows.forEach(function(row) {
       var fila = row.length >= minExpanded ? toRowRegistro(row) : (function() { while (row.length < NUM_COLS) row.push(""); return row.slice(0, NUM_COLS).map(celdaAString); })();
+      aplicarPresionVaporDecimalEnFilaRegistro_(fila);
       var key = buildKey(fila);
       if (existingKeys[key]) return;
       existingKeys[key] = true;
@@ -656,9 +695,10 @@ function doPost(e) {
     if (nuevasFilas.length > 0) {
       var startRow = sheet.getLastRow() + 1;
       var numRows = nuevasFilas.length;
-      // NUM_MUESTRA (col 3) debe mantenerse como texto para conservar ceros a la izquierda (ej: 0001).
+      // NUM_MUESTRA (col 3) debe mantenerse como texto para conservar ceros a la izquierda (ej: 0001, C260001).
       sheet.getRange(startRow, 3, numRows, 1).setNumberFormat('@');
       sheet.getRange(startRow, 1, numRows, NUM_COLS).setValues(nuevasFilas);
+      sheet.getRange(startRow, 38, numRows, 8).setNumberFormat('0.000');
       for (var wmi = 0; wmi < nuevasFilas.length; wmi++) {
         fusionarWatermarkNumMuestra_(parseNumMuestraDigitosGs_(nuevasFilas[wmi][2]));
       }
@@ -762,6 +802,45 @@ function formatHoraRegistro_(val) {
   return s;
 }
 
+/**
+ * Presión vapor (Kpa): valor numérico real (ej. 3.453), no texto "3.453".
+ * En locale es_* un string con punto se interpreta como miles (3453); por eso se guarda como Number.
+ */
+function normalizarPresionVaporCelda_(v) {
+  if (v === null || v === undefined) return "";
+  var s = String(v).trim().replace(',', '.');
+  if (s === '') return '';
+  if (s.charAt(0) === '.') s = '0' + s;
+  var n = parseFloat(s);
+  if (isNaN(n)) return '';
+  return Math.round(n * 1000) / 1000;
+}
+
+/** Cols presión registro Campo Hoja1: índices 37–44. */
+function aplicarPresionVaporDecimalEnFilaRegistro_(fila) {
+  var i;
+  for (i = 37; i <= 44; i++) {
+    if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
+  }
+  return fila;
+}
+
+/** Cols presión packing (fila plana 37): índices 25–34. */
+function aplicarPresionVaporDecimalEnFilaPacking_(fila) {
+  var i;
+  for (i = 25; i <= 34; i++) {
+    if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
+  }
+  return fila;
+}
+
+function normalizarFilaPackingDatosParaHoja_(row) {
+  if (!Array.isArray(row)) return [];
+  var out = row.slice();
+  aplicarPresionVaporDecimalEnFilaPacking_(out);
+  return out;
+}
+
 function getPackingHeaderNamesPerRow() {
   return [
     'RECEPCION', 'INGRESO_GASIFICADO', 'SALIDA_GASIFICADO', 'INGRESO_PREFRIO', 'SALIDA_PREFRIO',
@@ -863,7 +942,7 @@ function doPostPacking(sheet, data) {
         for (var pm = 0; pm < packingRows.length; pm++) {
           var filaIdxMerge = packingStartIndex + pm;
           if (filaIdxMerge >= rowIndices.length) break;
-          var rowMerge = packingRows[pm];
+          var rowMerge = normalizarFilaPackingDatosParaHoja_(packingRows[pm]);
           var filaHojaMerge = rowIndices[filaIdxMerge];
           var valoresMerge = [fechaInspeccion, responsable, horaRecepcion, nViaje];
           if (Array.isArray(rowMerge)) {
@@ -915,7 +994,7 @@ function doPostPacking(sheet, data) {
       for (var i = 0; i < packingRows.length; i++) {
         var filaIdx = packingStartIndex + i;
         if (filaIdx >= rowIndices.length) break;
-        var row = packingRows[i];
+        var row = normalizarFilaPackingDatosParaHoja_(packingRows[i]);
         var filaHoja = rowIndices[filaIdx];
         var valores = [fechaInspeccion, responsable, horaRecepcion, nViaje];
         if (Array.isArray(row)) {
@@ -1040,6 +1119,7 @@ function doGet(e) {
       result.ultimo_num_muestra_fila = pm.ultimo_num_muestra_fila;
       result.ultimo_num_muestra_en_hoja = pm.ultimo_num_muestra_en_hoja;
       result.max_digitos_columna = pm.max_digitos_columna;
+      result.num_muestra_prefijo = pm.num_muestra_prefijo;
       result.proximo_num_muestra = pm.proximo_num_muestra;
       return returnOutput(result);
     }
@@ -1055,6 +1135,7 @@ function doGet(e) {
       result.ultimo_num_muestra_fila = pmOp.ultimo_num_muestra_fila;
       result.ultimo_num_muestra_en_hoja = pmOp.ultimo_num_muestra_en_hoja;
       result.max_digitos_columna = pmOp.max_digitos_columna;
+      result.num_muestra_prefijo = pmOp.num_muestra_prefijo;
       result.proximo_num_muestra = pmOp.proximo_num_muestra;
       result.ensayos = [];
       var fechaOp = (params.fecha || '').toString().trim();

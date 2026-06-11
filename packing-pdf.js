@@ -4,6 +4,8 @@
 (function packingPdfModule() {
     const LOGO_URL = '../log.png';
     const PACKING_PDF_FILAS = 21;
+    /** Fila 11 (índice 10): inicio segunda muestra en la misma hoja. */
+    const PACKING_PDF_INICIO_SEGUNDA_MUESTRA = 10;
     /** Etiquetas de etapa en una sola línea (Tiempos, Pesos, Humedad, hoja 2). */
     const STAGE_LABELS_PDF = [
         'RECEPCIÓN',
@@ -236,16 +238,44 @@
         return { opts, texto: valCelda(val) };
     }
 
-    function esCeldaDoblePacking(colIdx, rowIdx) {
-        return COLS_CELDA_DOBLE_PDF.has(colIdx) && rowIdx < FILAS_UNION_CELDA_DOBLE;
+    function iniciosBloqueMuestraPacking(datos) {
+        const starts = [0];
+        const seg = datos?.pdfInicioSegundaMuestra;
+        if (seg != null && Number.isFinite(Number(seg))) starts.push(Number(seg));
+        return starts;
     }
 
-    function esInicioCeldaDoblePacking(colIdx, rowIdx) {
-        return esCeldaDoblePacking(colIdx, rowIdx) && rowIdx === 0;
+    function esInicioCeldaDoblePacking(colIdx, rowIdx, datos) {
+        if (!COLS_CELDA_DOBLE_PDF.has(colIdx)) return false;
+        return iniciosBloqueMuestraPacking(datos).some((s) => rowIdx === s);
     }
 
-    function esContinuacionCeldaDoblePacking(colIdx, rowIdx) {
-        return COLS_CELDA_DOBLE_PDF.has(colIdx) && rowIdx > 0 && rowIdx < FILAS_UNION_CELDA_DOBLE;
+    function esContinuacionCeldaDoblePacking(colIdx, rowIdx, datos) {
+        if (!COLS_CELDA_DOBLE_PDF.has(colIdx)) return false;
+        return iniciosBloqueMuestraPacking(datos).some(
+            (s) => rowIdx > s && rowIdx < s + FILAS_UNION_CELDA_DOBLE
+        );
+    }
+
+    function bloquesPresionHoja2Packing(datos) {
+        const p2 = datos?.pagina2 || {};
+        if (Array.isArray(p2.bloquesPresion) && p2.bloquesPresion.length) return p2.bloquesPresion;
+        return [{
+            fila: 0,
+            presionAmb: p2.presionAmb || [],
+            presionFruta: p2.presionFruta || [],
+            deficit: p2.deficit || []
+        }];
+    }
+
+    function valoresPresionFilaHoja2Packing(bloques, filaIdx) {
+        const bloque = bloques.find((b) => b.fila === filaIdx);
+        if (!bloque) return [];
+        const vals = [];
+        ['presionAmb', 'presionFruta', 'deficit'].forEach((k) => {
+            (bloque[k] || []).forEach((v) => vals.push(v));
+        });
+        return vals;
     }
 
     /** Dato girado hacia arriba (90°), centrado con margen en celda de 3 filas. */
@@ -317,11 +347,27 @@
         return lib.jsPDF;
     }
 
+    function normalizarListaDatosPdfPacking_(datos) {
+        if (Array.isArray(datos?.muestras) && datos.muestras.length) return datos.muestras;
+        if (Array.isArray(datos) && datos.length) return datos;
+        if (datos && typeof datos === 'object' && datos.filas) return [datos];
+        return [];
+    }
+
     function nombreArchivoPdf(datos) {
-        const f = txt(datos?.fecha || datos?.meta?.fecha || '').replace(/\//g, '-').replace(/\./g, '-');
-        const trazRaw = txt(datos?.meta?.trazabilidadArchivo || datos?.meta?.trazabilidad || '').split(' / ')[0].trim();
-        const traz = trazRaw.replace(/\s+/g, '').replace(/[\\/:*?"<>|]+/g, '-');
+        const lista = normalizarListaDatosPdfPacking_(datos);
+        const primero = lista[0] || datos || {};
+        const f = txt(primero?.fecha || primero?.meta?.fecha || '').replace(/\//g, '-').replace(/\./g, '-');
         const parteFecha = f || 'sin-fecha';
+        if (lista.length > 1) {
+            const nums = lista
+                .map((d) => txt(d?.meta?.numMuestra || d?.ensayo || '').trim())
+                .filter(Boolean)
+                .join('-');
+            return `${parteFecha}_packing-${nums || lista.length + '-muestras'}.pdf`;
+        }
+        const trazRaw = txt(primero?.meta?.trazabilidadArchivo || primero?.meta?.trazabilidad || '').split(' / ')[0].trim();
+        const traz = trazRaw.replace(/\s+/g, '').replace(/[\\/:*?"<>|]+/g, '-');
         const parteTraz = traz || 'sin-traz';
         return `${parteFecha}_${parteTraz}.pdf`;
     }
@@ -757,13 +803,13 @@
             const vals = valoresFilaPacking(fila);
             x = m;
             cw.forEach((w, i) => {
-                if (esContinuacionCeldaDoblePacking(i, ri)) {
+                if (esContinuacionCeldaDoblePacking(i, ri, datos)) {
                     x += w;
                     return;
                 }
-                const hCelda = esInicioCeldaDoblePacking(i, ri) ? hRow * FILAS_UNION_CELDA_DOBLE : hRow;
+                const hCelda = esInicioCeldaDoblePacking(i, ri, datos) ? hRow * FILAS_UNION_CELDA_DOBLE : hRow;
                 const { opts, texto } = optsCeldaDatoPdf(doc, i, vals[i], w, hCelda);
-                if (esInicioCeldaDoblePacking(i, ri)) {
+                if (esInicioCeldaDoblePacking(i, ri, datos)) {
                     dibujarCeldaDatoVertical(doc, x, y, w, hCelda, texto, opts);
                 } else {
                     dibujarCelda(doc, x, y, w, hCelda, texto, opts);
@@ -784,10 +830,12 @@
         y = bloqueMetaPacking(doc, datos, y, layout);
 
         const p2 = datos.pagina2 || {};
+        const bloquesPresion = bloquesPresionHoja2Packing(datos);
+        const refPresion = bloquesPresion[0] || {};
         const grupos = [
-            { tit: 'PRESIÓN DE VAPOR AMBIENTE (Kpa)', vals: p2.presionAmb || [] },
-            { tit: 'PRESIÓN DE VAPOR FRUTA (Kpa)', vals: p2.presionFruta || [] },
-            { tit: 'DÉFICIT DE PRESIÓN DE VAPOR (Kpa)', vals: p2.deficit || [] }
+            { tit: 'PRESIÓN DE VAPOR AMBIENTE (Kpa)', vals: refPresion.presionAmb || p2.presionAmb || [] },
+            { tit: 'PRESIÓN DE VAPOR FRUTA (Kpa)', vals: refPresion.presionFruta || p2.presionFruta || [] },
+            { tit: 'DÉFICIT DE PRESIÓN DE VAPOR (Kpa)', vals: refPresion.deficit || p2.deficit || [] }
         ];
 
         const obsW = W * 0.26;
@@ -836,14 +884,13 @@
         const yBodyStart = ySub + hSub;
         const yBodyEnd = layout.bottomY - ySigReserva;
         const hRow = Math.min(5.9, Math.max(3.5, (yBodyEnd - yBodyStart) / nFilasCuerpo));
-        const filaVals = [];
-        grupos.forEach((g) => (g.vals || []).forEach((v) => filaVals.push(v)));
 
         for (let r = 0; r < nFilasCuerpo; r++) {
+            const filaVals = valoresPresionFilaHoja2Packing(bloquesPresion, r);
             const yRow = yBodyStart + r * hRow;
             x = m;
             for (let i = 0; i < 15; i++) {
-                const val = r === 0 ? valCelda(filaVals[i]) : '';
+                const val = filaVals.length ? valCelda(filaVals[i]) : '';
                 dibujarCelda(doc, x, yRow, colW, hRow, val, { fontSize: 6.2, pad: 0.4 });
                 x += colW;
             }
@@ -870,11 +917,16 @@
     async function generarPdfPackingBlob(datos) {
         const JsPDF = obtenerJsPDF();
         if (!JsPDF) throw new Error('jsPDF no está cargado');
+        const lista = normalizarListaDatosPdfPacking_(datos);
+        if (!lista.length) throw new Error('No hay datos para generar el PDF.');
         const logoUrl = await cargarLogoDataUrl();
         const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-        generarHoja1Packing(doc, datos, logoUrl);
-        doc.addPage('a4', 'landscape');
-        generarHoja2Packing(doc, datos, logoUrl);
+        lista.forEach((item, idx) => {
+            if (idx > 0) doc.addPage('a4', 'landscape');
+            generarHoja1Packing(doc, item, logoUrl);
+            doc.addPage('a4', 'landscape');
+            generarHoja2Packing(doc, item, logoUrl);
+        });
         return doc.output('blob');
     }
 

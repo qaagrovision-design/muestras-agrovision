@@ -54,6 +54,7 @@ const META_SAVE_IDS = [
         const NUM_MUESTRA_MAX_LEN = 8;
         const REGISTRADOS_HOY_CACHE_KEY = 'tiempos-registrados-hoy-cache-v1';
         const CAMPO_LLENADO_COMPLETO_AVISO_KEY = 'tiempos-campo-llenado-completo-aviso-v1';
+        const MAX_MUESTRAS_CAMPO = 6;
         const NUM_MUESTRA_USADOS_KEY = 'tiempos-num-muestra-usados-v1';
         /** Claves viejas de N° muestra en localStorage (no se usan; solo se borran al iniciar). */
         const NUM_MUESTRA_LS_KEYS_A_PURGAR = [
@@ -68,7 +69,6 @@ const META_SAVE_IDS = [
             'visual-meta-muestra',
             'visual-num-muestra',
             'visual-responsable',
-            'visual-guia-precosecha',
             'visual-hora',
             'visual-meta-fundo',
             'visual-traz-etapa',
@@ -471,7 +471,7 @@ const META_SAVE_IDS = [
             return hoyIsoLocal();
         }
 
-        /** Todas las muestras del selector (1–5) ya registradas hoy en planilla/cola. */
+        /** Todas las muestras del selector (1–6) ya registradas hoy en planilla/cola. */
         function todasMuestrasCampoRegistradasHoy() {
             const sel = document.getElementById('visual-meta-muestra');
             if (!sel) return false;
@@ -559,6 +559,74 @@ const META_SAVE_IDS = [
             return String(v ?? '').trim() === '';
         }
 
+        function pesoVacio(v) {
+            const n = Number(v);
+            return !Number.isFinite(n) || n <= 0;
+        }
+
+        function textoPesoCampo(v) {
+            if (pesoVacio(v)) return '00';
+            return v + 'g';
+        }
+
+        function clasePesoCampo(v, base) {
+            return (base || 'weight-value') + (pesoVacio(v) ? ' is-empty-peso' : '');
+        }
+
+        function valorPesoInput(v) {
+            const n = Number(v);
+            return Number.isFinite(n) && n > 0 ? String(n) : '';
+        }
+
+        function pesoStrOrEmpty(v) {
+            if (pesoVacio(v)) return '';
+            return String(v).trim();
+        }
+
+        /** Presión vapor (Kpa): siempre punto decimal y 3 cifras para el POST (servidor convierte a Number). */
+        function presionStrParaEnvio(v) {
+            if (v === null || v === undefined || String(v).trim() === '') return '';
+            const n = Number(String(v).trim().replace(',', '.'));
+            if (!Number.isFinite(n)) return '';
+            return n.toFixed(3);
+        }
+
+        /** Clamshell 5+: Peso 1 es copia de Peso 2 (jarra adicional en la misma muestra). */
+        function clamshellUsaPeso1DesdePeso2(nroClamshell) {
+            return Number(nroClamshell) >= 5;
+        }
+
+        function peso1EfectivoCampo(item, nroClamshell) {
+            const n = nroClamshell != null ? Number(nroClamshell) : numeroClamshellPorEnsayo(item);
+            if (clamshellUsaPeso1DesdePeso2(n)) {
+                const p2 = Number(item?.p2);
+                if (Number.isFinite(p2) && p2 > 0) return p2;
+            }
+            return Number(item?.p1) || 0;
+        }
+
+        function nroClamshellModalActual_(item) {
+            if (item) return numeroClamshellPorEnsayo(item);
+            return listaClamshellsPorEnsayo_(obtenerEnsayoActivo()).length + 1;
+        }
+
+        function configurarModalPesosClamshell_(nroClamshell) {
+            const inpP1 = document.getElementById('visual-p1');
+            const inpP2 = document.getElementById('visual-p2');
+            if (!inpP1 || !inpP2) return;
+            const auto = clamshellUsaPeso1DesdePeso2(nroClamshell);
+            inpP1.disabled = auto;
+            inpP1.title = auto ? 'Se copia automáticamente desde Peso 2' : '';
+            if (auto) inpP1.value = inpP2.value;
+        }
+
+        function sincronizarPeso1DesdePeso2EnModal_() {
+            const inpP1 = document.getElementById('visual-p1');
+            const inpP2 = document.getElementById('visual-p2');
+            if (!inpP1 || !inpP2 || !inpP1.disabled) return;
+            inpP1.value = inpP2.value;
+        }
+
         function valorCampoMetaEnsayo_(ensayo, id) {
             const clave = String(ensayo || 'Ensayo 1');
             if (id === 'visual-num-muestra') {
@@ -611,7 +679,6 @@ const META_SAVE_IDS = [
                 'visual-meta-muestra',
                 'visual-num-muestra',
                 'visual-responsable',
-                'visual-guia-precosecha',
                 'visual-hora',
                 'visual-meta-fundo',
                 'visual-traz-etapa',
@@ -652,10 +719,14 @@ const META_SAVE_IDS = [
             items.forEach((item, idx) => {
                 const n = idx + 1;
                 if (campoVacio(item?.jarra)) faltantes.push(`Clamshell ${n}: N° jarra`);
-                if (campoVacio(item?.p1)) faltantes.push(`Clamshell ${n}: Peso inicial 1`);
-                if (campoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
-                if (campoVacio(item?.acopio)) faltantes.push(`Clamshell ${n}: Llegada acopio-campo`);
-                if (campoVacio(item?.despacho)) faltantes.push(`Clamshell ${n}: Despacho acopio-campo`);
+                if (clamshellUsaPeso1DesdePeso2(n)) {
+                    if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
+                } else {
+                    if (pesoVacio(item?.p1)) faltantes.push(`Clamshell ${n}: Peso inicial 1`);
+                    if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
+                }
+                if (pesoVacio(item?.acopio)) faltantes.push(`Clamshell ${n}: Llegada acopio-campo`);
+                if (pesoVacio(item?.despacho)) faltantes.push(`Clamshell ${n}: Despacho acopio-campo`);
 
                 const t = item?.metric?.tiempo || {};
                 // Regla operativa: tiempos se capturan en el clamshell líder (primero) y se replican.
@@ -907,6 +978,7 @@ const META_SAVE_IDS = [
         let ensayosActivadosSesion = new Set();
         /** Último max y próximo N° devueltos por Apps Script (fuente de verdad con internet). */
         let numMuestraMaxServidorCache = 0;
+        let numMuestraPrefijoCache = '';
         let proximoNumMuestraServidorCache = '';
         /** true tras el primer estado_operativo OK: el N° muestra sale del servidor, no del localStorage. */
         let numMuestraSincronizadoServidor = false;
@@ -998,6 +1070,7 @@ const META_SAVE_IDS = [
             numMuestraSincronizadoServidor = false;
             proximoNumMuestraServidorCache = '';
             numMuestraMaxServidorCache = 0;
+            numMuestraPrefijoCache = '';
             purgarCacheNumMuestraLocalStorage();
             purgarTodosNumerosMuestraEnMeta();
             const inp = document.getElementById('visual-num-muestra');
@@ -1411,7 +1484,6 @@ const META_SAVE_IDS = [
             'visual-meta-muestra',
             'visual-num-muestra',
             'visual-responsable',
-            'visual-guia-precosecha',
             'visual-hora',
             'visual-meta-fundo',
             'visual-meta-variedad',
@@ -1422,7 +1494,6 @@ const META_SAVE_IDS = [
         /** Campos visibles del acordeón meta: borde rojo suave en tiempo real si están vacíos. */
         const META_CAMPOS_UI_VALIDACION = [
             'visual-responsable',
-            'visual-guia-precosecha',
             'visual-hora',
             'visual-meta-fundo',
             'visual-traz-acopio',
@@ -1448,6 +1519,8 @@ const META_SAVE_IDS = [
                 if (!el) return;
                 el.classList.toggle('meta-inp--falta', faltan.has(id));
             });
+            const elPreco = document.getElementById('visual-guia-precosecha');
+            if (elPreco) elPreco.classList.remove('meta-inp--falta');
         }
 
         let metaValidacionPausada = false;
@@ -1807,6 +1880,8 @@ const META_SAVE_IDS = [
         }());
         const ensayoMeta = {};
         let editingCardId = null;
+        let guardandoModalTarjeta_ = false;
+        let abrirModalTarjetaTs_ = 0;
         let envioRegistroEnCurso = false;
         let omitirConfirmacionSalida = false;
 
@@ -1841,16 +1916,30 @@ const META_SAVE_IDS = [
             return rotulo || metaActivoEnsayo || ensayoActivo || 'Ensayo 1';
         }
 
+        function listaClamshellsPorEnsayo_(ensayo) {
+            return data
+                .filter((it) => String(it.ensayo || 'Ensayo 1') === String(ensayo || 'Ensayo 1'))
+                .slice()
+                .sort((a, b) => Number(a.id) - Number(b.id));
+        }
+
+        function ultimoClamshellPorEnsayo_(ensayo) {
+            const lista = listaClamshellsPorEnsayo_(ensayo);
+            return lista.length ? lista[lista.length - 1] : null;
+        }
+
+        function esUltimoClamshellPorEnsayo_(item) {
+            if (!item) return false;
+            const ultimo = ultimoClamshellPorEnsayo_(item.ensayo || 'Ensayo 1');
+            return ultimo && Number(item.id) === Number(ultimo.id);
+        }
+
         function numeroClamshellPorEnsayo(itemOrId) {
             const item = typeof itemOrId === 'object'
                 ? itemOrId
                 : data.find((entry) => entry.id === Number(itemOrId));
             if (!item) return Number(itemOrId) || 1;
-            const ensayo = String(item.ensayo || 'Ensayo 1');
-            const lista = data
-                .filter((it) => String(it.ensayo || 'Ensayo 1') === ensayo)
-                .slice()
-                .sort((a, b) => Number(a.id) - Number(b.id));
+            const lista = listaClamshellsPorEnsayo_(item.ensayo || 'Ensayo 1');
             const idx = lista.findIndex((it) => Number(it.id) === Number(item.id));
             return idx >= 0 ? idx + 1 : 1;
         }
@@ -1992,7 +2081,7 @@ const META_SAVE_IDS = [
             await refrescarEstadoServidorOperativo(forceServer);
         }
 
-        /** Ensayos (1–5) ya guardados hoy en planilla (servidor manda la verdad si hay sync). */
+        /** Ensayos (1–6) ya guardados hoy en planilla (servidor manda la verdad si hay sync). */
         function obtenerEnsayosRegistradosHoySet() {
             const set = new Set();
             if (numMuestraSincronizadoServidor && bloqueoMuestraCacheNums) {
@@ -2034,12 +2123,12 @@ const META_SAVE_IDS = [
             return ensayoNumeroRegistradoHoy(numeroDesdeEnsayoTexto(ensayoNombre));
         }
 
-        /** Mayor n° de muestra (1–5) ya registrada hoy (planilla + opciones bloqueadas). */
+        /** Mayor n° de muestra (1–6) ya registrada hoy (planilla + opciones bloqueadas). */
         function maxNumeroMuestraRegistradaHoy() {
             let max = 0;
             const subir = (n) => {
                 const x = Number(n);
-                if (x >= 1 && x <= 5 && x > max) max = x;
+                if (x >= 1 && x <= MAX_MUESTRAS_CAMPO && x > max) max = x;
             };
             obtenerEnsayosRegistradosHoySet().forEach((en) => subir(en));
             const sel = document.getElementById('visual-meta-muestra');
@@ -2072,7 +2161,7 @@ const META_SAVE_IDS = [
         /** Muestra cerrada: meta 8/8 o registrada hoy (desbloquea la siguiente; no basta con visitarla o un clamshell vacío). */
         function muestraEstaEnSecuenciaLlenado(numeroMuestra) {
             const n = Number(numeroMuestra);
-            if (!Number.isFinite(n) || n < 1 || n > 5) return false;
+            if (!Number.isFinite(n) || n < 1 || n > MAX_MUESTRAS_CAMPO) return false;
             return metaEnsayoCompletaParaOrden(ensayoNombreDesdeNumero(n));
         }
 
@@ -2169,13 +2258,13 @@ const META_SAVE_IDS = [
                 .slice()
                 .sort((a, b) => Number(a.id) - Number(b.id));
 
-            const inicioCosechaPorJarra = new Map();
+            // Inicio de cosecha: primer registro tipo Cosecha del ensayo (misma hora en todos los clamshells).
+            let inicioCosechaEnsayo = '';
             filasJ.forEach((f) => {
                 if (String(f.tipo || '').trim() !== 'C') return;
-                const n = Number(String(f.jarra ?? '').trim());
                 const ini = String(f.inicio || '').trim();
-                if (!Number.isFinite(n) || n < 1 || !ini) return;
-                if (!inicioCosechaPorJarra.has(n)) inicioCosechaPorJarra.set(n, ini);
+                if (!ini || inicioCosechaEnsayo) return;
+                inicioCosechaEnsayo = ini;
             });
 
             const trasvasados = filasJ.filter((f) => String(f.tipo || '').trim() === 'T');
@@ -2228,7 +2317,7 @@ const META_SAVE_IDS = [
                 const despachoActual = String(it.metric?.tiempo?.despachoAcopio || '').trim();
 
                 // Si no hay dato proveniente de jarras/trasvasados, conservar lo ya registrado.
-                it.metric.tiempo.inicioCosecha = inicioCosechaPorJarra.get(nJarra) || inicioCosechaActual;
+                it.metric.tiempo.inicioCosecha = inicioCosechaEnsayo || inicioCosechaActual;
                 it.metric.tiempo.inicioPerdida = terminoTrasvasadoPorJarra.get(nJarra) || inicioPerdidaActual;
                 // Término de cosecha (métrica): término del ÚLTIMO trasvasado del ensayo (lj-campo-termino más tardío entre todas las filas T), igual en todos los clamshells.
                 it.metric.tiempo.terminoCosecha = terminoUltimoTrasvasadoEnsayo || terminoCosechaActual;
@@ -2489,6 +2578,9 @@ const META_SAVE_IDS = [
             const ensayoTrabajo = obtenerEnsayoActivo();
             sincronizarTiempoPorJarra(ensayoTrabajo);
             const dataEnsayo = data.filter((item) => String(item.ensayo || 'Ensayo 1') === ensayoTrabajo);
+            const listaOrdenEnsayo = listaClamshellsPorEnsayo_(ensayoTrabajo);
+            const ultimoEnsayo = listaOrdenEnsayo.length ? listaOrdenEnsayo[listaOrdenEnsayo.length - 1] : null;
+            const nroUltimoEnsayo = ultimoEnsayo ? numeroClamshellPorEnsayo(ultimoEnsayo) : 0;
             const lideresTiempo = idLiderTiempoPorJarraEnEnsayo(ensayoTrabajo);
             dataEnsayo.forEach(item => {
                 const nroClamshell = numeroClamshellPorEnsayo(item);
@@ -2496,6 +2588,13 @@ const META_SAVE_IDS = [
                 const idLider = Number.isFinite(jarraNum) ? lideresTiempo[jarraNum] : Number(item.id);
                 const itemLider = data.find((entry) => Number(entry.id) === Number(idLider)) || item;
                 const esLiderTiempo = Number(item.id) === Number(idLider);
+                const esUltimo = ultimoEnsayo && Number(item.id) === Number(ultimoEnsayo.id);
+                const puedeEliminar = listaOrdenEnsayo.length > 1 && esUltimo;
+                const tituloEliminar = puedeEliminar
+                    ? 'Eliminar último clamshell'
+                    : (listaOrdenEnsayo.length <= 1
+                        ? 'Debe quedar al menos uno'
+                        : 'Elimina primero el Clamshell #' + nroUltimoEnsayo);
                 const tCount = conteoLlenadoMetrica(itemLider, 'tiempo');
                 const pAmbCount = conteoLlenadoPresion(item, 'ambiente');
                 const pFrutaCount = conteoLlenadoPresion(item, 'fruta');
@@ -2514,7 +2613,7 @@ const META_SAVE_IDS = [
                         </div>
                         <div class="clamshell-header-actions">
                             <div class="jarra-tag">Jarra ${item.jarra}</div>
-                            <button type="button" class="clamshell-delete-btn" title="Eliminar clamshell" aria-label="Eliminar clamshell" onclick="eliminarClamshell(event, ${item.id})">
+                            <button type="button" class="clamshell-delete-btn" title="${tituloEliminar}" aria-label="Eliminar clamshell" ${puedeEliminar ? '' : 'disabled '}onclick="eliminarClamshell(event, ${item.id})">
                                 <i data-lucide="trash-2"></i>
                             </button>
                         </div>
@@ -2522,8 +2621,8 @@ const META_SAVE_IDS = [
 
                     <div class="weights-panel">
                         <div class="weights-grid">
-                            <div class="weight-box"><label>Peso Inicial 1</label><span class="weight-value">${item.p1 > 0 ? item.p1 + 'g' : '--'}</span></div>
-                            <div class="weight-box"><label>Peso Inicial 2</label><span class="weight-value">${item.p2}g</span></div>
+                            <div class="weight-box"><label>Peso Inicial 1</label><span class="${clasePesoCampo(peso1EfectivoCampo(item, nroClamshell))}">${textoPesoCampo(peso1EfectivoCampo(item, nroClamshell))}</span></div>
+                            <div class="weight-box"><label>Peso Inicial 2</label><span class="${clasePesoCampo(item.p2)}">${textoPesoCampo(item.p2)}</span></div>
                             <div class="observation-box">
                                 <button type="button" onclick="abrirModalObservacion(event, ${item.id})" title="Editar observación">
                                     <span class="observation-text ${obs ? '' : 'is-empty'}">${obs || 'Sin observación registrada'}</span>
@@ -2553,14 +2652,37 @@ const META_SAVE_IDS = [
                     </div>
 
                     <div class="logistics-info">
-                        <div class="logistic-point"><i data-lucide="calendar-check-2"></i><div><p style="color: #94A3B8; font-size: 9px;">LLEGADA ACOPIO-CAMPO</p><b>${item.acopio}g</b></div></div>
-                        <div class="logistic-point"><i data-lucide="truck"></i><div><p style="color: #94A3B8; font-size: 9px;">DESPACHO ACOPIO-CAMPO</p><b>${item.despacho}g</b></div></div>
+                        <div class="logistic-point"><i data-lucide="calendar-check-2"></i><div><p style="color: #94A3B8; font-size: 9px;">LLEGADA ACOPIO-CAMPO</p><b class="${pesoVacio(item.acopio) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.acopio)}</b></div></div>
+                        <div class="logistic-point"><i data-lucide="truck"></i><div><p style="color: #94A3B8; font-size: 9px;">DESPACHO ACOPIO-CAMPO</p><b class="${pesoVacio(item.despacho) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.despacho)}</b></div></div>
                     </div>
                 `;
                 container.appendChild(card);
             });
             actualizarIconos();
             actualizarBloqueoControlesPorPeso1();
+        }
+
+        function esClamshellSinDatos_(item) {
+            if (!item) return false;
+            const n = numeroClamshellPorEnsayo(item);
+            if (!pesoVacio(peso1EfectivoCampo(item, n))) return false;
+            if (!pesoVacio(item.p2)) return false;
+            if (!pesoVacio(item.acopio)) return false;
+            if (!pesoVacio(item.despacho)) return false;
+            return !String(item.observacion || '').trim();
+        }
+
+        function primerClamshellVacioEnsayo_(ensayo) {
+            const lista = listaClamshellsPorEnsayo_(ensayo);
+            return lista.find((it) => esClamshellSinDatos_(it)) || null;
+        }
+
+        function aplicarDatosModalAClamshell_(target, jarraSel, p1Val, p2Val, acopioVal, despachoVal) {
+            target.jarra = jarraSel;
+            target.p1 = p1Val;
+            target.p2 = Number.isFinite(p2Val) ? p2Val : 0;
+            target.acopio = Number.isFinite(acopioVal) ? acopioVal : 0;
+            target.despacho = Number.isFinite(despachoVal) ? despachoVal : 0;
         }
 
         function asegurarClamshellInicialVacio(ensayo) {
@@ -2606,6 +2728,12 @@ const META_SAVE_IDS = [
             if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
             const item = data.find((entry) => Number(entry.id) === Number(itemId));
             if (!item) return;
+            const lista = listaClamshellsPorEnsayo_(item.ensayo || 'Ensayo 1');
+            if (lista.length <= 1) {
+                mostrarToast('info', 'No se puede eliminar', 'Debe quedar al menos un clamshell en la muestra.');
+                return;
+            }
+            if (!esUltimoClamshellPorEnsayo_(item)) return;
             const nroClamshell = numeroClamshellPorEnsayo(item);
             const mensaje = `Se eliminará Clamshell #${nroClamshell} (Jarra ${item.jarra}) del ${item.ensayo || 'Ensayo 1'}. ¿Deseas continuar?`;
             let confirmado = false;
@@ -2901,7 +3029,7 @@ const META_SAVE_IDS = [
 
         function etiquetaTipoLlenadoJarras(tipo) {
             if (tipo === 'C') return 'Cosecha';
-            if (tipo === 'T') return 'Trasvasado';
+            if (tipo === 'T') return 'Traslado';
             return '—';
         }
 
@@ -3135,7 +3263,7 @@ const META_SAVE_IDS = [
             return unicos.map((v) => {
                 const sel = v === valorActualTxt ? ' selected' : '';
                 const esRango = !!parseRangoJarraLlenado(v);
-                const label = esRango ? `Trasvasado ${v}` : `Jarra ${v}`;
+                const label = esRango ? `Traslado ${v}` : `Jarra ${v}`;
                 return `<option value="${v}"${sel}>${label}</option>`;
             }).join('');
         }
@@ -3157,7 +3285,7 @@ const META_SAVE_IDS = [
             const per = tiposPermitidosSegunJarra(ensayo, fila, indice);
             const v = fila.tipo;
             if (v === 'C') return '<option value="C" selected>Cosecha</option>';
-            if (v === 'T') return '<option value="T" selected>Trasvasado</option>';
+            if (v === 'T') return '<option value="T" selected>Traslado</option>';
             const opts = [];
             const add = (val, lab) => {
                 const sel = v === val ? ' selected' : '';
@@ -3165,7 +3293,7 @@ const META_SAVE_IDS = [
             };
             add('', 'Elegir…');
             if (per.includes('C')) add('C', 'Cosecha');
-            if (per.includes('T')) add('T', 'Trasvasado');
+            if (per.includes('T')) add('T', 'Traslado');
             if (v && !per.includes(v)) add(v, `${v} · revisar jarra`);
             return opts.join('');
         }
@@ -3188,8 +3316,8 @@ const META_SAVE_IDS = [
                 const c = filaCosechaParaJarra(ensayo, n, indice);
                 if (!c) return `Falta cosecha registrada para jarra ${n}.`;
                 const tc = minutosDesdeHora(c.termino);
-                if (tc === null) return `Completa término de cosecha (jarra ${n}) antes del trasvasado.`;
-                if (tin < tc) return `Trasvasado: inicio debe ser ≥ término de cosecha (${c.termino}) en jarra ${n}.`;
+                if (tc === null) return `Completa término de cosecha (jarra ${n}) antes del traslado.`;
+                if (tin < tc) return `Traslado: inicio debe ser ≥ término de cosecha (${c.termino}) en jarra ${n}.`;
             }
             return '';
         }
@@ -3256,7 +3384,7 @@ const META_SAVE_IDS = [
                             </div>
                             <div class="lj-fila-right">
                                 <div class="lj-fila-top">
-                                    <div class="lj-fila-hint">Trasvasado u otra observación</div>
+                                    <div class="lj-fila-hint">Traslado u otra observación</div>
                                     <div class="lj-fila-actions">
                                         ${pos === 0 ? '' : `
                                         <button type="button" class="lj-mini-btn lj-mini-btn--danger lj-mini-btn--delete" title="Eliminar fila" aria-label="Eliminar fila" onclick="event.stopPropagation(); eliminarFilaLlenadoJarras('${ensayo}', ${fila.id})">
@@ -3681,10 +3809,10 @@ const META_SAVE_IDS = [
                 ensayoNumero, // ENSAYO_NUMERO
                 String(idx + 1), // N_CLAMSHELL
                 strOrEmpty(item?.jarra), // N_JARRA
-                strOrEmpty(item?.p1), // PESO_1
-                strOrEmpty(item?.p2), // PESO_2
-                strOrEmpty(item?.acopio), // LLEGADA_ACOPIO
-                strOrEmpty(item?.despacho), // DESPACHO_ACOPIO
+                pesoStrOrEmpty(peso1EfectivoCampo(item, idx + 1)), // PESO_1
+                pesoStrOrEmpty(item?.p2), // PESO_2
+                pesoStrOrEmpty(item?.acopio), // LLEGADA_ACOPIO
+                pesoStrOrEmpty(item?.despacho), // DESPACHO_ACOPIO
                 // 21..28 (temperatura)
                 strOrEmpty(temp.inicioAmbiente), // TEMP_MUE_INICIO_AMB
                 strOrEmpty(temp.inicioPulpa), // TEMP_MUE_INICIO_PUL
@@ -3706,15 +3834,15 @@ const META_SAVE_IDS = [
                 strOrEmpty(hum.llegada), // HUMEDAD_LLEGADA
                 strOrEmpty(hum.despacho), // HUMEDAD_DESPACHO
                 // 38..41 (presion ambiente)
-                strOrEmpty(temp.presionAmbienteInicio), // PRESION_AMB_INICIO
-                strOrEmpty(temp.presionAmbienteTermino), // PRESION_AMB_TERMINO
-                strOrEmpty(temp.presionAmbienteLlegada), // PRESION_AMB_LLEGADA
-                strOrEmpty(temp.presionAmbienteDespacho), // PRESION_AMB_DESPACHO
+                presionStrParaEnvio(temp.presionAmbienteInicio), // PRESION_AMB_INICIO
+                presionStrParaEnvio(temp.presionAmbienteTermino), // PRESION_AMB_TERMINO
+                presionStrParaEnvio(temp.presionAmbienteLlegada), // PRESION_AMB_LLEGADA
+                presionStrParaEnvio(temp.presionAmbienteDespacho), // PRESION_AMB_DESPACHO
                 // 42..45 (presion fruta)
-                strOrEmpty(temp.presionFrutaInicio), // PRESION_FRUTA_INICIO
-                strOrEmpty(temp.presionFrutaTermino), // PRESION_FRUTA_TERMINO
-                strOrEmpty(temp.presionFrutaLlegada), // PRESION_FRUTA_LLEGADA
-                strOrEmpty(temp.presionFrutaDespacho), // PRESION_FRUTA_DESPACHO
+                presionStrParaEnvio(temp.presionFrutaInicio), // PRESION_FRUTA_INICIO
+                presionStrParaEnvio(temp.presionFrutaTermino), // PRESION_FRUTA_TERMINO
+                presionStrParaEnvio(temp.presionFrutaLlegada), // PRESION_FRUTA_LLEGADA
+                presionStrParaEnvio(temp.presionFrutaDespacho), // PRESION_FRUTA_DESPACHO
                 strOrEmpty(item?.observacion), // OBSERVACION
                 strOrEmpty(meta['visual-observacion-formato'] || document.getElementById('visual-observacion-formato')?.value), // OBSERVACION_FORMATO
                 strOrEmpty(horaRegistro) // HORA_REGISTRO
@@ -3766,6 +3894,7 @@ const META_SAVE_IDS = [
         // Avance etapa 1: filas para POST (54 cols con tiempos Hoja 2 desde panel jarras, no desde métricas de fila).
         function construirRowsRegistroBasePorEnsayo(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
+            sincronizarTiempoPorJarra(ensayo);
             const items = data
                 .filter((it) => String(it.ensayo || 'Ensayo 1') === String(ensayo))
                 .slice()
@@ -4633,7 +4762,7 @@ const META_SAVE_IDS = [
         }
 
         function obtenerPrimeraMuestraLibreNombre() {
-            for (let m = 1; m <= 5; m++) {
+            for (let m = 1; m <= MAX_MUESTRAS_CAMPO; m++) {
                 if (!ensayoNumeroRegistradoHoy(String(m))) {
                     return ensayoNombreDesdeNumero(m) || `Ensayo ${m}`;
                 }
@@ -4794,26 +4923,40 @@ const META_SAVE_IDS = [
             const mx = Number(r.ultimo_num_muestra_en_hoja ?? r.max_en_hoja);
             const maxCol = Number(r.max_digitos_columna);
             const proxJson = normalizarNumMuestraInput(r.proximo_num_muestra);
+            const prefijoSrv = String(r.num_muestra_prefijo ?? '').trim().toUpperCase();
+            if (ultimoCelda) {
+                const pCelda = prefijoNumMuestraDesdeTexto(ultimoCelda);
+                if (pCelda) numMuestraPrefijoCache = pCelda;
+            } else if (prefijoSrv) {
+                numMuestraPrefijoCache = prefijoSrv;
+            } else if (Number.isFinite(mx) && mx === 0) {
+                numMuestraPrefijoCache = prefijoDefaultNumMuestraCampo();
+            } else if (proxJson) {
+                actualizarPrefijoNumMuestraCacheDesdeTexto(proxJson);
+            }
 
             logNumMuestra('SERVIDOR GET planilla', {
                 ultimo_num_muestra_celda: ultimoCelda || '(vacío)',
                 fila_excel: ultimoFila || '(sin fila)',
                 ultimo_num_muestra_en_hoja: Number.isFinite(mx) ? mx : '(inválido)',
                 max_digitos_toda_la_columna: Number.isFinite(maxCol) ? maxCol : '(no enviado)',
+                num_muestra_prefijo: numMuestraPrefijoCache || '(vacío)',
                 proximo_num_muestra_json: r.proximo_num_muestra ?? '(vacío)'
             });
 
             if (Number.isFinite(mx) && mx >= 0) {
                 numMuestraMaxServidorCache = Math.floor(mx);
-                proximoNumMuestraServidorCache = formatearNumMuestraAutoDesdeN(numMuestraMaxServidorCache + 1);
+                proximoNumMuestraServidorCache = proxJson
+                    || formatearNumMuestraAutoDesdeN(numMuestraMaxServidorCache + 1);
                 logNumMuestra('APLICAR ultimo planilla + 1', {
                     ultimo_planilla: numMuestraMaxServidorCache,
                     proximo_en_pantalla: proximoNumMuestraServidorCache
                 });
             } else {
                 const prox = proxJson;
-                if (prox && /^\d+$/.test(prox)) {
+                if (prox) {
                     proximoNumMuestraServidorCache = prox;
+                    actualizarPrefijoNumMuestraCacheDesdeTexto(prox);
                     const p = parseNumMuestraSoloDigitos(prox);
                     if (p > 0) numMuestraMaxServidorCache = p - 1;
                     logNumMuestra('FALLBACK sin ultimo en hoja', { proximo_desde_json: prox });
@@ -4849,7 +4992,7 @@ const META_SAVE_IDS = [
         /** Muestras con meta 8/8 o registradas (solo esas cuentan para huecos y N° muestra). */
         function obtenerNumerosMuestraEnContexto() {
             const nums = [];
-            for (let i = 1; i <= 5; i++) {
+            for (let i = 1; i <= MAX_MUESTRAS_CAMPO; i++) {
                 if (muestraEstaEnSecuenciaLlenado(i)) nums.push(i);
             }
             return nums;
@@ -4868,7 +5011,7 @@ const META_SAVE_IDS = [
         function detectarHuecosEnMuestrasListasParaEnvio(ensayosCompletos) {
             const numeros = ordenarEnsayosPorNumeroMuestra(ensayosCompletos || [])
                 .map((e) => Number(numeroDesdeEnsayoTexto(e)) || 0)
-                .filter((n) => n >= 1 && n <= 5);
+                .filter((n) => n >= 1 && n <= MAX_MUESTRAS_CAMPO);
             const huecos = [];
             if (numeros.length < 2) return { numeros, huecos };
             for (let i = numeros[0]; i <= numeros[numeros.length - 1]; i++) {
@@ -5128,33 +5271,78 @@ const META_SAVE_IDS = [
             }
         }
 
+        /** Secuencia numérica: últimos 4 caracteres (ej. C260001 → 1). */
         function parseNumMuestraSoloDigitos(v) {
-            const s = String(v ?? '').trim();
-            if (!/^\d+$/.test(s)) return 0;
-            const n = parseInt(s, 10);
+            const s = String(v ?? '').trim().toUpperCase();
+            if (!s) return 0;
+            const tail = s.length <= 4 ? s : s.slice(-4);
+            if (!/^\d{1,4}$/.test(tail)) return 0;
+            const n = parseInt(tail, 10);
             return Number.isFinite(n) && n >= 0 ? n : 0;
         }
 
-        function formatearNumMuestraAutoDesdeN(n) {
+        /** Prefijo antes de los 4 dígitos finales (ej. C260001 → C26). */
+        function prefijoNumMuestraDesdeTexto(v) {
+            const s = String(v ?? '').trim().toUpperCase();
+            if (!s || s.length <= 4) return '';
+            return s.slice(0, -4);
+        }
+
+        /** Planilla vacía: C + año (2 dígitos), ej. 2026 → C26 → primer N° C260001. */
+        function prefijoDefaultNumMuestraCampo() {
+            const y = new Date().getFullYear() % 100;
+            return `C${String(y).padStart(2, '0')}`;
+        }
+
+        function actualizarPrefijoNumMuestraCacheDesdeTexto(v) {
+            const p = prefijoNumMuestraDesdeTexto(v);
+            if (p) numMuestraPrefijoCache = p;
+        }
+
+        function inferirPrefijoNumMuestraDesdeContexto() {
+            if (numMuestraPrefijoCache) return numMuestraPrefijoCache;
+            const celda = String(ultimaRespuestaEstadoServidor?.ultimo_num_muestra_celda ?? '').trim();
+            if (celda) return prefijoNumMuestraDesdeTexto(celda);
+            for (const meta of Object.values(metaPorEnsayo || {})) {
+                const p = prefijoNumMuestraDesdeTexto(meta?.['visual-num-muestra']);
+                if (p) return p;
+            }
+            for (const fij of Object.values(numerosMuestraFijadosSesion || {})) {
+                const p = prefijoNumMuestraDesdeTexto(fij);
+                if (p) return p;
+            }
+            if ((numMuestraMaxServidorCache || 0) === 0 && leerMaxNumericoNumMuestraTodoContexto() === 0) {
+                return prefijoDefaultNumMuestraCampo();
+            }
+            return '';
+        }
+
+        function formatearNumMuestraAutoDesdeN(n, prefijoOpt) {
             if (!Number.isFinite(n) || n < 1) return '';
+            const prefijo = prefijoOpt != null ? String(prefijoOpt) : inferirPrefijoNumMuestraDesdeContexto();
             const s = String(Math.floor(n));
-            return s.length < 4 ? s.padStart(4, '0') : s;
+            const seq = s.length < 4 ? s.padStart(4, '0') : s;
+            return prefijo + seq;
         }
 
         function leerMaxNumericoNumMuestraTodoContexto() {
             let maxN = numMuestraMaxServidorCache;
+            const subir = (raw) => {
+                if (!raw) return;
+                actualizarPrefijoNumMuestraCacheDesdeTexto(raw);
+                const k = parseNumMuestraSoloDigitos(raw);
+                if (k > maxN) maxN = k;
+            };
             Object.entries(metaPorEnsayo).forEach(([ensayoKey, meta]) => {
                 if (!metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, null)) return;
-                const k = parseNumMuestraSoloDigitos(meta?.['visual-num-muestra']);
-                if (k > maxN) maxN = k;
+                subir(meta?.['visual-num-muestra']);
             });
             try {
                 const queue = cargarColaSync();
                 queue.forEach((reg) => {
                     const st = String(reg?.estado || '');
                     if (st !== 'pendiente' && st !== 'bloqueado') return;
-                    const k = parseNumMuestraSoloDigitos(reg?.num_muestra);
-                    if (k > maxN) maxN = k;
+                    subir(reg?.num_muestra);
                 });
             } catch (_) { /* ignore */ }
             try {
@@ -5163,8 +5351,7 @@ const META_SAVE_IDS = [
                     const det = mapUsados[clave];
                     const st = String(det?.estado || '').toLowerCase();
                     if (st === 'cancelado') return;
-                    const k = parseNumMuestraSoloDigitos(clave);
-                    if (k > maxN) maxN = k;
+                    subir(clave);
                 });
             } catch (_) { /* ignore */ }
             return maxN;
@@ -5197,9 +5384,10 @@ const META_SAVE_IDS = [
         function necesitaReasignarNumMuestra(ensayo, mn) {
             if (ensayoEstaRegistradoHoy(ensayo)) return false;
             if (numerosMuestraFijadosSesion[String(ensayo || '').trim()]) return false;
-            const esperado = parseNumMuestraSoloDigitos(calcularNumMuestraDesdeServidorParaEnsayo(ensayo));
-            if (!mn) return true;
-            return mn !== esperado;
+            const esperadoSeq = parseNumMuestraSoloDigitos(calcularNumMuestraDesdeServidorParaEnsayo(ensayo));
+            const actualSeq = parseNumMuestraSoloDigitos(mn);
+            if (!actualSeq) return true;
+            return actualSeq !== esperadoSeq;
         }
 
         async function refrescarMaxNumMuestraDesdeServidor() {
@@ -6172,77 +6360,125 @@ const META_SAVE_IDS = [
         }
 
         function abrirModal(title, item = null) {
+            const ahora = Date.now();
+            if (!item && ahora - abrirModalTarjetaTs_ < 450) return;
+            abrirModalTarjetaTs_ = ahora;
+
             establecerMenuFlotanteAbierto(false);
-            const esNuevo = !item;
+            const overlay = document.getElementById('modal-overlay');
+            if (!item && overlay?.style.display === 'flex') return;
+
+            const ensayoAct = obtenerEnsayoActivo();
+            let itemTrabajo = item;
+            if (!itemTrabajo) {
+                const vacio = primerClamshellVacioEnsayo_(ensayoAct);
+                if (vacio) itemTrabajo = vacio;
+            }
+            const rellenandoVacio = !item && !!itemTrabajo;
+
+            const esNuevoReal = !itemTrabajo;
             const titleRow = document.getElementById('modal-title-row');
-            if (titleRow) titleRow.classList.toggle('modal-title-row--edit', !esNuevo);
-            if (esNuevo) {
+            if (titleRow) titleRow.classList.toggle('modal-title-row--edit', !esNuevoReal && !rellenandoVacio);
+            if (esNuevoReal || rellenandoVacio) {
                 document.getElementById('modal-title').innerText = 'Nuevo Registro:';
             } else {
-                const n = numeroClamshellPorEnsayo(item);
+                const n = numeroClamshellPorEnsayo(itemTrabajo);
                 document.getElementById('modal-title').innerText = `Editar Clamshell #${n}:`;
             }
-            editingCardId = item ? item.id : null;
-            poblarSelectJarraModal(obtenerEnsayoActivo(), item ? item.jarra : null);
-            document.getElementById('visual-p1').value = item ? item.p1 : '';
-            document.getElementById('visual-p2').value = item ? item.p2 : '';
-            document.getElementById('visual-acopio').value = item ? item.acopio : '';
-            document.getElementById('visual-despacho').value = item ? item.despacho : '';
-            document.getElementById('modal-overlay').style.display = 'flex';
+            editingCardId = itemTrabajo ? itemTrabajo.id : null;
+            poblarSelectJarraModal(ensayoAct, itemTrabajo ? itemTrabajo.jarra : null);
+            const nroModal = nroClamshellModalActual_(itemTrabajo);
+            const esAutoP1 = clamshellUsaPeso1DesdePeso2(nroModal);
+            document.getElementById('visual-p2').value = itemTrabajo ? valorPesoInput(itemTrabajo.p2) : '';
+            document.getElementById('visual-p1').value = itemTrabajo
+                ? (esAutoP1 ? valorPesoInput(itemTrabajo.p2) : valorPesoInput(itemTrabajo.p1))
+                : '';
+            document.getElementById('visual-acopio').value = itemTrabajo ? valorPesoInput(itemTrabajo.acopio) : '';
+            document.getElementById('visual-despacho').value = itemTrabajo ? valorPesoInput(itemTrabajo.despacho) : '';
+            configurarModalPesosClamshell_(nroModal);
+            overlay.style.display = 'flex';
         }
 
         function guardarModalTarjeta() {
-            const p1Val = Number(document.getElementById('visual-p1').value || 0);
-            const p2Val = Number(document.getElementById('visual-p2').value || 0);
-            const acopioVal = Number(document.getElementById('visual-acopio').value || 0);
-            const despachoVal = Number(document.getElementById('visual-despacho').value || 0);
-            const jarraSel = Number(document.getElementById('visual-m-jarra')?.value || 0);
-            if (!Number.isFinite(jarraSel) || jarraSel < 1) {
-                mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido para continuar.');
-                return;
-            }
-            if (!(Number.isFinite(p1Val) && p1Val > 0)) {
-                mostrarAlertaRegla('Falta Peso 1', 'Debes registrar al menos Peso 1 para guardar.');
-                return;
-            }
+            if (guardandoModalTarjeta_) return;
+            guardandoModalTarjeta_ = true;
+            const btnGuardar = document.getElementById('btn-save-tarjeta');
+            if (btnGuardar) btnGuardar.disabled = true;
 
-            if (editingCardId === null) {
-                const nuevoId = (data.length ? Math.max(...data.map((d) => Number(d.id) || 0)) : 0) + 1;
-                data.push({
-                    id: nuevoId,
-                    jarra: jarraSel,
-                    ensayo: obtenerEnsayoActivo(),
-                    p1: p1Val,
-                    p2: Number.isFinite(p2Val) ? p2Val : 0,
-                    acopio: Number.isFinite(acopioVal) ? acopioVal : 0,
-                    despacho: Number.isFinite(despachoVal) ? despachoVal : 0,
-                    observacion: '',
-                    placaVehiculo: '',
-                    guiaRemision: '',
-                    metric: metricaVacia()
-                });
+            try {
+                let itemEdit = editingCardId != null
+                    ? data.find((entry) => entry.id === editingCardId)
+                    : null;
+                if (!itemEdit) {
+                    itemEdit = primerClamshellVacioEnsayo_(obtenerEnsayoActivo());
+                    if (itemEdit) editingCardId = itemEdit.id;
+                }
+
+                const nroModal = nroClamshellModalActual_(itemEdit);
+                const esAutoP1 = clamshellUsaPeso1DesdePeso2(nroModal);
+                let p1Val = Number(document.getElementById('visual-p1').value || 0);
+                const p2Val = Number(document.getElementById('visual-p2').value || 0);
+                const acopioVal = Number(document.getElementById('visual-acopio').value || 0);
+                const despachoVal = Number(document.getElementById('visual-despacho').value || 0);
+                const jarraSel = Number(document.getElementById('visual-m-jarra')?.value || 0);
+                if (!Number.isFinite(jarraSel) || jarraSel < 1) {
+                    mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido para continuar.');
+                    return;
+                }
+                if (esAutoP1) {
+                    if (!(Number.isFinite(p2Val) && p2Val > 0)) {
+                        mostrarAlertaRegla('Falta Peso 2', 'Debes registrar Peso 2 para guardar.');
+                        return;
+                    }
+                    p1Val = p2Val;
+                } else if (!(Number.isFinite(p1Val) && p1Val > 0)) {
+                    mostrarAlertaRegla('Falta Peso 1', 'Debes registrar al menos Peso 1 para guardar.');
+                    return;
+                }
+
+                if (editingCardId === null) {
+                    const nuevoId = (data.length ? Math.max(...data.map((d) => Number(d.id) || 0)) : 0) + 1;
+                    data.push({
+                        id: nuevoId,
+                        jarra: jarraSel,
+                        ensayo: obtenerEnsayoActivo(),
+                        p1: p1Val,
+                        p2: Number.isFinite(p2Val) ? p2Val : 0,
+                        acopio: Number.isFinite(acopioVal) ? acopioVal : 0,
+                        despacho: Number.isFinite(despachoVal) ? despachoVal : 0,
+                        observacion: '',
+                        placaVehiculo: '',
+                        guiaRemision: '',
+                        metric: metricaVacia()
+                    });
+                    cerrarModal();
+                    renderizarTarjetas();
+                    programarGuardadoDraftCompleto();
+                    marcarBotonGuardado('btn-save-tarjeta');
+                    mostrarToast('success', 'Guardado', 'Registro del clamshell guardado.');
+                    return;
+                }
+
+                const item = data.find((entry) => entry.id === editingCardId);
+                if (!item) {
+                    cerrarModal();
+                    return;
+                }
+                const eraVacio = esClamshellSinDatos_(item);
+                aplicarDatosModalAClamshell_(item, jarraSel, p1Val, p2Val, acopioVal, despachoVal);
                 cerrarModal();
                 renderizarTarjetas();
                 programarGuardadoDraftCompleto();
                 marcarBotonGuardado('btn-save-tarjeta');
-                mostrarToast('success', 'Guardado', 'Registro del clamshell guardado.');
-                return;
+                mostrarToast('success', 'Guardado', eraVacio
+                    ? 'Registro del clamshell guardado.'
+                    : 'Registro del clamshell actualizado.');
+            } finally {
+                guardandoModalTarjeta_ = false;
+                if (btnGuardar && !btnGuardar.classList.contains('is-loading')) {
+                    btnGuardar.disabled = false;
+                }
             }
-            const item = data.find((entry) => entry.id === editingCardId);
-            if (!item) {
-                cerrarModal();
-                return;
-            }
-            item.jarra = jarraSel;
-            item.p1 = p1Val;
-            item.p2 = Number.isFinite(p2Val) ? p2Val : 0;
-            item.acopio = Number.isFinite(acopioVal) ? acopioVal : 0;
-            item.despacho = Number.isFinite(despachoVal) ? despachoVal : 0;
-            cerrarModal();
-            renderizarTarjetas();
-            programarGuardadoDraftCompleto();
-            marcarBotonGuardado('btn-save-tarjeta');
-            mostrarToast('success', 'Guardado', 'Registro del clamshell actualizado.');
         }
 
         function abrirModalObservacion(event, itemId) {
@@ -6275,6 +6511,11 @@ const META_SAVE_IDS = [
         }
 
         function initCerrarModalesCampo() {
+            const inpP2 = document.getElementById('visual-p2');
+            if (inpP2 && !inpP2.dataset.peso1AutoBound) {
+                inpP2.dataset.peso1AutoBound = '1';
+                inpP2.addEventListener('input', sincronizarPeso1DesdePeso2EnModal_);
+            }
             bindCerrarModalAlClickFueraCampo(document.getElementById('modal-overlay'), cerrarModal);
             bindCerrarModalAlClickFueraCampo(document.getElementById('metric-modal-overlay'), cerrarModalMetrica);
             bindCerrarModalAlClickFueraCampo(document.getElementById('observation-modal-overlay'), cerrarModalObservacion);
@@ -6313,7 +6554,7 @@ const META_SAVE_IDS = [
                         <div class="essential-block">
                             <h4>Clamshell #${nroClamshell} · Jarra ${item.jarra}</h4>
                             <div class="essential-summary-grid">
-                                <div class="essential-card"><b>Peso despacho acopio-campo</b><span>${item.despacho ?? '--'}g</span></div>
+                                <div class="essential-card"><b>Peso despacho acopio-campo</b><span class="${pesoVacio(item.despacho) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.despacho)}</span></div>
                                 <div class="essential-card"><b>Hora despacho acopio-campo</b><span>${horaDesp}</span></div>
                             </div>
                             <div class="essential-summary-grid">
@@ -6740,7 +6981,7 @@ const META_SAVE_IDS = [
                 title.textContent = 'Tiempos de la muestra (hora) · Clamshell #' + nroClamshell;
                 body.innerHTML = `
                     <div class="metric-grid-2">
-                        <div class="form-group"><label>Inicio de cosecha</label><input type="time" id="visual-tiempo-1-iniciocosecha-1" data-metric="inicioCosecha" value="${metric.tiempo.inicioCosecha || ''}" disabled title="Dato automático por jarra"></div>
+                        <div class="form-group"><label>Inicio de cosecha</label><input type="time" id="visual-tiempo-1-iniciocosecha-1" data-metric="inicioCosecha" value="${metric.tiempo.inicioCosecha || ''}" disabled title="Primer inicio de cosecha de la muestra (igual en todos los clamshells)"></div>
                         <div class="form-group"><label>Inicio pérdida de peso</label><input type="time" id="visual-tiempo-1-inicioperdida-2" data-metric="inicioPerdida" value="${metric.tiempo.inicioPerdida || ''}" disabled title="Dato automático por trasvasado"></div>
                         <div class="form-group"><label>Término de cosecha</label><input type="time" id="visual-tiempo-1-terminocosecha-3" data-metric="terminoCosecha" value="${metric.tiempo.terminoCosecha || ''}" disabled title="FINAL del último trasvasado del ensayo (hora más tardía en panel, todas las filas T)"></div>
                         <div class="form-group"><label>Llegada acopio-campo</label><input type="time" id="visual-tiempo-1-terminocosecha-4" data-metric="llegadaAcopio" value="${metric.tiempo.llegadaAcopio || ''}"></div>
@@ -6900,6 +7141,11 @@ const META_SAVE_IDS = [
         }
 
         function cerrarModal() {
+            const inpP1 = document.getElementById('visual-p1');
+            if (inpP1) {
+                inpP1.disabled = false;
+                inpP1.removeAttribute('title');
+            }
             document.getElementById('modal-overlay').style.display = 'none';
         }
 
@@ -7186,8 +7432,8 @@ const META_SAVE_IDS = [
             return {
                 nClam,
                 jarra: item ? strOrEmpty(item.jarra) : '',
-                p1: item ? strOrEmpty(item.p1) : '',
-                p2: item ? strOrEmpty(item.p2) : '',
+                p1: item ? pesoStrOrEmpty(peso1EfectivoCampo(item, nClam)) : '',
+                p2: item ? pesoStrOrEmpty(item.p2) : '',
                 p3: '', p4: '', p5: '',
                 llegada: item ? strOrEmpty(item.acopio) : '',
                 despacho: item ? strOrEmpty(item.despacho) : '',
@@ -7201,59 +7447,85 @@ const META_SAVE_IDS = [
             };
         }
 
-        window.obtenerDatosPdfCampo = function obtenerDatosPdfCampo() {
-            snapshotMetaEnsayoActual();
-            const ensayo = obtenerEnsayoActivo();
-            recalcularPresionesParaEnsayo(ensayo);
-            const meta = { ...(metaPorEnsayo[ensayo] || leerMetaFormulario()) };
+        function guiaAcopioMetaEnsayo_(ensayo) {
+            const clave = String(ensayo || '').trim();
+            const meta = metaPorEnsayo[clave] || {};
+            const em = ensayoMeta[clave] || {};
+            const activo = String(obtenerEnsayoActivo() || '').trim();
+            if (clave === activo) {
+                return strOrEmpty(
+                    document.getElementById('visual-guia-acopio')?.value
+                    || meta['visual-guia-acopio']
+                    || em.guiaRemision
+                );
+            }
+            return strOrEmpty(meta['visual-guia-acopio'] || em.guiaRemision);
+        }
+
+        function placaAcopioMetaEnsayo_(ensayo) {
+            const clave = String(ensayo || '').trim();
+            const meta = metaPorEnsayo[clave] || {};
+            const em = ensayoMeta[clave] || {};
+            const activo = String(obtenerEnsayoActivo() || '').trim();
+            if (clave === activo) {
+                return strOrEmpty(
+                    document.getElementById('visual-placa-vehiculo')?.value
+                    || meta['visual-placa-vehiculo']
+                    || em.placaVehiculo
+                ).toUpperCase();
+            }
+            return strOrEmpty(meta['visual-placa-vehiculo'] || em.placaVehiculo).toUpperCase();
+        }
+
+        /** PDF Campo: guía + placa de logística acopio-campo (último paso antes de enviar). */
+        function ensayoLogisticaAcopioCompletaParaPdf_(ensayo) {
+            return !!guiaAcopioMetaEnsayo_(ensayo) && !!placaAcopioMetaEnsayo_(ensayo);
+        }
+
+        function ensayosListosPdfCampo_() {
+            return ensayosCandidatosConDatosCampo()
+                .filter((ensayo) => ensayoLogisticaAcopioCompletaParaPdf_(ensayo));
+        }
+
+        function construirDatosPdfCampoEnsayo_(ensayo) {
+            const clave = String(ensayo || 'Ensayo 1');
+            sincronizarTiempoPorJarra(clave);
+            recalcularPresionesParaEnsayo(clave);
+            const meta = { ...(metaPorEnsayo[clave] || {}) };
             const items = data
-                .filter((it) => String(it.ensayo || 'Ensayo 1') === ensayo)
+                .filter((it) => String(it.ensayo || 'Ensayo 1') === clave)
                 .slice()
                 .sort((a, b) => Number(a.id) - Number(b.id));
             const lider = items[0];
             const ml = lider?.metric || metricaVacia();
             const tempL = ml.temperatura || {};
             const humL = ml.humedad || {};
-            const jarrasPdf = listaJarrasParaPdfLlenado(ensayo, items);
+            const jarrasPdf = listaJarrasParaPdfLlenado(clave, items);
             const maxRows = 12;
             const filas = [];
             const llenadoVacio = {
                 jarraLlenado: '', trasladoObs: '', jarraInicio: '', jarraTermino: '', jarraTiempo: ''
             };
             for (let r = 0; r < maxRows; r++) {
-                // Clamshells 1–8: una fila cada uno (sin repetir 1,1, 2,2…).
                 const base = r < MAX_CLAMSHELLS_PDF
                     ? filaPdfDesdeItem(items[r] || null, r + 1, r === 0)
                     : filaPdfVaciaLlenadoJarras();
-
-                // Llenado de jarras: cosecha/traslado alternado por jarra (independiente del n° clamshell).
                 const parIdxJarra = Math.floor(r / 2);
                 const esCosechaJarra = r % 2 === 0;
                 const nJarra = jarrasPdf[parIdxJarra];
                 const llenado = nJarra
                     ? celdasLlenadoJarraPdf(
-                        filaCosechaParaJarra(ensayo, nJarra, -1),
-                        filaTrasladoQueAplicaAJarra(ensayo, nJarra, -1),
+                        filaCosechaParaJarra(clave, nJarra, -1),
+                        filaTrasladoQueAplicaAJarra(clave, nJarra, -1),
                         esCosechaJarra,
                         nJarra
                     )
                     : llenadoVacio;
-
                 filas.push({ ...base, ...llenado });
             }
             const obsPartes = items.map((it) => strOrEmpty(it.observacion)).filter(Boolean);
-            const guiaAcopio = strOrEmpty(
-                meta['visual-guia-acopio']
-                || ensayoMeta[ensayo]?.guiaRemision
-                || document.getElementById('visual-guia-acopio')?.value
-            );
-            const placa = strOrEmpty(
-                meta['visual-placa-vehiculo']
-                || ensayoMeta[ensayo]?.placaVehiculo
-                || document.getElementById('visual-placa-vehiculo')?.value
-            ).toUpperCase();
             return {
-                ensayo,
+                ensayo: clave,
                 fecha: fechaDisplayDdMmYyyy(hoyIsoLocal()),
                 empresa: 'AGROVISION',
                 codigo: 'PE-F-QPH-306',
@@ -7265,13 +7537,13 @@ const META_SAVE_IDS = [
                     trazabilidad: trazabilidadTextoDesdeMeta(meta),
                     trazabilidadArchivo: trazabilidadBaseDesdeMeta(meta),
                     responsable: strOrEmpty(meta['visual-responsable']),
-                    guiaRemision: guiaAcopio,
-                    rotulo: strOrEmpty(meta['visual-rotulo'] || ensayo),
-                    placa,
+                    guiaRemision: guiaAcopioMetaEnsayo_(clave),
+                    rotulo: strOrEmpty(meta['visual-rotulo'] || clave),
+                    placa: placaAcopioMetaEnsayo_(clave),
                     variedad: strOrEmpty(meta['visual-meta-variedad'] || meta['meta-variedad']),
                     precosecha: strOrEmpty(meta['visual-guia-precosecha']),
                     horaInicio: strOrEmpty(meta['visual-hora']),
-                    numMuestra: strOrEmpty(leerNumMuestraDesdePantalla(ensayo))
+                    numMuestra: strOrEmpty(leerNumMuestraDesdePantalla(clave))
                 },
                 filas,
                 pagina2: {
@@ -7302,11 +7574,21 @@ const META_SAVE_IDS = [
                     observaciones: obsPartes.join(' · '),
                     observacionesLista: items.map((it) => strOrEmpty(it.observacion))
                 },
-                observacionesFormato: strOrEmpty(
-                    document.getElementById('visual-observacion-formato')?.value
-                    || meta['visual-observacion-formato']
-                ),
+                observacionesFormato: strOrEmpty(meta['visual-observacion-formato']),
                 horaPesado: ''
+            };
+        }
+
+        window.obtenerDatosPdfCampo = function obtenerDatosPdfCampo() {
+            snapshotMetaEnsayoActual();
+            const ensayos = ensayosListosPdfCampo_();
+            const muestras = ensayos.map((ensayo) => construirDatosPdfCampoEnsayo_(ensayo));
+            return {
+                fecha: fechaDisplayDdMmYyyy(hoyIsoLocal()),
+                empresa: 'AGROVISION',
+                codigo: 'PE-F-QPH-306',
+                version: '1',
+                muestras
             };
         };
 

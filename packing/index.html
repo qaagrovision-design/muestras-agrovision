@@ -177,23 +177,23 @@
             <div class="packing-pesos-grid" id="packing_pesos_modal_body">
                 <div class="form-group">
                     <label for="pk-inp-peso-recep">PESO RECEPCIÓN (g)</label>
-                    <input type="number" id="pk-inp-peso-recep" step="0.1" value="0" enterkeyhint="done" inputmode="decimal">
+                    <input type="number" id="pk-inp-peso-recep" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
                 </div>
                 <div class="form-group">
                     <label for="pk-inp-peso-ing-gas">PESO I-GASIF. (g)</label>
-                    <input type="number" id="pk-inp-peso-ing-gas" step="0.1" value="0" enterkeyhint="done" inputmode="decimal">
+                    <input type="number" id="pk-inp-peso-ing-gas" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
                 </div>
                 <div class="form-group">
                     <label for="pk-inp-peso-sal-gas">PESO S-GASIF. (g)</label>
-                    <input type="number" id="pk-inp-peso-sal-gas" step="0.1" value="0" enterkeyhint="done" inputmode="decimal">
+                    <input type="number" id="pk-inp-peso-sal-gas" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
                 </div>
                 <div class="form-group">
                     <label for="pk-inp-peso-ing-pre">PESO INGRESO PREFRÍO (g)</label>
-                    <input type="number" id="pk-inp-peso-ing-pre" step="0.1" value="0" enterkeyhint="done" inputmode="decimal">
+                    <input type="number" id="pk-inp-peso-ing-pre" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
                 </div>
                 <div class="form-group packing-peso-row-full">
                     <label for="pk-inp-peso-sal-pre">PESO SALIDA PREFRÍO (g)</label>
-                    <input type="number" id="pk-inp-peso-sal-pre" step="0.1" value="0" enterkeyhint="done" inputmode="decimal">
+                    <input type="number" id="pk-inp-peso-sal-pre" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
                 </div>
             </div>
             <div id="packing-pesos-alert" class="metric-inline-alert" style="display:none;"></div>
@@ -286,6 +286,9 @@
         <div class="modal-content">
             <h2 id="control_global_modal_title_packing" style="margin-bottom: 16px; color: var(--primary);">Control equitativo</h2>
             <div class="metric-modal-body" id="control_global_modal_body_packing"></div>
+            <p class="packing-control-hint" style="margin:14px 0 14px;font-size:9.5px;line-height:1.15;color:#c62828;font-weight:500;white-space:nowrap;text-align:center;">
+                Revisar: la presión V. ambiental siempre debe ser menor que presión V. fruta.
+            </p>
             <div class="metric-modal-foot">
                 <button class="btn-secondary" type="button" id="btn_cancel_control_global_packing">Cancelar</button>
                 <button class="btn-save" type="button" id="btn_save_control_global_packing">Guardar</button>

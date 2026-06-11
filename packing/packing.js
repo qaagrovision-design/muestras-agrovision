@@ -9,6 +9,10 @@
     const PACKING_CHIPS_COLLAPSED_KEY = 'packing-chips-collapsed-v1';
     const PACKING_DRAFT_STORAGE_KEY = 'tiempos-packing-draft-v1';
     const PACKING_PDF_FILAS = 21;
+    /** Filas 1–10 = muestra A; fila 11+ = muestra B en la misma hoja PDF. */
+    const PACKING_PDF_FILAS_POR_MUESTRA = 10;
+    const PACKING_PDF_INICIO_SEGUNDA_MUESTRA = 10;
+    const PACKING_PDF_FILAS_SEGUNDA_BLOQUE = 11;
     const MIN_LOADER_MS = 350;
 
     /** Plantilla JSON de demo: se aplica solo a la muestra activa en el selector. */
@@ -128,6 +132,10 @@
     };
     let packingCards = [];
     let packingCardSeq = 0;
+    let fabAgregarPackingTs_ = 0;
+    let fabAgregarPackingEnCurso_ = false;
+    let guardandoModalPesosPacking_ = false;
+    let abrirModalPesosPackingTs_ = 0;
     let packingActiveCardId = null;
     let packingObservationCardId = null;
     let packingMuestraAnterior = '';
@@ -136,6 +144,10 @@
     let packingOmitirAutoguardado = false;
     let packingDraftSaveTimer = null;
     let packingBadgeWasComplete = false;
+    /** Cuota en servidor por muestra (fecha::num|ensayo), actualizada al cargar detalle. */
+    const packingQuotaServidorCache_ = Object.create(null);
+    /** Meta Campo (guía, placa, traz…) por muestra para PDF multi-hoja. */
+    const packingDetalleMetaCache_ = Object.create(null);
 
     function pesosVaciosPacking() {
         return { recepcion: 0, ingresoGas: 0, salidaGas: 0, ingresoPre: 0, salidaPre: 0 };
@@ -435,9 +447,11 @@
 
     function actualizarBtnEnviarPacking() {
         if (!elBtnEnviarPacking) return;
+        const yaEnServidor = muestraPackingYaCompletaEnServidor_(packingQuota);
         const completa = muestraPackingCompletaEnPantalla_();
         const baseOk = muestraSeleccionada()
             && completa
+            && !yaEnServidor
             && !elCardsWrap?.classList.contains('is-disabled')
             && !envioPackingEnCurso;
         elBtnEnviarPacking.disabled = !baseOk;
@@ -455,9 +469,23 @@
         }
     }
 
+    function pesoDisplayVacio(g) {
+        return pesoNumero(g) <= 0;
+    }
+
     function textoPesoCard(g) {
+        if (pesoDisplayVacio(g)) return '00';
         const n = pesoNumero(g);
         return (Math.round(n * 10) / 10) + 'g';
+    }
+
+    function clasePesoCard(g, base) {
+        return (base || 'weight-value') + (pesoDisplayVacio(g) ? ' is-empty-peso' : '');
+    }
+
+    function valorPesoInputPacking(v) {
+        const n = pesoNumero(v);
+        return n > 0 ? String(n) : '';
     }
 
     function aplicarCuotaDesdeDetalle(d) {
@@ -529,6 +557,149 @@
         return 8;
     }
 
+    function snapshotQuotaDesdeDetallePacking_(d) {
+        if (!d || typeof d !== 'object') return null;
+        const totalCampo = Number(d.FILAS_TOTAL_CAMPO ?? d.numFilas ?? 0);
+        const packingHechas = Number(d.FILAS_PACKING_REGISTRADAS ?? 0);
+        let max = Number(d.MAX_CLAMSHELL ?? 0);
+        if (!max && d.N_CLAMSHELL != null && String(d.N_CLAMSHELL).trim() !== '') {
+            const parsed = parseInt(String(d.N_CLAMSHELL).trim(), 10);
+            if (!isNaN(parsed) && parsed > 0) max = parsed;
+        }
+        const filasTotalCampo = Number.isFinite(totalCampo) && totalCampo >= 0 ? totalCampo : 0;
+        if (filasTotalCampo > 0 && (max <= 0 || max < filasTotalCampo)) max = filasTotalCampo;
+        return {
+            filasTotalCampo,
+            filasPackingRegistradas: Number.isFinite(packingHechas) && packingHechas >= 0 ? packingHechas : 0,
+            maxClamshell: max
+        };
+    }
+
+    function limpiarCacheQuotaServidorPacking_() {
+        Object.keys(packingQuotaServidorCache_).forEach((k) => {
+            delete packingQuotaServidorCache_[k];
+        });
+        Object.keys(packingDetalleMetaCache_).forEach((k) => {
+            delete packingDetalleMetaCache_[k];
+        });
+    }
+
+    /** Guía/placa: en planilla a veces viene 0 si Campo no la llenó. */
+    function textoMetaCampoPdfPacking_(v) {
+        const s = String(v ?? '').trim();
+        if (!s || s === '0') return '';
+        return s;
+    }
+
+    function registrarDetalleMetaPacking_(fechaIso, rawMuestra, detalle) {
+        const key = claveBorradorMuestraPacking(fechaIso, rawMuestra);
+        if (!key || !detalle || typeof detalle !== 'object') return;
+        packingDetalleMetaCache_[key] = {
+            TRAZ_ETAPA: detalle.TRAZ_ETAPA,
+            TRAZ_CAMPO: detalle.TRAZ_CAMPO,
+            TRAZ_LIBRE: detalle.TRAZ_LIBRE,
+            VARIEDAD: detalle.VARIEDAD,
+            PLACA_VEHICULO: detalle.PLACA_VEHICULO,
+            GUIA_REMISION: detalle.GUIA_REMISION,
+            ENSAYO_NOMBRE: detalle.ENSAYO_NOMBRE,
+            N_VIAJE: detalle.N_VIAJE ?? detalle.n_viaje,
+            RESPONSABLE: detalle.RESPONSABLE
+        };
+    }
+
+    function leerDetalleMetaPacking_(rawMuestra) {
+        const raw = String(rawMuestra || '').trim();
+        const key = claveBorradorMuestraPacking(elFecha?.value, raw);
+        if (key && packingDetalleMetaCache_[key]) return packingDetalleMetaCache_[key];
+        if (raw && raw === String(elMuestra?.value || '').trim() && lastDetallePacking) {
+            return lastDetallePacking;
+        }
+        return null;
+    }
+
+    function registrarQuotaServidorMuestraPacking_(fechaIso, rawMuestra, detalle) {
+        const key = claveBorradorMuestraPacking(fechaIso, rawMuestra);
+        const snap = snapshotQuotaDesdeDetallePacking_(detalle);
+        if (!key || !snap) return;
+        packingQuotaServidorCache_[key] = snap;
+        registrarDetalleMetaPacking_(fechaIso, rawMuestra, detalle);
+    }
+
+    function quotaServidorMuestraPacking_(rawMuestra) {
+        const fecha = normalizarFechaIso(elFecha?.value);
+        const raw = String(rawMuestra || '').trim();
+        if (!fecha || !raw) return null;
+        if (raw === String(elMuestra?.value || '').trim()) {
+            return { ...packingQuota };
+        }
+        const key = claveBorradorMuestraPacking(fecha, raw);
+        if (key && packingQuotaServidorCache_[key]) return packingQuotaServidorCache_[key];
+        const borrador = leerBorradorMuestraPacking_(fecha, raw);
+        if (borrador?.packingQuotaSnapshot) return borrador.packingQuotaSnapshot;
+        return null;
+    }
+
+    function muestraPackingYaCompletaEnServidor_(quotaSnapOrRaw) {
+        const snap = typeof quotaSnapOrRaw === 'string'
+            ? quotaServidorMuestraPacking_(quotaSnapOrRaw)
+            : (quotaSnapOrRaw && typeof quotaSnapOrRaw === 'object' ? quotaSnapOrRaw : packingQuota);
+        if (!snap) return false;
+        const max = cuotaMaximaDesdeSnapshotPacking(snap);
+        const enSrv = Number(snap.filasPackingRegistradas) || 0;
+        return max > 0 && enSrv >= max;
+    }
+
+    function muestraPackingPendienteDeEnvio_(estado, quotaSnap, rawMuestra) {
+        if (muestraPackingYaCompletaEnServidor_(quotaSnap) || muestraPackingYaCompletaEnServidor_(rawMuestra)) {
+            return false;
+        }
+        return muestraPackingEstadoCompleto_(estado, quotaSnap);
+    }
+
+    function muestrasEnUsoPackingDelDia_() {
+        return obtenerOpcionesMuestraPackingSelect_().filter((raw) => muestraPackingEnUso_(raw));
+    }
+
+    function necesitaRefrescarQuotaServidorPacking_(enUso) {
+        const fecha = normalizarFechaIso(elFecha?.value);
+        const rawActivo = String(elMuestra?.value || '').trim();
+        if (!fecha || !navigator.onLine || !API_URL) return false;
+        return (enUso || []).some((raw) => {
+            const r = String(raw || '').trim();
+            if (!r || r === rawActivo) return false;
+            const key = claveBorradorMuestraPacking(fecha, r);
+            return !key || !packingQuotaServidorCache_[key];
+        });
+    }
+
+    async function refrescarQuotaServidorMuestrasPacking_(candidatos, opts) {
+        const fecha = normalizarFechaIso(elFecha?.value);
+        if (!fecha || !navigator.onLine || !API_URL) return;
+        const rawActivo = String(elMuestra?.value || '').trim();
+        const soloSinCache = !opts || opts.soloSinCache !== false;
+        const pendientes = [];
+        (candidatos || []).forEach((raw) => {
+            const r = String(raw || '').trim();
+            if (!r || r === rawActivo) return;
+            if (soloSinCache) {
+                const key = claveBorradorMuestraPacking(fecha, r);
+                if (key && packingQuotaServidorCache_[key]) return;
+            }
+            const ensayo = String(r.split('|')[1] || '').trim();
+            if (!ensayo) return;
+            pendientes.push({ raw: r, ensayo });
+        });
+        if (!pendientes.length) return;
+        await Promise.all(pendientes.map(async ({ raw, ensayo }) => {
+            try {
+                const resp = await callbackJsonp({ fecha, ensayo_numero: ensayo }, 6000);
+                if (resp?.ok === true && resp.data) {
+                    registrarQuotaServidorMuestraPacking_(fecha, raw, resp.data);
+                }
+            } catch (_) { /* sin bloquear envío */ }
+        }));
+    }
+
     function restantesDesdeEstadoMuestraPacking(estado, quotaSnap) {
         const snap = quotaSnap && typeof quotaSnap === 'object' ? quotaSnap : {};
         const max = cuotaMaximaDesdeSnapshotPacking(snap);
@@ -583,8 +754,8 @@
             row[10 + (i * 2)] = t.amb[i] || '';
             row[11 + (i * 2)] = t.pulpa[i] || '';
             row[20 + i] = h[i] || '';
-            row[25 + i] = pAmb[i] || '';
-            row[30 + i] = pFruta[i] || '';
+            row[25 + i] = presionStrParaEnvioPacking(pAmb[i]);
+            row[30 + i] = presionStrParaEnvioPacking(pFruta[i]);
         }
         row[PACKING_ROW_IDX_OBS] = String(card?.observacion || '').trim();
         row[PACKING_ROW_IDX_HORA_REG] = String(horaRegistro || horaLocalActualPacking()).trim();
@@ -883,6 +1054,7 @@
         const fecha = normalizarFechaIso(elFecha?.value);
         const raw = String(rawMuestra || '').trim();
         if (!fecha || !raw) return null;
+        if (muestraPackingYaCompletaEnServidor_(raw)) return null;
         const parts = raw.split('|');
         const numMuestra = parts[0] || '';
         const ensayoNumero = parts[1] || '';
@@ -954,15 +1126,34 @@
         escribirStoreBorradorPacking(store);
     }
 
+    /** Muestra con la que el usuario trabajó: borrador local, pantalla activa o ya en planilla. */
+    function muestraPackingEnUso_(rawMuestra) {
+        const fecha = normalizarFechaIso(elFecha?.value);
+        const raw = String(rawMuestra || '').trim();
+        if (!fecha || !raw) return false;
+        if (muestraPackingYaCompletaEnServidor_(raw)) return true;
+        const borrador = leerBorradorMuestraPacking_(fecha, raw);
+        if (borrador && hayDatosTrabajoMuestraPacking(borrador)) return true;
+        if (raw === String(elMuestra?.value || '').trim()) {
+            return hayDatosTrabajoMuestraPacking(capturarEstadoMuestraPacking());
+        }
+        return false;
+    }
+
     function resumenMuestraPackingDelDia_(rawMuestra) {
         const fecha = normalizarFechaIso(elFecha?.value);
         const raw = String(rawMuestra || '').trim();
         if (!fecha || !raw) return null;
+        if (!muestraPackingEnUso_(raw)) return null;
         const parts = raw.split('|');
         const numMuestra = parts[0] || '';
         const ensayoNumero = parts[1] || '';
         const etiqueta = textoSelectMuestra(numMuestra, ensayoNumero);
         const base = { raw, num_muestra: numMuestra, ensayo_numero: ensayoNumero, etiqueta };
+
+        if (muestraPackingYaCompletaEnServidor_(raw)) {
+            return Object.assign(base, { estado: 'enviada', restantes: 0 });
+        }
 
         if (muestraPackingListaParaModal_(raw)) {
             return Object.assign(base, { estado: 'lista', restantes: 0 });
@@ -1002,12 +1193,17 @@
         const incompletas = resumenes.filter((r) => r.estado === 'incompleta');
         const sinDatos = resumenes.filter((r) => r.estado === 'sin_datos');
         const pendientes = incompletas.concat(sinDatos);
-        const numerosDia = opciones
+        const enUso = resumenes.map((r) => r.raw);
+        const numerosDia = enUso
             .map((raw) => numeroEnsayoPackingDesdeRaw(raw))
             .filter((n) => n > 0)
             .sort((a, b) => a - b);
         const numerosListas = listas
             .map((item) => numeroEnsayoPackingDesdeRaw(item.raw))
+            .filter((n) => n > 0);
+        const numerosEnviadas = resumenes
+            .filter((r) => r.estado === 'enviada')
+            .map((r) => numeroEnsayoPackingDesdeRaw(r.raw))
             .filter((n) => n > 0);
         const huecosEntreListas = detectarHuecosSecuenciaPacking_(listas).huecos;
         const huecosEnDia = [];
@@ -1016,12 +1212,13 @@
             const max = numerosDia[numerosDia.length - 1];
             for (let n = min; n <= max; n++) {
                 const enDia = numerosDia.includes(n);
-                const listaOk = numerosListas.includes(n);
-                if (enDia && !listaOk) huecosEnDia.push(n);
+                const satisfecha = numerosListas.includes(n) || numerosEnviadas.includes(n);
+                if (enDia && !satisfecha) huecosEnDia.push(n);
             }
         }
         return {
             opciones,
+            enUso,
             resumenes,
             listas: ordenarMuestrasPackingPorEnsayo_(listas),
             incompletas,
@@ -1116,7 +1313,7 @@
             if (!raw || vistos.has(raw)) return;
             vistos.add(raw);
             const cap = capturaEstadoMuestraParaValidacion_(raw);
-            if (!cap || !muestraPackingEstadoCompleto_(cap.estado, cap.quotaSnap)) return;
+            if (!cap || !muestraPackingPendienteDeEnvio_(cap.estado, cap.quotaSnap, raw)) return;
             out.push(itemMuestraPackingParaLista_(cap.raw, cap.num_muestra, cap.ensayo_numero));
         });
         return ordenarMuestrasPackingPorEnsayo_(out);
@@ -1131,7 +1328,7 @@
         const paraPersistir = [];
         candidatos.forEach((raw) => {
             const cap = capturaEstadoMuestraParaValidacion_(raw);
-            if (!cap || !muestraPackingEstadoCompleto_(cap.estado, cap.quotaSnap)) return;
+            if (!cap || !muestraPackingPendienteDeEnvio_(cap.estado, cap.quotaSnap, raw)) return;
             paraPersistir.push(cap);
         });
         ordenarMuestrasPackingPorEnsayo_(paraPersistir.map((cap) => ({
@@ -1151,11 +1348,26 @@
         escribirStoreBorradorPacking(store);
     }
 
-    function prepararDeteccionEnvioPacking_() {
+    function prepararDeteccionEnvioPackingLocal_() {
         guardarBorradorMuestraActivaInmediato_();
         persistirBorradoresContadorCeroPacking_(elFecha?.value);
         persistirBorradoresCompletasPacking_(elFecha?.value);
+        const fecha = normalizarFechaIso(elFecha?.value);
+        const rawActivo = String(elMuestra?.value || '').trim();
+        if (rawActivo && lastDetallePacking) {
+            registrarQuotaServidorMuestraPacking_(fecha, rawActivo, lastDetallePacking);
+        }
         return obtenerMuestrasCompletasPackingParaEnvio_();
+    }
+
+    async function prepararDeteccionEnvioPacking_() {
+        const completas = prepararDeteccionEnvioPackingLocal_();
+        const enUso = muestrasEnUsoPackingDelDia_();
+        if (necesitaRefrescarQuotaServidorPacking_(enUso)) {
+            await refrescarQuotaServidorMuestrasPacking_(enUso, { soloSinCache: true });
+            return obtenerMuestrasCompletasPackingParaEnvio_();
+        }
+        return completas;
     }
 
     function puedeRefrescarFechaPacking_() {
@@ -1273,6 +1485,17 @@
         };
     }
 
+    function esCardPackingSinDatos_(card) {
+        if (!card) return false;
+        const p = card.pesos || pesosVaciosPacking();
+        if (Object.keys(p).some((k) => pesoNumero(p[k]) > 0)) return false;
+        return !String(card.observacion || '').trim();
+    }
+
+    function primerCardVacioPacking_() {
+        return packingCards.find((c) => esCardPackingSinDatos_(c)) || null;
+    }
+
     function crearElementoCardPreviewPacking(motivo) {
         const previewCard = { clamshellNum: 1, pesos: pesosVaciosPacking(), observacion: '' };
         const art = crearElementoCardPacking(previewCard, 0);
@@ -1316,16 +1539,30 @@
         return packingCards.find((c) => c.id === id) || null;
     }
 
+    function ultimoCardPacking_() {
+        if (!packingCards.length) return null;
+        return packingCards.reduce((a, b) => (
+            Number(a.clamshellNum) >= Number(b.clamshellNum) ? a : b
+        ));
+    }
+
+    function esUltimoCardPacking_(card) {
+        const ultimo = ultimoCardPacking_();
+        return !!(ultimo && card && Number(card.id) === Number(ultimo.id));
+    }
+
     function actualizarFabRestanteBadge() {
         const rest = restantesPorAgregarPacking();
         const max = cuotaMaximaEfectivaPacking();
         const hayMuestra = muestraSeleccionada();
         const hayTrabajo = hayMuestra && hayDatosTrabajoMuestraPacking(capturarEstadoMuestraPacking());
-        const completa = hayTrabajo && rest === 0 && muestraPackingCompletaEnPantalla_();
-        if (completa && !packingBadgeWasComplete) {
+        const yaEnServidor = hayMuestra && muestraPackingYaCompletaEnServidor_(packingQuota);
+        const listaParaEnviar = hayTrabajo && rest === 0 && muestraPackingCompletaEnPantalla_() && !yaEnServidor;
+        const contadorCero = rest === 0;
+        if (listaParaEnviar && !packingBadgeWasComplete) {
             guardarBorradorMuestraActivaInmediato_();
         }
-        packingBadgeWasComplete = completa;
+        packingBadgeWasComplete = listaParaEnviar;
 
         if (elFabRestanteBadge) {
             if (!hayMuestra) {
@@ -1334,37 +1571,47 @@
             } else {
                 elFabRestanteBadge.removeAttribute('aria-hidden');
                 elFabRestanteBadge.textContent = String(rest);
-                elFabRestanteBadge.classList.toggle('is-complete', completa);
-                elFabRestanteBadge.classList.toggle('is-pending', !completa && rest > 0);
+                elFabRestanteBadge.classList.toggle('is-complete', contadorCero);
+                elFabRestanteBadge.classList.toggle('is-pending', rest > 0);
             }
         }
         if (elFabAgregar) {
             elFabAgregar.disabled = false;
             elFabAgregar.title = !hayMuestra
                 ? 'Seleccionar muestra para continuar por favor'
-                : (completa
-                    ? ('Muestra completa · ' + packingQuota.filasPackingRegistradas + '/' + max + ' clamshells')
-                    : (rest > 0
-                        ? ('Agregar clamshell · faltan ' + rest + ' de ' + max)
-                        : ('Límite packing · ' + packingQuota.filasPackingRegistradas + '/' + max)));
+                : (yaEnServidor
+                    ? ('Ya en planilla · ' + packingQuota.filasPackingRegistradas + '/' + max + ' clamshells')
+                    : (listaParaEnviar
+                        ? ('Lista para enviar · ' + packingQuota.filasPackingRegistradas + '/' + max + ' clamshells')
+                        : (rest > 0
+                            ? ('Agregar clamshell · faltan ' + rest + ' de ' + max)
+                            : ('Límite packing · ' + packingQuota.filasPackingRegistradas + '/' + max))));
         }
     }
 
     function onFabAgregarPackingClick() {
-        if (!muestraSeleccionada()) {
-            mostrarToastPacking('info', 'Seleccionar muestra', 'Seleccionar muestra para continuar por favor.');
-            return;
+        const ahora = Date.now();
+        if (fabAgregarPackingEnCurso_ || ahora - fabAgregarPackingTs_ < 450) return;
+        fabAgregarPackingTs_ = ahora;
+        fabAgregarPackingEnCurso_ = true;
+        try {
+            if (!muestraSeleccionada()) {
+                mostrarToastPacking('info', 'Seleccionar muestra', 'Seleccionar muestra para continuar por favor.');
+                return;
+            }
+            if (restantesPorAgregarPacking() <= 0 && !primerCardVacioPacking_()) {
+                const max = cuotaMaximaEfectivaPacking();
+                mostrarToastPacking(
+                    'info',
+                    'Límite alcanzado',
+                    'Ya no puedes agregar clamshells (' + packingQuota.filasPackingRegistradas + '/' + max + ').'
+                );
+                return;
+            }
+            agregarCardPackingYAbrirPesos();
+        } finally {
+            fabAgregarPackingEnCurso_ = false;
         }
-        if (restantesPorAgregarPacking() <= 0) {
-            const max = cuotaMaximaEfectivaPacking();
-            mostrarToastPacking(
-                'info',
-                'Límite alcanzado',
-                'Ya no puedes agregar clamshells (' + packingQuota.filasPackingRegistradas + '/' + max + ').'
-            );
-            return;
-        }
-        agregarCardPackingYAbrirPesos();
     }
 
     function htmlMetricActionsPacking(isPrimary) {
@@ -1400,7 +1647,14 @@
         const num = card.clamshellNum;
         const obs = String(card.observacion || '').trim();
         const obsHtml = obs ? escHtmlPacking(obs) : '';
-        const canDelete = packingCards.length > 1;
+        const ultimoCard = ultimoCardPacking_();
+        const esUltimo = esUltimoCardPacking_(card);
+        const canDelete = packingCards.length > 1 && esUltimo;
+        const tituloDelete = canDelete
+            ? 'Eliminar último clamshell'
+            : (packingCards.length <= 1
+                ? 'Debe quedar al menos uno'
+                : 'Elimina primero el Clamshell #' + (ultimoCard?.clamshellNum || ''));
         const art = document.createElement('article');
         art.className = 'clamshell-card packing-clamshell-card packing-card-clickable';
         art.dataset.cardId = String(card.id);
@@ -1417,23 +1671,23 @@
             + '<div class="clamshell-header-actions">'
             + '<button type="button" class="jarra-tag packing-peso-recep-btn" data-card-id="' + card.id + '" title="Peso recepción packing">'
             + '<span class="packing-peso-recep-text"><span class="packing-peso-recep-label">PESO RECEP.</span>'
-            + '<span class="packing-peso-recep-val">' + textoPesoCard(p.recepcion) + '</span></span></button>'
+            + '<span class="' + clasePesoCard(p.recepcion, 'packing-peso-recep-val') + '">' + textoPesoCard(p.recepcion) + '</span></span></button>'
             + '<button type="button" class="clamshell-delete-btn packing-card-delete" data-card-id="' + card.id + '" '
             + (canDelete ? '' : 'disabled ')
-            + 'title="' + (canDelete ? 'Quitar este clamshell' : 'Debe quedar al menos uno') + '" aria-label="Eliminar">'
+            + 'title="' + tituloDelete + '" aria-label="Eliminar">'
             + '<i data-lucide="trash-2"></i></button></div></div>'
             + '<div class="weights-panel"><div class="weights-grid packing-weights-grid">'
-            + '<div class="weight-box"><label>PESO I-GASIF.</label><span class="weight-value">' + textoPesoCard(p.ingresoGas) + '</span></div>'
-            + '<div class="weight-box"><label>PESO S-GASIF.</label><span class="weight-value">' + textoPesoCard(p.salidaGas) + '</span></div>'
+            + '<div class="weight-box"><label>PESO I-GASIF.</label><span class="' + clasePesoCard(p.ingresoGas) + '">' + textoPesoCard(p.ingresoGas) + '</span></div>'
+            + '<div class="weight-box"><label>PESO S-GASIF.</label><span class="' + clasePesoCard(p.salidaGas) + '">' + textoPesoCard(p.salidaGas) + '</span></div>'
             + '<div class="observation-box"><button type="button" class="packing-observation-btn" data-card-id="' + card.id + '" title="Editar observación">'
             + '<span class="observation-text' + (obs ? '' : ' is-empty') + '">'
             + (obsHtml || 'Sin observación registrada') + '</span></button></div>'
             + '</div>' + htmlMetricActionsPacking(index === 0) + '</div>'
             + '<div class="logistics-info packing-prefrio-row">'
             + '<div class="logistic-point"><i data-lucide="calendar-check-2"></i><div>'
-            + '<p style="color: #94A3B8; font-size: 9px;">PESO INGRESO PREFRIO</p><b>' + textoPesoCard(p.ingresoPre) + '</b></div></div>'
+            + '<p style="color: #94A3B8; font-size: 9px;">PESO INGRESO PREFRIO</p><b class="' + (pesoDisplayVacio(p.ingresoPre) ? 'is-empty-peso' : '') + '">' + textoPesoCard(p.ingresoPre) + '</b></div></div>'
             + '<div class="logistic-point"><i data-lucide="truck"></i><div>'
-            + '<p style="color: #94A3B8; font-size: 9px;">PESO SALIDA PREFRIO</p><b>' + textoPesoCard(p.salidaPre) + '</b></div></div>'
+            + '<p style="color: #94A3B8; font-size: 9px;">PESO SALIDA PREFRIO</p><b class="' + (pesoDisplayVacio(p.salidaPre) ? 'is-empty-peso' : '') + '">' + textoPesoCard(p.salidaPre) + '</b></div></div>'
             + '</div>';
         return art;
     }
@@ -1518,20 +1772,26 @@
     }
 
     function agregarCardPackingYAbrirPesos() {
-        let card = null;
-        if (!packingCards.length) {
-            card = ensureCardPorDefectoPacking();
-        } else {
-            card = agregarCardPacking();
+        let card = primerCardVacioPacking_();
+        if (!card) {
+            if (!packingCards.length) {
+                card = ensureCardPorDefectoPacking();
+            } else if (restantesPorAgregarPacking() > 0) {
+                card = agregarCardPacking();
+            }
         }
         if (!card) return;
         abrirModalPesosPacking(card.id);
     }
 
     async function eliminarCardPacking(cardId) {
-        if (packingCards.length <= 1) return;
+        if (packingCards.length <= 1) {
+            mostrarToastPacking('info', 'No se puede eliminar', 'Debe quedar al menos un clamshell en la muestra.');
+            return;
+        }
         const card = getCardPackingById(cardId);
         if (!card) return;
+        if (!esUltimoCardPacking_(card)) return;
         const mensaje = 'Se eliminará Clamshell #' + card.clamshellNum + ' de esta muestra. ¿Deseas continuar?';
         const confirmado = await confirmarSwalPacking_({
             icon: 'warning',
@@ -1586,13 +1846,16 @@
 
     function abrirModalPesosPacking(cardId) {
         if (!muestraSeleccionada() || !elPesosModal) return;
+        const ahora = Date.now();
+        if (elPesosModal.style.display === 'flex' && ahora - abrirModalPesosPackingTs_ < 450) return;
+        abrirModalPesosPackingTs_ = ahora;
         const card = getCardPackingById(cardId) || getCardPackingById(packingActiveCardId) || packingCards[0];
         if (!card) return;
         packingActiveCardId = card.id;
         if (elPesosModalTitle) elPesosModalTitle.textContent = 'Editar Clamshell #' + card.clamshellNum;
         PACKING_PESO_CAMPOS.forEach((c) => {
             const inp = document.getElementById(c.inpId);
-            if (inp) inp.value = String(pesoNumero(card.pesos[c.key]));
+            if (inp) inp.value = valorPesoInputPacking(card.pesos[c.key]);
         });
         elPesosModal.style.display = 'flex';
         elPesosModal.setAttribute('aria-hidden', 'false');
@@ -1606,32 +1869,40 @@
     }
 
     function guardarModalPesosPacking() {
-        if (!muestraSeleccionada()) {
-            setStatus('Selecciona una muestra antes de guardar.', 'warn');
-            return;
+        if (guardandoModalPesosPacking_) return;
+        guardandoModalPesosPacking_ = true;
+        if (elPesosGuardar) elPesosGuardar.disabled = true;
+        try {
+            if (!muestraSeleccionada()) {
+                setStatus('Selecciona una muestra antes de guardar.', 'warn');
+                return;
+            }
+            const errores = validarPesosModalEnVivo();
+            if (errores.length) {
+                mostrarToastPacking('warning', 'Peso inválido', errores[0]);
+                return;
+            }
+            if (!packingCards.length) ensureCardPorDefectoPacking();
+            const card = getCardPackingById(packingActiveCardId) || packingCards[0];
+            if (!card) {
+                setStatus('No hay clamshell para guardar. Selecciona una muestra.', 'warn');
+                return;
+            }
+            packingActiveCardId = card.id;
+            PACKING_PESO_CAMPOS.forEach((c) => {
+                const inp = document.getElementById(c.inpId);
+                card.pesos[c.key] = pesoNumero(inp?.value);
+            });
+            renderizarCardsPacking();
+            cerrarModalPesosPacking();
+            setStatus('');
+            if (elStatus) elStatus.hidden = true;
+            mostrarToastPacking('success', 'Guardado', 'Clamshell #' + card.clamshellNum + ' actualizado.');
+            programarGuardadoBorradorPacking();
+        } finally {
+            guardandoModalPesosPacking_ = false;
+            validarPesosModalEnVivo();
         }
-        const errores = validarPesosModalEnVivo();
-        if (errores.length) {
-            mostrarToastPacking('warning', 'Peso inválido', errores[0]);
-            return;
-        }
-        if (!packingCards.length) ensureCardPorDefectoPacking();
-        const card = getCardPackingById(packingActiveCardId) || packingCards[0];
-        if (!card) {
-            setStatus('No hay clamshell para guardar. Selecciona una muestra.', 'warn');
-            return;
-        }
-        packingActiveCardId = card.id;
-        PACKING_PESO_CAMPOS.forEach((c) => {
-            const inp = document.getElementById(c.inpId);
-            card.pesos[c.key] = pesoNumero(inp?.value);
-        });
-        renderizarCardsPacking();
-        cerrarModalPesosPacking();
-        setStatus('');
-        if (elStatus) elStatus.hidden = true;
-        mostrarToastPacking('success', 'Guardado', 'Clamshell #' + card.clamshellNum + ' actualizado.');
-        programarGuardadoBorradorPacking();
     }
 
     function aplicarPesosPackingARow(row, pesos) {
@@ -1639,7 +1910,7 @@
         PACKING_PESO_CAMPOS.forEach((c) => {
             if (c.rowIdx == null || c.rowIdx < 0) return;
             const n = pesoNumero(p[c.key]);
-            row[c.rowIdx] = n > 0 ? String(n) : '0';
+            row[c.rowIdx] = n > 0 ? String(n) : '';
         });
     }
     /** Solo consola: filas en servidor y despacho acopio (GET detalle), arriba → abajo. */
@@ -1985,11 +2256,15 @@
         const trazEl = document.getElementById(previewIds.traz);
         const varEl = document.getElementById(previewIds.variedad);
         const placaEl = document.getElementById(previewIds.placa);
+        const det = leerDetalleMetaPacking_(elMuestra?.value) || {};
         return {
             traz: String(trazEl?.textContent || '').trim(),
             variedad: String(varEl?.textContent || '').trim(),
             placa: String(placaEl?.textContent || '').trim(),
-            responsable: getResponsablePacking()
+            responsable: getResponsablePacking(),
+            guia: textoMetaCampoPdfPacking_(det.GUIA_REMISION),
+            viaje: textoMetaCampoPdfPacking_(det.N_VIAJE ?? det.n_viaje),
+            rotulo: String(det.ENSAYO_NOMBRE ?? '').trim()
         };
     }
 
@@ -2225,6 +2500,14 @@
         const ensayoNumero = rawMuestra.split('|')[1] || '';
         if (ensayoNumero) void cargarDetalle(fecha, ensayoNumero);
         return true;
+    }
+
+    /** Presión vapor (Kpa): punto decimal y 3 cifras al POST (servidor guarda como Number). */
+    function presionStrParaEnvioPacking(v) {
+        if (v === null || v === undefined || String(v).trim() === '') return '';
+        const n = Number(String(v).trim().replace(',', '.'));
+        if (!Number.isFinite(n)) return '';
+        return n.toFixed(3);
     }
 
     function numeroSeguroPacking(valor) {
@@ -2508,8 +2791,8 @@
             row[10 + (i * 2)] = t.amb[i] || '';
             row[11 + (i * 2)] = t.pulpa[i] || '';
             row[20 + i] = h[i] || '';
-            row[25 + i] = pAmb[i] || '';
-            row[30 + i] = pFruta[i] || '';
+            row[25 + i] = presionStrParaEnvioPacking(pAmb[i]);
+            row[30 + i] = presionStrParaEnvioPacking(pFruta[i]);
         }
     }
 
@@ -3279,54 +3562,85 @@
     async function guardarRegistroYEnviarDesdePantallaPacking() {
         if (envioPackingEnCurso) return;
 
-        const completas = prepararDeteccionEnvioPacking_();
-        const analisis = analizarMuestrasPackingDelDia_();
-        const candidatas = resolverCandidatasModalEnvioPacking_(completas);
-        asegurarBorradoresAntesEnvioPacking_(candidatas);
-        const rawActivo = String(elMuestra?.value || '').trim();
+        let validandoUi = true;
+        setButtonLoadingPacking(elBtnEnviarPacking, true, 'Validando…');
+        const liberarValidacionUi = () => {
+            if (!validandoUi) return;
+            validandoUi = false;
+            if (!envioPackingEnCurso) setButtonLoadingPacking(elBtnEnviarPacking, false);
+        };
 
-        if (analisis.opciones.length >= 2 && analisis.pendientes.length) {
-            const ok = await confirmarContinuarEnvioConPendientesPacking_(analisis);
-            if (!ok) return;
-        }
+        try {
+            const enUso = muestrasEnUsoPackingDelDia_();
+            const completas = necesitaRefrescarQuotaServidorPacking_(enUso)
+                ? await prepararDeteccionEnvioPacking_()
+                : prepararDeteccionEnvioPackingLocal_();
+            const analisis = analizarMuestrasPackingDelDia_();
+            const candidatas = resolverCandidatasModalEnvioPacking_(completas);
+            asegurarBorradoresAntesEnvioPacking_(candidatas);
+            const rawActivo = String(elMuestra?.value || '').trim();
 
-        if (!candidatas.length) {
-            if (!muestraSeleccionada()) {
-                setStatus('Selecciona una muestra antes de enviar.', 'warn');
+            if (analisis.pendientes.length) {
+                liberarValidacionUi();
+                const ok = await confirmarContinuarEnvioConPendientesPacking_(analisis);
+                if (!ok) return;
+                setButtonLoadingPacking(elBtnEnviarPacking, true, 'Validando…');
+                validandoUi = true;
+            }
+
+            if (!candidatas.length) {
+                if (!muestraSeleccionada()) {
+                    setStatus('Selecciona una muestra antes de enviar.', 'warn');
+                    return;
+                }
+                if (muestraPackingYaCompletaEnServidor_(packingQuota)) {
+                    mostrarToastPacking(
+                        'info',
+                        'Ya en planilla',
+                        'Este packing ya está completo en el servidor. Selecciona otra muestra pendiente.'
+                    );
+                    return;
+                }
+                validandoUi = false;
+                await enviarPackingMuestraActual_();
                 return;
             }
-            await enviarPackingMuestraActual_();
-            return;
-        }
 
-        let plan = null;
-        if (candidatas.length >= 2) {
-            plan = await seleccionarMuestraPackingParaEnviar_(rawActivo, candidatas, analisis);
-        } else {
-            plan = { modo: 'una', raw: candidatas[0].raw };
-        }
-        if (!plan) return;
+            let plan = null;
+            if (candidatas.length >= 2) {
+                liberarValidacionUi();
+                plan = await seleccionarMuestraPackingParaEnviar_(rawActivo, candidatas, analisis);
+                if (!plan) return;
+                setButtonLoadingPacking(elBtnEnviarPacking, true, 'Enviando…');
+                validandoUi = false;
+            } else {
+                validandoUi = false;
+                plan = { modo: 'una', raw: candidatas[0].raw };
+            }
 
-        if (plan.modo === 'todas') {
-            await enviarPackingMuestrasEnSecuencia_(plan.lista);
-            return;
-        }
-
-        const raw = String(plan.raw || rawActivo).trim();
-        const cap = capturaEstadoMuestraParaValidacion_(raw);
-        if (cap && muestraPackingEstadoCompleto_(cap.estado, cap.quotaSnap)) {
-            if (raw !== rawActivo) {
-                const ok = await enviarPackingDesdeCaptura_(cap);
-                if (ok) await refrescarMuestraPackingActivaTrasLote_(rawActivo, candidatas);
+            if (plan.modo === 'todas') {
+                await enviarPackingMuestrasEnSecuencia_(plan.lista);
                 return;
             }
+
+            const raw = String(plan.raw || rawActivo).trim();
+            const cap = capturaEstadoMuestraParaValidacion_(raw);
+            if (cap && muestraPackingPendienteDeEnvio_(cap.estado, cap.quotaSnap, raw)) {
+                if (raw !== rawActivo) {
+                    const ok = await enviarPackingDesdeCaptura_(cap);
+                    if (ok) await refrescarMuestraPackingActivaTrasLote_(rawActivo, candidatas);
+                    return;
+                }
+                await enviarPackingMuestraActual_();
+                return;
+            }
+            if (raw && raw !== rawActivo) {
+                await cargarMuestraPackingParaEnvio_(raw);
+            }
             await enviarPackingMuestraActual_();
-            return;
+        } finally {
+            liberarValidacionUi();
         }
-        if (raw && raw !== rawActivo) {
-            await cargarMuestraPackingParaEnvio_(raw);
-        }
-        await enviarPackingMuestraActual_();
     }
 
     let cargandoMuestrasSeq = 0;
@@ -3801,7 +4115,9 @@
         syncPackingFoldBtnAnchor();
     }
 
-    function callbackJsonp(params) {
+    function callbackJsonp(params, timeoutMs) {
+        const limiteMs = Number(timeoutMs);
+        const espera = Number.isFinite(limiteMs) && limiteMs > 0 ? limiteMs : 14000;
         return new Promise((resolve, reject) => {
             const cb = '__pk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
             const noop = function () {};
@@ -3817,7 +4133,7 @@
                 window[cb] = noop;
                 if (script.parentNode) script.parentNode.removeChild(script);
                 reject(new Error('La planilla tardó demasiado. Reintenta.'));
-            }, 14000);
+            }, espera);
             window[cb] = (payload) => {
                 if (done) return;
                 done = true;
@@ -3997,6 +4313,7 @@
         }
 
         aplicarCuotaDesdeDetalle(d);
+        registrarQuotaServidorMuestraPacking_(elFecha?.value, elMuestra?.value, d);
         logMetaServidorPackingConsola(d);
 
         if (elPreview) {
@@ -4004,9 +4321,10 @@
             elPreview.classList.add('is-loaded');
         }
 
+        const yaEnServidor = muestraPackingYaCompletaEnServidor_(packingQuota);
         const key = claveBorradorMuestraPacking(elFecha?.value, elMuestra?.value);
         const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
-        if (borrador && hayDatosTrabajoMuestraPacking(borrador)) {
+        if (!yaEnServidor && borrador && hayDatosTrabajoMuestraPacking(borrador)) {
             aplicarEstadoMuestraPacking(borrador, { skipPreview: true });
         } else {
             limpiarUiCapturaMuestraPacking_();
@@ -4196,6 +4514,7 @@
         }
         packingMuestraAnterior = '';
         packingFechaAnterior = elFecha?.value || '';
+        limpiarCacheQuotaServidorPacking_();
         const fecha = elFecha?.value || '';
         if (fecha) void cargarMuestrasPorFecha(fecha);
         else resetMuestraSelect('Seleccionar fecha', true);
@@ -4479,57 +4798,103 @@
         return fila;
     }
 
-    window.obtenerDatosPdfPacking = function obtenerDatosPdfPacking() {
-        const sel = ensayoSeleccionado();
-        if (!sel.num_muestra || !sel.ensayo_numero) {
-            throw new Error('Selecciona una muestra antes de generar el PDF.');
+    function rotuloMuestraPdfPacking_(ensayoNumero, ensayoNombre) {
+        const nombre = String(ensayoNombre || '').trim();
+        if (nombre && !/^\d+$/.test(nombre)) return nombre;
+        const n = String(ensayoNumero || nombre || '').trim();
+        if (!n) return '';
+        if (/^(Ensayo|Muestra)\s/i.test(n)) return n;
+        const num = Number(n);
+        if (Number.isFinite(num) && num === Math.floor(num) && num > 0) {
+            return 'Ensayo ' + num;
         }
-        recalcularPresionesPacking();
-        const d = lastDetallePacking || {};
-        const etapa = String(d.TRAZ_ETAPA ?? '').trim();
-        const campo = String(d.TRAZ_CAMPO ?? '').trim();
-        const turno = String(d.TRAZ_LIBRE ?? '').trim();
-        const traz = [etapa, campo, turno].filter(Boolean).join('-');
-        const tiemposFmt = getTiemposMuestra().map(formatoHoraPdfPacking);
-        const cards = packingCards.slice().sort((a, b) => Number(a.clamshellNum) - Number(b.clamshellNum));
-        const metaBase = {
-            horaInicio: formatoHoraPdfPacking(getHoraPersonal()),
-            rotulo: String(d.ENSAYO_NOMBRE ?? sel.ensayo_numero ?? '').trim(),
-            etapa,
-            campo,
-            turno,
-            variedad: String(d.VARIEDAD ?? '').trim(),
-            placa: String(d.PLACA_VEHICULO ?? '').trim().toUpperCase(),
-            guia: String(d.GUIA_REMISION ?? '').trim(),
-            viaje: String(d.N_VIAJE ?? d.n_viaje ?? '').trim()
+        return 'Ensayo ' + n;
+    }
+
+    function metaTrazDesdeDetallePdfPacking_(detalle, previewMeta) {
+        const d = detalle && typeof detalle === 'object' ? detalle : {};
+        const meta = previewMeta && typeof previewMeta === 'object' ? previewMeta : {};
+        if (d.TRAZ_ETAPA != null || d.TRAZ_CAMPO != null || d.TRAZ_LIBRE != null) {
+            const etapa = String(d.TRAZ_ETAPA ?? '').trim();
+            const campo = String(d.TRAZ_CAMPO ?? '').trim();
+            const turno = String(d.TRAZ_LIBRE ?? '').trim();
+            return {
+                etapa,
+                campo,
+                turno,
+                traz: [etapa, campo, turno].filter(Boolean).join('-'),
+                variedad: String(d.VARIEDAD ?? meta.variedad ?? '').trim(),
+                placa: String(d.PLACA_VEHICULO ?? meta.placa ?? '').trim().toUpperCase(),
+                guia: textoMetaCampoPdfPacking_(d.GUIA_REMISION ?? meta.guia),
+                viaje: textoMetaCampoPdfPacking_(d.N_VIAJE ?? d.n_viaje ?? meta.viaje),
+                rotulo: String(d.ENSAYO_NOMBRE ?? meta.rotulo ?? '').trim()
+            };
+        }
+        const traz = String(meta.traz || '').trim();
+        const partes = traz.split('-').filter(Boolean);
+        return {
+            etapa: partes[0] || '',
+            campo: partes[1] || '',
+            turno: partes.slice(2).join('-') || '',
+            traz,
+            variedad: String(meta.variedad || '').trim(),
+            placa: String(meta.placa || '').trim().toUpperCase(),
+            guia: textoMetaCampoPdfPacking_(meta.guia),
+            viaje: textoMetaCampoPdfPacking_(meta.viaje),
+            rotulo: String(meta.rotulo || '').trim()
         };
-        const controlSnap = clonarControlStatePacking(packingControlState);
-        const maxRows = PACKING_PDF_FILAS;
+    }
+
+    function construirDatosPdfPackingDesdeEstado_(numMuestra, ensayoNumero, estado, detalle) {
+        const trazMeta = metaTrazDesdeDetallePdfPacking_(detalle, estado?.previewMeta);
+        const tiempos = Array.isArray(estado?.tiempos) ? estado.tiempos : [];
+        const tiemposFmt = tiempos.map(formatoHoraPdfPacking);
+        const cards = (Array.isArray(estado?.packingCards) ? estado.packingCards : [])
+            .slice()
+            .sort((a, b) => Number(a.clamshellNum) - Number(b.clamshellNum));
+        const controlSnap = recalcularPresionesDesdeControlPacking_(estado?.control || {});
+        const metaBase = {
+            horaInicio: formatoHoraPdfPacking(estado?.horaInicio || ''),
+            rotulo: rotuloMuestraPdfPacking_(ensayoNumero, trazMeta.rotulo),
+            etapa: trazMeta.etapa,
+            campo: trazMeta.campo,
+            turno: trazMeta.turno,
+            variedad: trazMeta.variedad,
+            placa: trazMeta.placa,
+            guia: trazMeta.guia,
+            viaje: trazMeta.viaje
+        };
         const filas = [];
-        for (let r = 0; r < maxRows; r++) {
+        for (let r = 0; r < PACKING_PDF_FILAS_POR_MUESTRA; r++) {
             filas.push(filaPdfDesdeCardPacking(cards[r] || null, metaBase, tiemposFmt, controlSnap, r === 0));
         }
-        const pa = packingControlState.presionAmb.slice();
-        const pf = packingControlState.presionFruta.slice();
+        const pa = controlSnap.presionAmb.slice();
+        const pf = controlSnap.presionFruta.slice();
         const deficit = pa.map((a, i) => calcDeficitPresionPdfPacking(a, pf[i]));
-        const obsPartes = cards.map((c) => String(c.observacion || '').trim()).filter(Boolean);
-        const observacionesLista = Array.from({ length: PACKING_PDF_FILAS }, (_, i) => (
+        const obsPartes = cards.map((c) => String(c?.observacion || '').trim()).filter(Boolean);
+        const observacionesLista = Array.from({ length: PACKING_PDF_FILAS_POR_MUESTRA }, (_, i) => (
             String(cards[i]?.observacion || '').trim()
         ));
+        const fechaPdf = fechaDisplayDdMmYyyyPacking(getFechaInspeccionPacking());
+        const responsable = String(
+            estado?.responsable
+            || estado?.previewMeta?.responsable
+            || ''
+        ).trim();
         return {
-            ensayo: sel.ensayo_numero,
-            fecha: fechaDisplayDdMmYyyyPacking(getFechaInspeccionPacking()),
+            ensayo: ensayoNumero,
+            fecha: fechaPdf,
             empresa: 'AGROVISION',
             codigo: 'PE-F-OPH-309',
             version: '1',
             tituloHoja1: 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN RECEPCIÓN - ARÁNDANO - C5-C6-A9-LN',
             tituloHoja2: 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN RECEPCIÓN - ARÁNDANO - CS-C6-A9-LN',
             meta: {
-                fecha: fechaDisplayDdMmYyyyPacking(getFechaInspeccionPacking()),
-                trazabilidad: traz,
-                trazabilidadArchivo: traz,
-                responsable: getResponsablePacking(),
-                numMuestra: String(sel.num_muestra || '').trim()
+                fecha: fechaPdf,
+                trazabilidad: trazMeta.traz,
+                trazabilidadArchivo: trazMeta.traz,
+                responsable,
+                numMuestra: String(numMuestra || '').trim()
             },
             filas,
             pagina2: {
@@ -4540,6 +4905,136 @@
                 observacionesLista
             }
         };
+    }
+
+    function asegurarFilasMuestraPdfPacking_(filas, n) {
+        const out = (Array.isArray(filas) ? filas : []).slice(0, n);
+        while (out.length < n) out.push(filaPdfVaciaPacking());
+        return out;
+    }
+
+    function prepararHojaPdfSolaMuestraPacking_(item) {
+        const filasA = asegurarFilasMuestraPdfPacking_(item.filas, PACKING_PDF_FILAS_POR_MUESTRA);
+        const filas = [...filasA];
+        while (filas.length < PACKING_PDF_FILAS) filas.push(filaPdfVaciaPacking());
+        const obsLista = Array.from({ length: PACKING_PDF_FILAS }, (_, i) => (
+            String(item.pagina2?.observacionesLista?.[i] || '').trim()
+        ));
+        return {
+            ...item,
+            filas: filas.slice(0, PACKING_PDF_FILAS),
+            pdfInicioSegundaMuestra: null,
+            pagina2: {
+                ...item.pagina2,
+                bloquesPresion: [{
+                    fila: 0,
+                    presionAmb: item.pagina2?.presionAmb || [],
+                    presionFruta: item.pagina2?.presionFruta || [],
+                    deficit: item.pagina2?.deficit || []
+                }],
+                observacionesLista: obsLista
+            }
+        };
+    }
+
+    function combinarDosMuestrasEnHojaPdfPacking_(a, b) {
+        const filasA = asegurarFilasMuestraPdfPacking_(a.filas, PACKING_PDF_FILAS_POR_MUESTRA);
+        const filasB = asegurarFilasMuestraPdfPacking_(b.filas, PACKING_PDF_FILAS_SEGUNDA_BLOQUE);
+        const filas = [...filasA, ...filasB].slice(0, PACKING_PDF_FILAS);
+        while (filas.length < PACKING_PDF_FILAS) filas.push(filaPdfVaciaPacking());
+        const obsLista = [
+            ...filasA.map((_, i) => String(a.pagina2?.observacionesLista?.[i] || '').trim()),
+            ...filasB.map((_, i) => String(b.pagina2?.observacionesLista?.[i] || '').trim())
+        ].slice(0, PACKING_PDF_FILAS);
+        while (obsLista.length < PACKING_PDF_FILAS) obsLista.push('');
+        const nums = [a.meta?.numMuestra, b.meta?.numMuestra].map((s) => String(s || '').trim()).filter(Boolean);
+        return {
+            ...a,
+            meta: {
+                ...a.meta,
+                numMuestra: nums.join(' · '),
+                trazabilidad: [a.meta?.trazabilidad, b.meta?.trazabilidad].filter(Boolean).join(' · ')
+                    || a.meta?.trazabilidad,
+                trazabilidadArchivo: [a.meta?.trazabilidadArchivo, b.meta?.trazabilidadArchivo]
+                    .filter(Boolean).join(' · ') || a.meta?.trazabilidadArchivo
+            },
+            filas,
+            pdfInicioSegundaMuestra: PACKING_PDF_INICIO_SEGUNDA_MUESTRA,
+            pagina2: {
+                bloquesPresion: [
+                    {
+                        fila: 0,
+                        presionAmb: a.pagina2?.presionAmb || [],
+                        presionFruta: a.pagina2?.presionFruta || [],
+                        deficit: a.pagina2?.deficit || []
+                    },
+                    {
+                        fila: PACKING_PDF_INICIO_SEGUNDA_MUESTRA,
+                        presionAmb: b.pagina2?.presionAmb || [],
+                        presionFruta: b.pagina2?.presionFruta || [],
+                        deficit: b.pagina2?.deficit || []
+                    }
+                ],
+                observacionesLista: obsLista,
+                observaciones: obsLista.filter(Boolean).join(' · ')
+            }
+        };
+    }
+
+    function agruparMuestrasEnHojasPdfPacking_(muestras) {
+        const hojas = [];
+        for (let i = 0; i < muestras.length; i += 2) {
+            const a = muestras[i];
+            const b = muestras[i + 1] || null;
+            hojas.push(b ? combinarDosMuestrasEnHojaPdfPacking_(a, b) : prepararHojaPdfSolaMuestraPacking_(a));
+        }
+        return hojas;
+    }
+
+    /** Sin red: asegura meta Campo en caché local (muestra activa + borradores). */
+    function asegurarDetalleMetaLocalParaPdf_() {
+        guardarBorradorMuestraActivaInmediato_();
+        const fecha = normalizarFechaIso(elFecha?.value);
+        const rawActivo = String(elMuestra?.value || '').trim();
+        if (rawActivo && lastDetallePacking) {
+            registrarDetalleMetaPacking_(fecha, rawActivo, lastDetallePacking);
+        }
+    }
+
+    window.obtenerDatosPdfPacking = function obtenerDatosPdfPacking() {
+        asegurarDetalleMetaLocalParaPdf_();
+        const rawActivo = String(elMuestra?.value || '').trim();
+        const items = ordenarMuestrasPackingPorEnsayo_(
+            muestrasEnUsoPackingDelDia_().map((raw) => {
+                const parts = String(raw || '').split('|');
+                return {
+                    raw,
+                    num_muestra: parts[0] || '',
+                    ensayo_numero: parts[1] || ''
+                };
+            }).filter((item) => item.num_muestra && item.ensayo_numero)
+        );
+        if (!items.length) {
+            throw new Error('Selecciona una muestra y captura datos antes de generar el PDF.');
+        }
+        const muestras = items.map((item) => {
+            const cap = capturaEstadoMuestraParaEnvio_(item.raw);
+            if (!cap || !hayDatosTrabajoMuestraPacking(cap.estado)) {
+                throw new Error(
+                    'Sin datos de packing en '
+                    + textoSelectMuestra(item.num_muestra, item.ensayo_numero)
+                    + '.'
+                );
+            }
+            const detalle = leerDetalleMetaPacking_(item.raw);
+            return construirDatosPdfPackingDesdeEstado_(
+                item.num_muestra,
+                item.ensayo_numero,
+                cap.estado,
+                detalle
+            );
+        });
+        return { muestras: agruparMuestrasEnHojasPdfPacking_(muestras) };
     };
 
     window.PackingContext = {

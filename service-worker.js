@@ -1,4 +1,5 @@
-const SW_VERSION = 'v227';
+importScripts('./app-version.js');
+const SW_VERSION = APP_VERSION;
 const STATIC_CACHE = `tiempos-static-${SW_VERSION}`;
 const RUNTIME_CACHE = `tiempos-runtime-${SW_VERSION}`;
 const MAX_RUNTIME_ENTRIES = 120;
@@ -29,6 +30,7 @@ const APP_SHELL = [
     './librerias/standard_fonts/LiberationSans-Regular.ttf',
     './network.js',
     './script.js',
+    './app-version.js',
     './catalogo-json.js',
     './mapeo-parcelas-data.js',
     './data/catalogo-app.json',

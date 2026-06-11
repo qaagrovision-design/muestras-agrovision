@@ -181,13 +181,32 @@
         return lib.jsPDF;
     }
 
+    function normalizarListaDatosPdfCampo_(datos) {
+        if (Array.isArray(datos?.muestras) && datos.muestras.length) return datos.muestras;
+        if (datos && datos.filas) return [datos];
+        return [];
+    }
+
     function nombreArchivoPdf(datos) {
-        const f = txt(datos?.fecha || datos?.meta?.fecha || '').replace(/\//g, '-').replace(/\./g, '-');
-        const trazRaw = txt(datos?.meta?.trazabilidadArchivo || datos?.meta?.trazabilidad || '').split(' / ')[0].trim();
+        const lista = normalizarListaDatosPdfCampo_(datos);
+        const primero = lista[0] || datos || {};
+        const f = txt(primero?.fecha || primero?.meta?.fecha || datos?.fecha || '')
+            .replace(/\//g, '-')
+            .replace(/\./g, '-');
+        const parteFecha = f || 'sin-fecha';
+        if (lista.length > 1) {
+            const nums = lista
+                .map((d) => txt(d?.meta?.numMuestra || '').trim())
+                .filter(Boolean)
+                .join('-');
+            return `${parteFecha}_campo-${nums || `${lista.length}-muestras`}.pdf`;
+        }
+        const trazRaw = txt(primero?.meta?.trazabilidadArchivo || primero?.meta?.trazabilidad || '')
+            .split(' / ')[0]
+            .trim();
         const traz = trazRaw
             .replace(/\s+/g, '')
             .replace(/[\\/:*?"<>|]+/g, '-');
-        const parteFecha = f || 'sin-fecha';
         const parteTraz = traz || 'sin-traz';
         return `${parteFecha}_${parteTraz}.pdf`;
     }
@@ -838,11 +857,21 @@
     async function generarPdfCampoBlob(datos) {
         const JsPDF = obtenerJsPDF();
         if (!JsPDF) throw new Error('jsPDF no está cargado');
+        const lista = normalizarListaDatosPdfCampo_(datos);
+        if (!lista.length) {
+            throw new Error(
+                'Completa guía de remisión y placa del vehículo en logística acopio-campo '
+                + 'de al menos una muestra para generar el PDF.'
+            );
+        }
         const logoUrl = await cargarLogoDataUrl();
         const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-        generarHoja1(doc, datos, logoUrl);
-        doc.addPage('a4', 'landscape');
-        generarHoja2(doc, datos, logoUrl);
+        lista.forEach((item, idx) => {
+            if (idx > 0) doc.addPage('a4', 'landscape');
+            generarHoja1(doc, item, logoUrl);
+            doc.addPage('a4', 'landscape');
+            generarHoja2(doc, item, logoUrl);
+        });
         return doc.output('blob');
     }
 
