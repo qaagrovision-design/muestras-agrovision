@@ -751,11 +751,11 @@
         const pAmb = cg.presionAmb;
         const pFruta = cg.presionFruta;
         for (let i = 0; i < 5; i++) {
-            row[10 + (i * 2)] = t.amb[i] || '';
-            row[11 + (i * 2)] = t.pulpa[i] || '';
-            row[20 + i] = h[i] || '';
-            row[25 + i] = presionStrParaEnvioPacking(pAmb[i]);
-            row[30 + i] = presionStrParaEnvioPacking(pFruta[i]);
+            row[10 + (i * 2)] = decimalNumParaEnvioPacking(t.amb[i]);
+            row[11 + (i * 2)] = decimalNumParaEnvioPacking(t.pulpa[i]);
+            row[20 + i] = decimalNumParaEnvioPacking(h[i]);
+            row[25 + i] = decimalNumParaEnvioPacking(pAmb[i]);
+            row[30 + i] = decimalNumParaEnvioPacking(pFruta[i]);
         }
         row[PACKING_ROW_IDX_OBS] = String(card?.observacion || '').trim();
         row[PACKING_ROW_IDX_HORA_REG] = String(horaRegistro || horaLocalActualPacking()).trim();
@@ -2502,12 +2502,36 @@
         return true;
     }
 
-    /** Presión vapor (Kpa): punto decimal y 3 cifras al POST (servidor guarda como Number). */
-    function presionStrParaEnvioPacking(v) {
+    /** Temp / humedad / presión: Number con 3 decimales (evita "1.148" como texto → miles en Sheets). */
+    function decimalNumParaEnvioPacking(v) {
         if (v === null || v === undefined || String(v).trim() === '') return '';
         const n = Number(String(v).trim().replace(',', '.'));
         if (!Number.isFinite(n)) return '';
-        return n.toFixed(3);
+        return Math.round(n * 1000) / 1000;
+    }
+
+    function presionStrParaEnvioPacking(v) {
+        return decimalNumParaEnvioPacking(v);
+    }
+
+    function normalizarFilaPackingParaEnvio_(row) {
+        if (!Array.isArray(row)) return row;
+        const out = row.slice();
+        for (let i = 10; i <= 34; i++) {
+            if (out[i] !== '' && out[i] != null) {
+                const n = decimalNumParaEnvioPacking(out[i]);
+                out[i] = n === '' ? '' : n;
+            }
+        }
+        return out;
+    }
+
+    function normalizarPackingBodyParaEnvio_(body) {
+        if (!body || !Array.isArray(body.packingRows)) return body;
+        return {
+            ...body,
+            packingRows: body.packingRows.map(normalizarFilaPackingParaEnvio_)
+        };
     }
 
     function numeroSeguroPacking(valor) {
@@ -2788,11 +2812,11 @@
         const pAmb = packingControlState.presionAmb;
         const pFruta = packingControlState.presionFruta;
         for (let i = 0; i < 5; i++) {
-            row[10 + (i * 2)] = t.amb[i] || '';
-            row[11 + (i * 2)] = t.pulpa[i] || '';
-            row[20 + i] = h[i] || '';
-            row[25 + i] = presionStrParaEnvioPacking(pAmb[i]);
-            row[30 + i] = presionStrParaEnvioPacking(pFruta[i]);
+            row[10 + (i * 2)] = decimalNumParaEnvioPacking(t.amb[i]);
+            row[11 + (i * 2)] = decimalNumParaEnvioPacking(t.pulpa[i]);
+            row[20 + i] = decimalNumParaEnvioPacking(h[i]);
+            row[25 + i] = decimalNumParaEnvioPacking(pAmb[i]);
+            row[30 + i] = decimalNumParaEnvioPacking(pFruta[i]);
         }
     }
 
@@ -3167,7 +3191,7 @@
             for (let i = 0; i < queue.length; i++) {
                 const reg = queue[i];
                 if (!reg || String(reg.estado || '') !== 'pendiente' || !esRegistroColaPacking(reg)) continue;
-                const body = reg.payload;
+                const body = normalizarPackingBodyParaEnvio_(reg.payload);
                 if (!body || !Array.isArray(body.packingRows) || !body.packingRows.length) {
                     reg.estado = 'bloqueado';
                     reg.error = 'Payload packing vacío';
@@ -3260,6 +3284,7 @@
 
     async function ejecutarEnvioPackingBody_(body, sel, cards, opts) {
         opts = opts || {};
+        body = normalizarPackingBodyParaEnvio_(body);
         const rawMuestra = (sel.num_muestra && sel.ensayo_numero)
             ? (sel.num_muestra + '|' + sel.ensayo_numero)
             : (elMuestra?.value || '');

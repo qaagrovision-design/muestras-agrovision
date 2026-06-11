@@ -825,10 +825,10 @@ function aplicarPresionVaporDecimalEnFilaRegistro_(fila) {
   return fila;
 }
 
-/** Cols presión packing (fila plana 37): índices 25–34. */
-function aplicarPresionVaporDecimalEnFilaPacking_(fila) {
+/** Temp, humedad y presión packing (fila plana 37): índices 10–34. */
+function aplicarDecimalesMedicionEnFilaPacking_(fila) {
   var i;
-  for (i = 25; i <= 34; i++) {
+  for (i = 10; i <= 34; i++) {
     if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
   }
   return fila;
@@ -837,8 +837,19 @@ function aplicarPresionVaporDecimalEnFilaPacking_(fila) {
 function normalizarFilaPackingDatosParaHoja_(row) {
   if (!Array.isArray(row)) return [];
   var out = row.slice();
-  aplicarPresionVaporDecimalEnFilaPacking_(out);
+  aplicarDecimalesMedicionEnFilaPacking_(out);
   return out;
+}
+
+function valorCeldaPackingAlEscribir_(idxData, v) {
+  if (idxData >= 10 && idxData <= 34) return normalizarPresionVaporCelda_(v);
+  return (v != null && v !== '') ? v : '';
+}
+
+/** Formato 0.000 en temp/humedad/presión para que la barra muestre el decimal correcto. */
+function aplicarFormatoDecimalesPackingEnFila_(sheet, filaHoja, startCol) {
+  var colBase = startCol + PACKING_META_COLS + 10;
+  sheet.getRange(filaHoja, colBase, 1, 25).setNumberFormat('0.000');
 }
 
 function getPackingHeaderNamesPerRow() {
@@ -947,7 +958,8 @@ function doPostPacking(sheet, data) {
           var valoresMerge = [fechaInspeccion, responsable, horaRecepcion, nViaje];
           if (Array.isArray(rowMerge)) {
             for (var jm = 0; jm < PACKING_DATA_COLS; jm++) {
-              var vMerge = (jm < rowMerge.length && rowMerge[jm] != null && rowMerge[jm] !== '') ? rowMerge[jm] : '';
+              var rawMerge = (jm < rowMerge.length && rowMerge[jm] != null && rowMerge[jm] !== '') ? rowMerge[jm] : '';
+              var vMerge = valorCeldaPackingAlEscribir_(jm, rawMerge);
               if (jm === PACKING_DATA_COLS - 1 && !vMerge) vMerge = formatHoraRegistro_(new Date());
               valoresMerge.push(vMerge);
             }
@@ -955,6 +967,7 @@ function doPostPacking(sheet, data) {
             for (var jm2 = 0; jm2 < PACKING_DATA_COLS; jm2++) valoresMerge.push('');
           }
           sheet.getRange(filaHojaMerge, startColMerge, 1, colsPorFilaMerge).setValues([valoresMerge]);
+          aplicarFormatoDecimalesPackingEnFila_(sheet, filaHojaMerge, startColMerge);
         }
         sheet.getRange(1, startColMerge, 1, baseHeadersMerge.length).setValues([baseHeadersMerge]);
       }
@@ -999,7 +1012,8 @@ function doPostPacking(sheet, data) {
         var valores = [fechaInspeccion, responsable, horaRecepcion, nViaje];
         if (Array.isArray(row)) {
           for (var j = 0; j < PACKING_DATA_COLS; j++) {
-            var vPack = (j < row.length && row[j] != null && row[j] !== '') ? row[j] : '';
+            var rawPack = (j < row.length && row[j] != null && row[j] !== '') ? row[j] : '';
+            var vPack = valorCeldaPackingAlEscribir_(j, rawPack);
             if (j === PACKING_DATA_COLS - 1 && !vPack) vPack = formatHoraRegistro_(new Date());
             valores.push(vPack);
           }
@@ -1007,6 +1021,7 @@ function doPostPacking(sheet, data) {
           for (var j = 0; j < PACKING_DATA_COLS; j++) valores.push('');
         }
         sheet.getRange(filaHoja, startCol, 1, COLS_POR_FILA).setValues([valores]);
+        aplicarFormatoDecimalesPackingEnFila_(sheet, filaHoja, startCol);
       }
       sheet.getRange(1, startCol, 1, baseHeaders.length).setValues([baseHeaders]);
     }
