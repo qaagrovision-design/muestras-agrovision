@@ -2351,6 +2351,23 @@
             font-weight: 900;
             color: var(--primary);
             letter-spacing: 0.03em;
+            font-variant-numeric: tabular-nums;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            background: transparent;
+            text-align: right;
+            width: 4.2em;
+            max-width: 42vw;
+            padding: 4px 8px;
+            cursor: text;
+            font-family: inherit;
+        }
+
+        .time-picker-current:focus {
+            border-color: #c8d7e8;
+            background: #f8fbff;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(22, 76, 124, 0.12);
         }
 
         .time-picker-wheel {

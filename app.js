@@ -388,13 +388,78 @@ const META_SAVE_IDS = [
             return { h, mi };
         }
 
+        function normalizarEntradaHoraTeclado_(raw) {
+            const digits = String(raw || '').replace(/\D/g, '').slice(0, 4);
+            if (digits.length <= 2) return digits;
+            return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+        }
+
+        function sincronizarTimePickerEstadoDesdeEntrada_() {
+            const cEl = document.getElementById('time-picker-current');
+            if (!cEl) return false;
+            const parsed = parseHHMM_(cEl.value) || parseHHMM_(normalizarEntradaHoraTeclado_(cEl.value));
+            if (!parsed) return false;
+            timePickerState.hour = parsed.h;
+            timePickerState.minute = parsed.mi;
+            return true;
+        }
+
         function timePickerActualizarVista_() {
             const hEl = document.getElementById('time-picker-hour');
             const mEl = document.getElementById('time-picker-minute');
             const cEl = document.getElementById('time-picker-current');
             if (hEl) hEl.textContent = pad2_(timePickerState.hour);
             if (mEl) mEl.textContent = pad2_(timePickerState.minute);
-            if (cEl) cEl.textContent = `${pad2_(timePickerState.hour)}:${pad2_(timePickerState.minute)}`;
+            if (cEl && document.activeElement !== cEl) {
+                const val = `${pad2_(timePickerState.hour)}:${pad2_(timePickerState.minute)}`;
+                if (cEl.tagName === 'INPUT') cEl.value = val;
+                else cEl.textContent = val;
+            }
+        }
+
+        function configurarTimePickerEntradaTeclado_() {
+            const cEl = document.getElementById('time-picker-current');
+            if (!cEl || cEl.dataset.tpKb === '1') return;
+            cEl.dataset.tpKb = '1';
+            if (cEl.tagName === 'INPUT') {
+                cEl.setAttribute('inputmode', 'numeric');
+                cEl.setAttribute('autocomplete', 'off');
+                cEl.setAttribute('spellcheck', 'false');
+                if (!cEl.getAttribute('placeholder')) cEl.placeholder = 'HH:MM';
+                if (!cEl.getAttribute('aria-label')) cEl.setAttribute('aria-label', 'Escribir hora');
+                if (!cEl.title) cEl.title = 'Toca para escribir la hora con teclado';
+            }
+            const enfocarTexto = () => {
+                if (cEl.tagName !== 'INPUT') return;
+                try { cEl.select(); } catch (_) { /* ignore */ }
+            };
+            cEl.addEventListener('focus', enfocarTexto);
+            cEl.addEventListener('click', enfocarTexto);
+            if (cEl.tagName === 'INPUT') {
+                cEl.addEventListener('input', () => {
+                    const cur = cEl.value;
+                    const norm = normalizarEntradaHoraTeclado_(cur);
+                    if (cur !== norm) cEl.value = norm;
+                    const parsed = parseHHMM_(norm);
+                    if (parsed) {
+                        timePickerState.hour = parsed.h;
+                        timePickerState.minute = parsed.mi;
+                        timePickerActualizarVista_();
+                    }
+                });
+                cEl.addEventListener('blur', () => {
+                    if (!sincronizarTimePickerEstadoDesdeEntrada_()) timePickerActualizarVista_();
+                    else timePickerActualizarVista_();
+                });
+                cEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        sincronizarTimePickerEstadoDesdeEntrada_();
+                        timePickerActualizarVista_();
+                        cEl.blur();
+                    }
+                });
+            }
         }
 
         function abrirTimePickerPersonalizado(input) {
@@ -421,6 +486,7 @@ const META_SAVE_IDS = [
 
         function aplicarTimePickerPersonalizado() {
             const input = timePickerState.targetInput;
+            sincronizarTimePickerEstadoDesdeEntrada_();
             if (!input) {
                 cerrarTimePickerPersonalizado();
                 return;
@@ -723,6 +789,39 @@ const META_SAVE_IDS = [
             return !Number.isFinite(n) || n <= 0;
         }
 
+        function jarraVaciaItem_(jarra) {
+            if (jarra === '' || jarra === null || jarra === undefined) return true;
+            const n = Number(jarra);
+            return !Number.isFinite(n) || n < 1;
+        }
+
+        function leerJarraSelectModal_(valorCrudo) {
+            const raw = valorCrudo !== undefined
+                ? valorCrudo
+                : document.getElementById('visual-m-jarra')?.value;
+            if (!esModoRegistroAcopio_()) {
+                const n = Number(raw || 0);
+                return Number.isFinite(n) && n >= 1 ? n : null;
+            }
+            const s = String(raw ?? '').trim();
+            if (s === '') return '';
+            const n = Number(s);
+            return Number.isFinite(n) && n >= 1 ? n : null;
+        }
+
+        function etiquetaJarraTarjeta_(item) {
+            if (esModoRegistroAcopio_() && jarraVaciaItem_(item?.jarra)) return '—';
+            const n = String(item?.jarra ?? '').trim();
+            return n ? `Jarra ${n}` : '—';
+        }
+
+        function itemTienePesos123Acopio_(item, nClam) {
+            if (!item) return false;
+            return !pesoVacio(peso1EfectivoCampo(item, nClam))
+                || !pesoVacio(item.p2)
+                || !pesoVacio(item.acopio);
+        }
+
         function textoPesoCampo(v) {
             if (pesoVacio(v)) return '00';
             return v + 'g';
@@ -895,6 +994,10 @@ const META_SAVE_IDS = [
                 inp.addEventListener('input', validarPesosAcopioModalEnVivo);
                 inp.addEventListener('change', validarPesosAcopioModalEnVivo);
             });
+            const selJarra = document.getElementById('visual-m-jarra');
+            if (selJarra) {
+                selJarra.addEventListener('change', onCambioJarraModalAcopio_);
+            }
         }
 
         /** Validación de pesos Acopio por clamshell (envío). */
@@ -950,6 +1053,16 @@ const META_SAVE_IDS = [
             const inpAcopio = elInputPesoModalCampo_('acopio');
             const inpP4 = elInputPesoModalCampo_('p4');
             const inpDespacho = elInputPesoModalCampo_('despacho');
+            if (esModoRegistroAcopio_()) {
+                [inpP4, inpDespacho].forEach((inp) => {
+                    if (inp) {
+                        inp.disabled = false;
+                        inp.removeAttribute('readonly');
+                    }
+                });
+                aplicarEstadoPesos123ModalAcopioPorJarra_(nroClamshell);
+                return;
+            }
             const auto = clamshellUsaPeso1DesdePeso2(nroClamshell);
             if (inpP1) {
                 inpP1.disabled = auto;
@@ -962,6 +1075,47 @@ const META_SAVE_IDS = [
                     inp.removeAttribute('readonly');
                 }
             });
+        }
+
+        /** Acopio: jarra " - " vacía y bloquea Pesos 1–3 (solo 4 y 5). */
+        function aplicarEstadoPesos123ModalAcopioPorJarra_(nroClamshell) {
+            if (!esModoRegistroAcopio_()) return;
+            const inpP1 = elInputPesoModalCampo_('p1');
+            const inpP2 = elInputPesoModalCampo_('p2');
+            const inpAcopio = elInputPesoModalCampo_('acopio');
+            const sinJarra = leerJarraSelectModal_() === '';
+            const hint = 'No aplica con jarra " - " (solo Pesos 4 y 5)';
+            if (sinJarra) {
+                [inpP1, inpP2, inpAcopio].forEach((inp) => {
+                    if (!inp) return;
+                    inp.value = '';
+                    inp.disabled = true;
+                    inp.title = hint;
+                });
+                return;
+            }
+            if (inpP1) {
+                inpP1.disabled = false;
+                inpP1.title = '';
+            }
+            if (inpP2) {
+                inpP2.disabled = false;
+                inpP2.title = '';
+            }
+            if (inpAcopio) {
+                inpAcopio.disabled = false;
+                inpAcopio.title = '';
+            }
+            void nroClamshell;
+        }
+
+        function onCambioJarraModalAcopio_() {
+            if (!esModoRegistroAcopio_()) return;
+            const itemEdit = editingCardId != null
+                ? data.find((entry) => entry.id === editingCardId)
+                : null;
+            aplicarEstadoPesos123ModalAcopioPorJarra_(nroClamshellModalActual_(itemEdit));
+            validarPesosAcopioModalEnVivo();
         }
 
         function sincronizarPeso1DesdePeso2EnModal_() {
@@ -1062,7 +1216,11 @@ const META_SAVE_IDS = [
 
             items.forEach((item, idx) => {
                 const n = idx + 1;
-                if (campoVacio(item?.jarra)) faltantes.push(`Clamshell ${n}: N° jarra`);
+                if (campoVacio(item?.jarra) && !esModoRegistroAcopio_()) {
+                    faltantes.push(`Clamshell ${n}: N° jarra`);
+                } else if (esModoRegistroAcopio_() && jarraVaciaItem_(item?.jarra) && itemTienePesos123Acopio_(item, n)) {
+                    faltantes.push(`Clamshell ${n}: N° jarra`);
+                }
                 if (esModoRegistroAcopio_()) {
                     validarPesosAcopioClamshell_(item, n).forEach((e) => faltantes.push(e));
                 } else {
@@ -3055,7 +3213,7 @@ const META_SAVE_IDS = [
                             </div>
                         </div>
                         <div class="clamshell-header-actions">
-                            <div class="jarra-tag">Jarra ${item.jarra}</div>
+                            <div class="jarra-tag">${etiquetaJarraTarjeta_(item)}</div>
                             <button type="button" class="clamshell-delete-btn" title="${tituloEliminar}" aria-label="Eliminar clamshell" ${puedeEliminar ? '' : 'disabled '}onclick="eliminarClamshell(event, ${item.id})">
                                 <i data-lucide="trash-2"></i>
                             </button>
@@ -6942,10 +7100,19 @@ const META_SAVE_IDS = [
             const select = document.getElementById('visual-m-jarra');
             if (!select) return;
             const opciones = construirOpcionesJarraModal(ensayo, jarraActual);
-            select.innerHTML = opciones.map((n) => `<option value="${n}">n° ${n}</option>`).join('');
-            const preferida = Number(jarraActual);
-            const valor = Number.isFinite(preferida) && preferida >= 1 ? preferida : opciones[0];
-            select.value = String(valor);
+            const opcionesHtml = opciones.map((n) => `<option value="${n}">n° ${n}</option>`).join('');
+            if (esModoRegistroAcopio_()) {
+                select.innerHTML = `<option value=""> - </option>${opcionesHtml}`;
+            } else {
+                select.innerHTML = opcionesHtml;
+            }
+            if (esModoRegistroAcopio_() && jarraVaciaItem_(jarraActual)) {
+                select.value = '';
+            } else {
+                const preferida = Number(jarraActual);
+                const valor = Number.isFinite(preferida) && preferida >= 1 ? preferida : opciones[0];
+                select.value = String(valor);
+            }
         }
 
         function abrirModal(title, item = null) {
@@ -7016,17 +7183,36 @@ const META_SAVE_IDS = [
                 const nroModal = nroClamshellModalActual_(itemEdit);
                 const esAutoP1 = clamshellUsaPeso1DesdePeso2(nroModal);
                 let p1Val = Number(elInputPesoModalCampo_('p1')?.value || 0);
-                const p2Val = Number(elInputPesoModalCampo_('p2')?.value || 0);
-                const acopioVal = Number(elInputPesoModalCampo_('acopio')?.value || 0);
+                let p2Val = Number(elInputPesoModalCampo_('p2')?.value || 0);
+                let acopioVal = Number(elInputPesoModalCampo_('acopio')?.value || 0);
                 const p4Val = Number(elInputPesoModalCampo_('p4')?.value || 0);
                 const despachoVal = Number(elInputPesoModalCampo_('despacho')?.value || 0);
-                const jarraSel = Number(document.getElementById('visual-m-jarra')?.value || 0);
-                if (!Number.isFinite(jarraSel) || jarraSel < 1) {
-                    mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido para continuar.');
+                const jarraSel = leerJarraSelectModal_();
+                if (!esModoRegistroAcopio_()) {
+                    if (jarraSel === null) {
+                        mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido para continuar.');
+                        return;
+                    }
+                } else if (jarraSel === null) {
+                    mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido o " - " si no aplica.');
+                    return;
+                } else if (jarraSel === '' && itemTienePesos123Acopio_(
+                    { p1: p1Val, p2: p2Val, acopio: acopioVal },
+                    nroModal
+                )) {
+                    mostrarAlertaRegla(
+                        'Falta jarra',
+                        'Si registras Pesos 1–3, selecciona N° de jarra (no " - ").'
+                    );
                     return;
                 }
 
                 if (esModoRegistroAcopio_()) {
+                    if (jarraSel === '') {
+                        p1Val = 0;
+                        p2Val = 0;
+                        acopioVal = 0;
+                    }
                     if (!(Number.isFinite(p4Val) && p4Val > 0)) {
                         mostrarAlertaRegla('Falta Peso 4', 'Registra Peso 4 · Clamshell calibrado (obligatorio en Acopio).');
                         return;
@@ -7848,6 +8034,7 @@ const META_SAVE_IDS = [
         sincronizarLogisticaAcopioDesdeEnsayo();
         inicializarFlatpickrInputs(document);
         prepararCustomTimePickers(document);
+        configurarTimePickerEntradaTeclado_();
         document.getElementById('time-picker-hour-up')?.addEventListener('click', () => {
             timePickerState.hour = (timePickerState.hour + 1) % 24;
             timePickerActualizarVista_();
@@ -8069,6 +8256,23 @@ const META_SAVE_IDS = [
 
         const MAX_CLAMSHELLS_PDF = 8;
 
+        function acopioSinPesos123EnItem_(item, nClam) {
+            if (!item) return true;
+            return pesoVacio(peso1EfectivoCampo(item, nClam))
+                && pesoVacio(item.p2)
+                && pesoVacio(item.acopio);
+        }
+
+        /** Acopio PDF: sin jarra o sin Pesos 1–3 no se imprime N° jarra. */
+        function jarraNumeroPdfDesdeItem_(item, nClam) {
+            if (!item) return '';
+            if (esModoRegistroAcopio_()) {
+                if (jarraVaciaItem_(item.jarra)) return '';
+                if (acopioSinPesos123EnItem_(item, nClam)) return '';
+            }
+            return strOrEmpty(item.jarra);
+        }
+
         function filaPdfDesdeItem(item, nClam, incluirTemperatura) {
             const m = item?.metric || metricaVacia();
             const t = m.tiempo || {};
@@ -8091,7 +8295,7 @@ const META_SAVE_IDS = [
             } : vacioTemp;
             return {
                 nClam,
-                jarra: item ? strOrEmpty(item.jarra) : '',
+                jarra: jarraNumeroPdfDesdeItem_(item, nClam),
                 p1: item ? pesoStrOrEmpty(peso1EfectivoCampo(item, nClam)) : '',
                 p2: item ? pesoStrOrEmpty(item.p2) : '',
                 p3: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.acopio) : '',

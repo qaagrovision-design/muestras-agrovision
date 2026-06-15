@@ -20,13 +20,77 @@
         return { h, mi };
     }
 
+    function normalizarEntradaHoraTeclado_(raw) {
+        const digits = String(raw || '').replace(/\D/g, '').slice(0, 4);
+        if (digits.length <= 2) return digits;
+        return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+    }
+
+    function sincronizarEstadoDesdeEntradaHora_(cEl) {
+        if (!cEl) return false;
+        const parsed = parseHHMM(cEl.value) || parseHHMM(normalizarEntradaHoraTeclado_(cEl.value));
+        if (!parsed) return false;
+        state.hour = parsed.h;
+        state.minute = parsed.mi;
+        return true;
+    }
+
     function actualizarVista() {
         const hEl = document.getElementById('time-picker-hour');
         const mEl = document.getElementById('time-picker-minute');
         const cEl = document.getElementById('time-picker-current');
         if (hEl) hEl.textContent = pad2(state.hour);
         if (mEl) mEl.textContent = pad2(state.minute);
-        if (cEl) cEl.textContent = pad2(state.hour) + ':' + pad2(state.minute);
+        if (cEl && document.activeElement !== cEl) {
+            const val = `${pad2(state.hour)}:${pad2(state.minute)}`;
+            if (cEl.tagName === 'INPUT') cEl.value = val;
+            else cEl.textContent = val;
+        }
+    }
+
+    function configurarEntradaTecladoTimePicker_() {
+        const cEl = document.getElementById('time-picker-current');
+        if (!cEl || cEl.dataset.tpKb === '1') return;
+        cEl.dataset.tpKb = '1';
+        if (cEl.tagName === 'INPUT') {
+            cEl.setAttribute('inputmode', 'numeric');
+            cEl.setAttribute('autocomplete', 'off');
+            cEl.setAttribute('spellcheck', 'false');
+            if (!cEl.getAttribute('placeholder')) cEl.placeholder = 'HH:MM';
+            if (!cEl.getAttribute('aria-label')) cEl.setAttribute('aria-label', 'Escribir hora');
+            if (!cEl.title) cEl.title = 'Toca para escribir la hora con teclado';
+        }
+        const enfocarTexto = () => {
+            if (cEl.tagName !== 'INPUT') return;
+            try { cEl.select(); } catch (_) { /* ignore */ }
+        };
+        cEl.addEventListener('focus', enfocarTexto);
+        cEl.addEventListener('click', enfocarTexto);
+        if (cEl.tagName === 'INPUT') {
+            cEl.addEventListener('input', () => {
+                const cur = cEl.value;
+                const norm = normalizarEntradaHoraTeclado_(cur);
+                if (cur !== norm) cEl.value = norm;
+                const parsed = parseHHMM(norm);
+                if (parsed) {
+                    state.hour = parsed.h;
+                    state.minute = parsed.mi;
+                    actualizarVista();
+                }
+            });
+            cEl.addEventListener('blur', () => {
+                if (!sincronizarEstadoDesdeEntradaHora_(cEl)) actualizarVista();
+                else actualizarVista();
+            });
+            cEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sincronizarEstadoDesdeEntradaHora_(cEl);
+                    actualizarVista();
+                    cEl.blur();
+                }
+            });
+        }
     }
 
     function cerrar() {
@@ -53,6 +117,7 @@
 
     function aplicar() {
         const input = state.targetInput;
+        sincronizarEstadoDesdeEntradaHora_(document.getElementById('time-picker-current'));
         if (!input) {
             cerrar();
             return;
@@ -85,6 +150,7 @@
     function bindControls() {
         if (state.bound) return;
         state.bound = true;
+        configurarEntradaTecladoTimePicker_();
 
         document.getElementById('time-picker-hour-up')?.addEventListener('click', () => {
             state.hour = (state.hour + 1) % 24;
