@@ -15,9 +15,10 @@
     const PACKING_PDF_FILAS_SEGUNDA_BLOQUE = 11;
     const MIN_LOADER_MS = 350;
 
-    /** Plantilla JSON de demo: se aplica solo a la muestra activa en el selector. */
+    /** Plantilla demo: solo rellena inputs visibles de la muestra activa (no atajos internos). */
     const PACKING_DEMO_PLANTILLA = {
         responsable: 'Demo packing',
+        nViaje: '208353',
         temperaturaAmb: ['12.5', '11.8', '11.2', '10.5', '10.0'],
         temperaturaPulpa: ['11.0', '10.5', '10.0', '9.5', '9.0'],
         humedad: ['85.0', '84.0', '83.0', '82.0', '81.0'],
@@ -415,6 +416,53 @@
     async function confirmarSwalPacking_(options) {
         const resp = await swalFirePacking(options);
         return !!(resp && resp.isConfirmed);
+    }
+
+    async function mostrarErroresCompletitudPacking_(errores, titulo) {
+        const lista = (Array.isArray(errores) ? errores : []).map((e) => String(e || '').trim()).filter(Boolean);
+        if (!lista.length) return;
+        const top = lista.slice(0, 12);
+        const extra = Math.max(0, lista.length - top.length);
+        const listHtml = top.map((txt) => `
+            <li class="swal-campos-item">
+                <span class="swal-campos-dot"></span>
+                <span class="swal-campos-item-text">${txt}</span>
+            </li>
+        `).join('');
+        const extraHtml = extra > 0
+            ? `<div style="margin-top:8px;font-size:12px;color:#64748b;">... y ${extra} punto(s) más</div>`
+            : '';
+        const tituloFinal = titulo || `Datos incompletos (${lista.length})`;
+        if (window.Swal && typeof window.Swal.fire === 'function') {
+            await swalFirePacking({
+                icon: 'warning',
+                title: tituloFinal,
+                html: `
+                    <div class="swal-campos-wrap">
+                        <div class="swal-campos-head">
+                            Completa estos puntos antes de enviar
+                        </div>
+                        <ul class="swal-campos-list">
+                            ${listHtml}
+                        </ul>
+                        <div class="swal-campos-foot">
+                            ${extraHtml || '<span>Revisa los modales de pesos, tiempos y control equitativo.</span>'}
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#1f4f82',
+                width: 480,
+                customClass: {
+                    popup: 'swal-campos-popup',
+                    title: 'swal-campos-title',
+                    confirmButton: 'swal-campos-confirm-btn'
+                },
+                allowOutsideClick: false
+            });
+            return;
+        }
+        alert(`${tituloFinal}\n- ${top.join('\n- ')}${extra > 0 ? `\n... y ${extra} más` : ''}`);
     }
 
     function mostrarToastPacking(icono, titulo, texto) {
@@ -3469,7 +3517,8 @@
         const val = validarCompletitudPackingParaEnvioDesdeEstado_(cap.estado, cap.quotaSnap);
         if (!val.ok) {
             const msg = val.errores[0] || 'Completa todos los datos de packing antes de enviar.';
-            if (!opts?.sinToast) mostrarToastPacking('warning', 'Datos incompletos', msg);
+            if (!opts?.sinToast) await mostrarErroresCompletitudPacking_(val.errores);
+            else mostrarToastPacking('warning', 'Datos incompletos', msg);
             return false;
         }
         const cuota = validarCuotaClamshellsDesdeEstado_(cap.estado, cap.quotaSnap);
@@ -3529,7 +3578,7 @@
         if (!cuotaReg.ok) {
             setStatus(cuotaReg.error, 'warn');
             if (elStatus) elStatus.dataset.pkCompletitudHint = '1';
-            mostrarToastPacking('warning', 'Clamshells incompletos', cuotaReg.error);
+            await mostrarErroresCompletitudPacking_([cuotaReg.error], 'Clamshells incompletos');
             return false;
         }
         const totalCampo = packingQuota.filasTotalCampo || totalFilasCampoPacking();
@@ -3547,7 +3596,7 @@
             const msg = validacion.errores[0] || 'Completa todos los datos de packing antes de enviar.';
             setStatus(msg, 'warn');
             if (elStatus) elStatus.dataset.pkCompletitudHint = '1';
-            mostrarToastPacking('warning', 'Datos incompletos', msg);
+            await mostrarErroresCompletitudPacking_(validacion.errores);
             return false;
         }
         if (elStatus?.dataset.pkCompletitudHint) {
@@ -3960,6 +4009,7 @@
 
     function llenarControlEquitativoDemoPacking(plantilla) {
         const p = plantilla || PACKING_DEMO_PLANTILLA;
+        packingControlState.tipo = null;
         packingControlState.temperatura.amb = (p.temperaturaAmb || []).slice(0, 5);
         packingControlState.temperatura.pulpa = (p.temperaturaPulpa || []).slice(0, 5);
         packingControlState.humedad = (p.humedad || []).slice(0, 5);
@@ -3967,6 +4017,7 @@
         while (packingControlState.temperatura.pulpa.length < 5) packingControlState.temperatura.pulpa.push('');
         while (packingControlState.humedad.length < 5) packingControlState.humedad.push('');
         recalcularPresionesPacking();
+        actualizarContadoresPresionPacking();
     }
 
     function guardarBorradorMuestraActivaInmediato_() {
@@ -3977,6 +4028,7 @@
         return key;
     }
 
+    /** Demo packing: escribe en inputs/campos visibles; el borrador captura el mismo estado que edición manual. */
     function aplicarDemoPackingEnMuestraActiva_(objetivoLocal, sel, plantilla) {
         const p = plantilla || PACKING_DEMO_PLANTILLA;
         const prefObs = String(p.observacionPrefijo || 'SIM-');
@@ -3996,6 +4048,8 @@
         if (elResponsable) {
             elResponsable.value = String(p.responsable || 'Demo packing');
         }
+        packingNViaje = String(p.nViaje || '').trim();
+        actualizarBtnViajePackingTitulo_();
 
         llenarTiemposDemoPacking(p);
         llenarControlEquitativoDemoPacking(p);
@@ -4012,7 +4066,7 @@
         };
     }
 
-    function fabIniciarRegistroPacking() {
+    async function fabIniciarRegistroPacking() {
         establecerMenuFlotantePacking(false);
         const rawMuestra = String(elMuestra?.value || '').trim();
         if (!rawMuestra) {
@@ -4053,14 +4107,13 @@
         const validacionDemo = validarCompletitudPackingParaEnvio();
         if (!validacionDemo.ok) {
             setStatus(
-                'Demo generado con advertencia: ' + (validacionDemo.errores[0] || 'revisa los datos.'),
+                'La simulación no pasó validación: ' + (validacionDemo.errores[0] || 'revisa los datos.'),
                 'warn'
             );
             if (elStatus) elStatus.hidden = false;
-            mostrarToastPacking(
-                'warning',
-                'Demo con revisión',
-                validacionDemo.errores[0] || 'Revisa pesos o tiempos del demo.'
+            await mostrarErroresCompletitudPacking_(
+                validacionDemo.errores,
+                'Simulación packing incompleta'
             );
         } else {
             setStatus('');
@@ -4069,7 +4122,7 @@
                 'success',
                 'Datos de prueba',
                 info.etiqueta + ' (muestra ' + (info.ensayo || '—') + '): '
-                    + objetivoLocal + ' clamshell(s). Otras muestras no se modifican.'
+                    + objetivoLocal + ' clamshell(s) válidos para enviar.'
             );
         }
 
@@ -4661,7 +4714,7 @@
     document.getElementById('fab-packing-borrar')?.addEventListener('click', () => void borrarTodoYCachePacking());
     elFabAgregar?.addEventListener('click', onFabAgregarPackingClick);
     elBtnEnviarPacking?.addEventListener('click', () => void guardarRegistroYEnviarDesdePantallaPacking());
-    document.getElementById('fab-packing-demo')?.addEventListener('click', fabIniciarRegistroPacking);
+    document.getElementById('fab-packing-demo')?.addEventListener('click', () => { void fabIniciarRegistroPacking(); });
     document.addEventListener('click', (e) => {
         if (elFabMenu && !elFabMenu.contains(e.target)) establecerMenuFlotantePacking(false);
     });

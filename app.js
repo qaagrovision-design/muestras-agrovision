@@ -941,8 +941,12 @@ const META_SAVE_IDS = [
 
                 const t = item?.metric?.tiempo || {};
                 // Regla operativa: tiempos se capturan en el clamshell líder (primero) y se replican.
-                if (idx === 0 && keysTiempo.some((k) => campoVacio(t[k]))) {
-                    faltantes.push('Tiempos de la muestra (Clamshell líder)');
+                if (idx === 0) {
+                    if (keysTiempo.some((k) => campoVacio(t[k]))) {
+                        faltantes.push('Tiempos de la muestra (Clamshell líder)');
+                    } else {
+                        validarSecuenciaTiempoMetrica(t).forEach((e) => faltantes.push(e));
+                    }
                 }
             });
 
@@ -1001,21 +1005,56 @@ const META_SAVE_IDS = [
                 .filter((ensayo) => recolectarFaltantesEnvio(ensayo).length === 0);
         }
 
+        const ETIQUETAS_META_CAMPO = {
+            'visual-meta-muestra': 'Muestra',
+            'visual-num-muestra': 'N° muestra',
+            'visual-responsable': 'Responsable',
+            'visual-hora': 'Hora inicio',
+            'visual-meta-fundo': 'Fundo',
+            'visual-traz-etapa': 'Etapa',
+            'visual-traz-campo': 'Campo',
+            'visual-traz-turno': 'Turno',
+            'visual-traz-acopio': 'Acopio',
+            'visual-meta-variedad': 'Variedad',
+            'visual-guia-acopio': 'N° guía despacho',
+            'visual-placa-vehiculo': 'N° placa camioneta',
+            'visual-fecha-ring-widget': 'Fecha'
+        };
+
         function etiquetaCampoRequerido(id) {
-            if (id === 'visual-fecha-ring-widget') return 'Fecha';
+            if (ETIQUETAS_META_CAMPO[id]) return ETIQUETAS_META_CAMPO[id];
             const lbl = document.querySelector(`label[for="${id}"]`);
             if (lbl) {
                 const txt = String(lbl.textContent || '').replace(/\s+/g, ' ').trim();
                 if (txt) return txt;
             }
+            const el = document.getElementById(id);
+            const aria = el?.getAttribute('aria-label');
+            if (aria) return String(aria).trim();
             return id;
         }
 
-        async function validarCamposRequeridosAntesDeEnviar(ensayoObjetivo) {
-            const faltantes = recolectarFaltantesEnvio(ensayoObjetivo);
-            if (!faltantes.length) return true;
-            const top = faltantes.slice(0, 12);
-            const extra = Math.max(0, faltantes.length - top.length);
+        /** Escribe meta demo en inputs y repuebla selects de catálogo (etapa/campo/variedad). */
+        function aplicarMetaDemoEnFormularioCampo_(metaDemo, ensayo) {
+            escribirMetaFormulario(metaDemo, ensayo);
+            if (typeof window.aplicarParcelaCampoDesdeMeta === 'function') {
+                window.aplicarParcelaCampoDesdeMeta(metaDemo);
+            } else if (typeof window.refrescarSelectsCatalogoCampo === 'function') {
+                window.refrescarSelectsCatalogoCampo();
+            }
+            actualizarBloqueoTrazabilidadPorFundo();
+            asegurarOpcionesSelectAcopio(metaDemo['visual-traz-acopio']);
+            sincronizarTrazabilidadCompuesta();
+            sincronizarChipsDesdeAlmacenamiento();
+            snapshotMetaEnsayoActual(ensayo);
+            metaActivoEnsayo = ensayo;
+        }
+
+        async function mostrarFaltantesEnvioCampo_(faltantes, titulo) {
+            const lista = Array.isArray(faltantes) ? faltantes.filter(Boolean) : [];
+            if (!lista.length) return;
+            const top = lista.slice(0, 12);
+            const extra = Math.max(0, lista.length - top.length);
             const listHtml = top.map((txt) => `
                 <li class="swal-campos-item">
                     <span class="swal-campos-dot"></span>
@@ -1025,10 +1064,11 @@ const META_SAVE_IDS = [
             const extraHtml = extra > 0
                 ? `<div style="margin-top:8px;font-size:12px;color:#64748b;">... y ${extra} campo(s) más</div>`
                 : '';
+            const tituloFinal = titulo || `Campos incompletos (${lista.length})`;
             if (window.Swal && typeof window.Swal.fire === 'function') {
                 await swalFireSafe({
                     icon: 'warning',
-                    title: `Campos incompletos (${faltantes.length})`,
+                    title: tituloFinal,
                     html: `
                         <div class="swal-campos-wrap">
                             <div class="swal-campos-head">
@@ -1053,9 +1093,17 @@ const META_SAVE_IDS = [
                     allowOutsideClick: false
                 });
             } else {
-                const texto = `Campos incompletos (${faltantes.length})\n- ${top.join('\n- ')}${extra > 0 ? `\n... y ${extra} más` : ''}`;
+                const texto = `${tituloFinal}\n- ${top.join('\n- ')}${extra > 0 ? `\n... y ${extra} más` : ''}`;
                 alert(texto);
             }
+        }
+
+        async function validarCamposRequeridosAntesDeEnviar(ensayoObjetivo) {
+            const faltantes = recolectarFaltantesEnvio(ensayoObjetivo);
+            if (!faltantes.length) return true;
+            actualizarErroresMetaFormularioCore();
+            establecerAcordeonMetaAbierto(true);
+            await mostrarFaltantesEnvioCampo_(faltantes);
             return false;
         }
 
@@ -3571,6 +3619,58 @@ const META_SAVE_IDS = [
             return (h * 60) + m;
         }
 
+        function horaMasMinutosCampo_(hhmm, minutos) {
+            const base = minutosDesdeHora(hhmm);
+            if (base === null) return '';
+            let total = base + (Number(minutos) || 0);
+            if (total < 0) total = 0;
+            const nh = Math.floor(total / 60) % 24;
+            const nm = total % 60;
+            return String(nh).padStart(2, '0') + ':' + String(nm).padStart(2, '0');
+        }
+
+        /** Jarras + tiempos líder alineados con sincronizarTiempoPorJarra y validarSecuenciaTiempoMetrica. */
+        function construirSimulacionJarrasYTiemposCampo_(esAcopio, ensayo, idInicial) {
+            let idSeq = Number(idInicial) || 1;
+            const j1cIni = '08:00';
+            const j1cFin = '08:20';
+            const j1tIni = '08:20';
+            const j1tFin = '08:45';
+            const j2cIni = '08:50';
+            const j2cFin = '09:10';
+            const j2tIni = '09:10';
+            const j2tFin = '09:30';
+            const terminoCosechaGlobal = j2tFin;
+            const llegada = horaMasMinutosCampo_(terminoCosechaGlobal, 15);
+            const despacho = horaMasMinutosCampo_(llegada, 15);
+            const jarrasFilas = [
+                { id: idSeq++, ensayo, jarra: '1', tipo: 'C', inicio: j1cIni, termino: j1cFin, tiempo: '' },
+                { id: idSeq++, ensayo, jarra: '1', tipo: 'T', inicio: j1tIni, termino: j1tFin, tiempo: '' },
+                { id: idSeq++, ensayo, jarra: '2', tipo: 'C', inicio: j2cIni, termino: j2cFin, tiempo: '' },
+                { id: idSeq++, ensayo, jarra: '2', tipo: 'T', inicio: j2tIni, termino: j2tFin, tiempo: '' }
+            ];
+            const tiempoVisual = {
+                inicioCosecha: j1cIni,
+                inicioPerdida: j1tFin,
+                terminoCosecha: terminoCosechaGlobal,
+                llegadaAcopio: llegada,
+                despachoAcopio: despacho
+            };
+            const tiempoAcopio = {
+                inicioCosecha: j1cIni,
+                terminoCosecha: terminoCosechaGlobal,
+                llegadaAcopio: llegada,
+                acopioCalibrado: horaMasMinutosCampo_(llegada, 5),
+                terminoCalibrado: horaMasMinutosCampo_(llegada, 10),
+                despachoAcopio: despacho
+            };
+            return {
+                jarrasFilas,
+                tiempoLider: esAcopio ? tiempoAcopio : tiempoVisual,
+                nextId: idSeq
+            };
+        }
+
         function validarOrdenCosechaTrasladoFila(ensayo, fila, indice) {
             if (fila.tipo !== 'T') return '';
             const rango = parseRangoJarraLlenado(fila.jarra);
@@ -4824,11 +4924,15 @@ const META_SAVE_IDS = [
                 document.querySelector('.logistica-despacho-block')?.setAttribute('open', '');
                 document.querySelector('.llenado-jarras-wrapper')?.setAttribute('open', '');
             }
-            sincronizarLogisticaAcopioDesdeEnsayo();
+            programarActualizarErroresMetaFormulario();
             actualizarIconos();
         }
         window.fabIniciarRegistroDesdeFab = fabIniciarRegistroDesdeFab;
 
+        /**
+         * Simulación manual (FAB): rellena inputs y tarjetas visibles para pruebas.
+         * No inyecta meta en objetos internos; snapshotMeta lee el formulario después.
+         */
         function cargarSimulacion8Clamshell(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1').trim() || 'Ensayo 1';
             const esAcopio = esModoRegistroAcopio_();
@@ -4848,7 +4952,7 @@ const META_SAVE_IDS = [
                 'visual-traz-etapa': 'E02',
                 'visual-traz-campo': 'C03',
                 'visual-traz-turno': '12',
-                'visual-meta-variedad': 'Sekoya Pop',
+                'visual-meta-variedad': 'Sekoya Pop Orgánica',
                 'visual-guia-acopio': '208353',
                 'visual-placa-vehiculo': '9967-OK',
                 'visual-observacion-formato': 'Simulación Acopio — datos de prueba para envío.',
@@ -4860,19 +4964,18 @@ const META_SAVE_IDS = [
                 'visual-guia-precosecha': '5 / 12',
                 'visual-hora': `${hh}:${mm}`,
                 'visual-meta-fundo': 'LN',
-                'visual-traz-etapa': 'E2',
-                'visual-traz-campo': 'C3',
+                'visual-traz-etapa': 'E02',
+                'visual-traz-campo': 'C03',
                 'visual-traz-turno': 'T1',
-                'visual-meta-variedad': 'Jupiter Blue',
+                'visual-meta-variedad': 'Sekoya Pop Orgánica',
                 'visual-guia-acopio': '208353',
                 'visual-placa-vehiculo': '9967-OK',
-                'visual-trazabilidad': 'E2-C3-T1'
+                'visual-traz-acopio': 'Acopio 1',
+                'visual-trazabilidad': 'E02-C03-T1'
             };
-            const baseMeta = { ...(metaPorEnsayo[ensayo] || {}) };
-            delete baseMeta['visual-num-muestra'];
-            delete baseMeta._num_muestra_fijo;
-            metaPorEnsayo[ensayo] = { ...baseMeta, ...metaDemo };
-            cargarMetaDeEnsayo(ensayo);
+
+            aplicarMetaDemoEnFormularioCampo_(metaDemo, ensayo);
+            persistirLogisticaAcopioDesdeInputs();
             void (async () => {
                 if (navigator.onLine && API_URL) {
                     await refrescarEstadoServidorOperativo(true);
@@ -4884,50 +4987,14 @@ const META_SAVE_IDS = [
                 actualizarProgresoMeta();
                 programarGuardadoMeta();
             })();
-            sincronizarTrazabilidadCompuesta();
-            ensayoMeta[ensayo] = { guiaRemision: '208353', placaVehiculo: '9967-OK' };
 
             for (let i = data.length - 1; i >= 0; i--) {
                 if (String(data[i]?.ensayo || 'Ensayo 1') === ensayo) data.splice(i, 1);
             }
-            llenadoJarrasState.porEnsayo[ensayo] = [
-                {
-                    id: siguienteIdFilaJarras++,
-                    ensayo,
-                    jarra: '1',
-                    tipo: 'C',
-                    inicio: '08:10',
-                    termino: '08:25',
-                    tiempo: ''
-                },
-                {
-                    id: siguienteIdFilaJarras++,
-                    ensayo,
-                    jarra: '1',
-                    tipo: 'T',
-                    inicio: '08:25',
-                    termino: '09:05',
-                    tiempo: ''
-                },
-                {
-                    id: siguienteIdFilaJarras++,
-                    ensayo,
-                    jarra: '2',
-                    tipo: 'C',
-                    inicio: '09:08',
-                    termino: '09:18',
-                    tiempo: ''
-                },
-                {
-                    id: siguienteIdFilaJarras++,
-                    ensayo,
-                    jarra: '2',
-                    tipo: 'T',
-                    inicio: '09:18',
-                    termino: '09:38',
-                    tiempo: ''
-                }
-            ];
+            const simTiempos = construirSimulacionJarrasYTiemposCampo_(esAcopio, ensayo, siguienteIdFilaJarras);
+            siguienteIdFilaJarras = simTiempos.nextId;
+            llenadoJarrasState.porEnsayo[ensayo] = simTiempos.jarrasFilas;
+            const tiempoLider = simTiempos.tiempoLider;
 
             const presionGlobal = {
                 presionAmbienteInicio: '101.325', presionAmbienteTermino: '101.280',
@@ -4943,22 +5010,10 @@ const META_SAVE_IDS = [
                 ...presionGlobal
             };
             const humGlobal = { inicio: '66.4', termino: '64.9', llegada: '63.5', despacho: '62.8' };
-            const tiempoLider = esAcopio ? {
-                inicioCosecha: '08:10',
-                terminoCosecha: '09:05',
-                llegadaAcopio: '09:28',
-                acopioCalibrado: '09:35',
-                terminoCalibrado: '09:42',
-                despachoAcopio: '09:47'
-            } : {
-                inicioCosecha: '08:10',
-                inicioPerdida: '08:25',
-                terminoCosecha: '09:05',
-                llegadaAcopio: '09:28',
-                despachoAcopio: '09:47'
-            };
 
             let maxId = data.length ? Math.max(...data.map((d) => Number(d.id) || 0)) : 0;
+            const guiaDom = String(document.getElementById('visual-guia-acopio')?.value || '').trim();
+            const placaDom = String(document.getElementById('visual-placa-vehiculo')?.value || '').trim().toUpperCase();
             for (let n = 1; n <= 8; n++) {
                 maxId += 1;
                 const metric = metricaVacia();
@@ -4978,8 +5033,8 @@ const META_SAVE_IDS = [
                     p4: esAcopio ? p4Sim : undefined,
                     despacho: esAcopio ? p5Sim : (121 + n),
                     observacion: esAcopio ? `SIM-ACOPIO-${n}` : `SIM-${n}`,
-                    placaVehiculo: '9967-OK',
-                    guiaRemision: '208353',
+                    placaVehiculo: placaDom,
+                    guiaRemision: guiaDom,
                     metric
                 });
             }
@@ -4988,12 +5043,28 @@ const META_SAVE_IDS = [
             marcarEnsayoEnUsoSesion(ensayo);
             renderizarTarjetas();
             renderizarPanelLlenadoJarras();
+            sincronizarTiempoPorJarra(ensayo);
             actualizarBarraHeaderEstado();
             actualizarBloqueoControlesPorPeso1();
             programarGuardadoMeta();
             programarGuardadoDraftCompleto();
+            programarActualizarErroresMetaFormulario();
+            const faltantesSim = recolectarFaltantesEnvio(ensayo);
             const etiquetaModo = esAcopio ? 'Acopio' : 'Visual';
-            mostrarToast('success', 'Simulación lista', `${ensayo} (${etiquetaModo}): meta, 8 clamshell, jarras y métricas de prueba.`);
+            if (faltantesSim.length) {
+                establecerAcordeonMetaAbierto(true);
+                void mostrarFaltantesEnvioCampo_(
+                    faltantesSim,
+                    `Simulación incompleta (${faltantesSim.length})`
+                );
+                mostrarToast(
+                    'warning',
+                    'Revisa la simulación',
+                    `${ensayo} (${etiquetaModo}): faltan datos para poder enviar.`
+                );
+                return;
+            }
+            mostrarToast('success', 'Simulación lista', `${ensayo} (${etiquetaModo}): datos de prueba válidos en formulario y tarjetas.`);
         }
         window.cargarSimulacion8Clamshell = cargarSimulacion8Clamshell;
 
@@ -7353,8 +7424,12 @@ const META_SAVE_IDS = [
             const btn = document.getElementById('btn-guardar-enviar-campo');
             setButtonLoading(btn, true, 'Enviando...');
             try {
+            snapshotMetaEnsayoActual();
+            sincronizarTrazabilidadCompuesta();
+            persistirLogisticaAcopioDesdeInputs();
             guardarDraftCompleto();
             renderizarTarjetas();
+            actualizarErroresMetaFormulario();
             await finalizarEncoladoYSync();
             } finally {
                 setButtonLoading(btn, false);
