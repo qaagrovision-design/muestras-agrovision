@@ -119,6 +119,9 @@
                 <span>Temperatura y humedad para todos los clamshell</span>
             </div>
             <div class="control-equitativo-actions">
+                <button type="button" class="control-equitativo-btn" id="btn_viaje_packing" disabled title="Selecciona una muestra" aria-label="Número de viaje packing">
+                    <i data-lucide="truck"></i>
+                </button>
                 <button type="button" class="control-equitativo-btn" id="btn_temp_packing" disabled title="Selecciona una muestra" aria-label="Temperatura global packing">
                     <i data-lucide="thermometer"></i>
                 </button>
@@ -281,6 +284,20 @@
             <span>Recom.</span>
         </a>
     </nav>
+
+    <div class="modal-overlay" id="packing-viaje-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">N° viaje</h2>
+            <div class="form-group">
+                <label for="packing-n-viaje-inp">N° VIAJE</label>
+                <input type="text" id="packing-n-viaje-inp" name="n_viaje" placeholder="Ej. 208353" enterkeyhint="done" maxlength="48" autocomplete="off">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="btn_cancel_viaje_packing">Cancelar</button>
+                <button class="btn-save" type="button" id="btn_save_viaje_packing">Guardar</button>
+            </div>
+        </div>
+    </div>
 
     <div class="modal-overlay" id="control_global_modal_overlay_packing" aria-hidden="true">
         <div class="modal-content">

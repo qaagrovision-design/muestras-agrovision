@@ -1488,15 +1488,18 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw) {
   var tienePacking = false;
   var tieneRecepcionC5 = false;
   var tieneThermoKing = false;
+  var packMetaPrimera = null;
 
   for (var k = 0; k < data.length; k++) {
     var r = data[k];
     var rowFechaStr = formatFechaPacking(r[0]);
     var rowEnStr = normalizarEnsayoNumeroGs_(r[13]);
     if (rowFechaStr !== fecha || rowEnStr !== enNorm) continue;
+    var packRow = packBlock[k] || [];
     if (row == null) {
       row = r;
       filaEnSheet = 2 + k;
+      packMetaPrimera = packRow;
     }
     numFilas++;
     var desp = r[IDX_COL_PESO_DESPACHO];
@@ -1504,7 +1507,6 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw) {
       ? parseFloat(String(desp).replace(',', '.'))
       : NaN;
     despachoPorFila.push(!isNaN(numDesp) ? numDesp : null);
-    var packRow = packBlock[k] || [];
     if (rowHasPackingData_(packRow)) {
       tienePacking = true;
       filasPackingRegistradas++;
@@ -1562,7 +1564,16 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw) {
       VARIEDAD: row[10],
       PLACA_VEHICULO: row[12],
       FUNDO: row[6],
-      GUIA_REMISION: row[11]
+      GUIA_REMISION: row[11],
+      N_VIAJE: (packMetaPrimera && packMetaPrimera[3] != null && packMetaPrimera[3] !== '')
+        ? String(packMetaPrimera[3]).trim()
+        : '',
+      n_viaje: (packMetaPrimera && packMetaPrimera[3] != null && packMetaPrimera[3] !== '')
+        ? String(packMetaPrimera[3]).trim()
+        : '',
+      HORA_RECEPCION: (packMetaPrimera && packMetaPrimera[2] != null && packMetaPrimera[2] !== '')
+        ? String(packMetaPrimera[2]).trim()
+        : ''
     }
   };
 }

@@ -102,6 +102,10 @@
     const elObsInput = document.getElementById('packing-visual-observation');
     const elObsCancel = document.getElementById('packing-observation-cancel');
     const elObsGuardar = document.getElementById('packing-observation-guardar');
+    const elViajeModalPacking = document.getElementById('packing-viaje-modal-overlay');
+    const elViajeInputPacking = document.getElementById('packing-n-viaje-inp');
+    const elViajeCancelPacking = document.getElementById('btn_cancel_viaje_packing');
+    const elViajeGuardarPacking = document.getElementById('btn_save_viaje_packing');
     const elFabAgregar = document.getElementById('fab-packing-agregar');
     const elFabRestanteBadge = document.getElementById('fab-packing-restante-badge');
     let elMetricTiempoBtn = null;
@@ -591,6 +595,15 @@
         return s;
     }
 
+    /** Prioriza el primer valor no vacío (|| evita que '' del servidor tape el UI). */
+    function viajePdfDesdeFuentesPacking_(nViajeEstado, previewMeta, detalle) {
+        const d = detalle && typeof detalle === 'object' ? detalle : {};
+        const meta = previewMeta && typeof previewMeta === 'object' ? previewMeta : {};
+        return textoMetaCampoPdfPacking_(
+            nViajeEstado || meta.viaje || d.N_VIAJE || d.n_viaje
+        );
+    }
+
     function registrarDetalleMetaPacking_(fechaIso, rawMuestra, detalle) {
         const key = claveBorradorMuestraPacking(fechaIso, rawMuestra);
         if (!key || !detalle || typeof detalle !== 'object') return;
@@ -780,6 +793,7 @@
             responsable,
             hora_recepcion: hora,
             hora_inicio_recepcion_c5: hora,
+            n_viaje: String(estado?.nViaje || '').trim(),
             packing_start_index: Number(snap.filasPackingRegistradas) || 0,
             packingRows: (() => {
                 const horaReg = horaLocalActualPacking();
@@ -2129,6 +2143,8 @@
             elBtnHumPacking.disabled = !habilitada;
             elBtnHumPacking.title = tituloCgHum;
         }
+        if (elBtnViajePacking) elBtnViajePacking.disabled = !habilitada;
+        actualizarBtnViajePackingTitulo_();
         if (!habilitada) cerrarModalControlGlobalPacking();
         actualizarBtnEnviarPacking();
         TIEMPOS_MUESTRA_IDS.forEach((id) => {
@@ -2140,6 +2156,7 @@
             cerrarModalPesosPacking();
             cerrarModalPresionPacking();
             cerrarModalObservacionPacking();
+            cerrarModalViajePacking();
         } else {
             ensureCardPorDefectoPacking();
         }
@@ -2166,8 +2183,10 @@
         presionAmb: ['', '', '', '', ''],
         presionFruta: ['', '', '', '', '']
     };
+    let packingNViaje = '';
 
     const elControlBarPacking = document.getElementById('control_equitativo_bar_packing');
+    const elBtnViajePacking = document.getElementById('btn_viaje_packing');
     const elBtnTempPacking = document.getElementById('btn_temp_packing');
     const elBtnHumPacking = document.getElementById('btn_hum_packing');
     const elControlModalPacking = document.getElementById('control_global_modal_overlay_packing');
@@ -2185,9 +2204,48 @@
         packingControlState.presionFruta = ['', '', '', '', ''];
     }
 
+    function getNViajePacking() {
+        return String(packingNViaje || '').trim();
+    }
+
+    function actualizarBtnViajePackingTitulo_() {
+        if (!elBtnViajePacking) return;
+        const v = getNViajePacking();
+        elBtnViajePacking.title = elBtnViajePacking.disabled
+            ? 'Selecciona una muestra'
+            : (v ? 'N° viaje: ' + v : 'N° viaje');
+    }
+
+    function abrirModalViajePacking() {
+        if (!muestraSeleccionada() || !elViajeModalPacking) return;
+        if (elViajeInputPacking) elViajeInputPacking.value = getNViajePacking();
+        elViajeModalPacking.style.display = 'flex';
+        elViajeModalPacking.setAttribute('aria-hidden', 'false');
+        elViajeInputPacking?.focus();
+    }
+
+    function cerrarModalViajePacking() {
+        if (!elViajeModalPacking) return;
+        ocultarModalPacking(elViajeModalPacking);
+    }
+
+    function guardarModalViajePacking() {
+        packingNViaje = String(elViajeInputPacking?.value || '').trim();
+        if (lastDetallePacking && typeof lastDetallePacking === 'object') {
+            lastDetallePacking.N_VIAJE = packingNViaje;
+            lastDetallePacking.n_viaje = packingNViaje;
+            registrarDetalleMetaPacking_(elFecha?.value, elMuestra?.value, lastDetallePacking);
+        }
+        actualizarBtnViajePackingTitulo_();
+        cerrarModalViajePacking();
+        mostrarToastPacking('success', 'Guardado', 'N° viaje guardado.');
+        programarGuardadoBorradorPacking();
+    }
+
     /** Limpia tiempos/control/hora al cambiar de muestra sin borrador (evita arrastrar demo de otra). */
     function limpiarUiCapturaMuestraPacking_() {
         packingBadgeWasComplete = false;
+        packingNViaje = '';
         resetControlGlobalPacking();
         TIEMPOS_MUESTRA_IDS.forEach((id) => {
             const inp = document.getElementById(id);
@@ -2263,7 +2321,7 @@
             placa: String(placaEl?.textContent || '').trim(),
             responsable: getResponsablePacking(),
             guia: textoMetaCampoPdfPacking_(det.GUIA_REMISION),
-            viaje: textoMetaCampoPdfPacking_(det.N_VIAJE ?? det.n_viaje),
+            viaje: viajePdfDesdeFuentesPacking_(getNViajePacking(), null, det),
             rotulo: String(det.ENSAYO_NOMBRE ?? '').trim()
         };
     }
@@ -2282,6 +2340,7 @@
             tiempos: getTiemposMuestra(),
             horaInicio: getHoraPersonal(),
             responsable: getResponsablePacking(),
+            nViaje: getNViajePacking(),
             packingQuotaSnapshot: capturarQuotaSnapshotPacking_(),
             previewMeta: capturarPreviewMetaPacking()
         };
@@ -2309,6 +2368,7 @@
         }
         if (String(estado.horaInicio || '').trim()) return true;
         if (String(estado.responsable || '').trim()) return true;
+        if (String(estado.nViaje || '').trim()) return true;
         return false;
     }
 
@@ -2386,6 +2446,12 @@
         if (elResponsable && String(estado.responsable || '').trim()) {
             elResponsable.value = String(estado.responsable).trim();
         }
+        packingNViaje = String(estado.nViaje || '').trim();
+        if (!packingNViaje) {
+            const det = leerDetalleMetaPacking_(elMuestra?.value);
+            packingNViaje = textoMetaCampoPdfPacking_(det?.N_VIAJE ?? det?.n_viaje) || '';
+        }
+        actualizarBtnViajePackingTitulo_();
         packingCardSeq = Number(estado.packingCardSeq) || 0;
         const snap = estado.packingQuotaSnapshot || {};
         const cardsNeeded = Array.isArray(estado.packingCards) ? estado.packingCards.length : 0;
@@ -3037,6 +3103,7 @@
             responsable: responsable,
             hora_recepcion: hora,
             hora_inicio_recepcion_c5: hora,
+            n_viaje: getNViajePacking(),
             packing_start_index: packingQuota.filasPackingRegistradas,
             packingRows: packingCards.map((c) => buildPackingRowDesdeCard(c, horaRegistro))
         };
@@ -4357,6 +4424,8 @@
             aplicarEstadoMuestraPacking(borrador, { skipPreview: true });
         } else {
             limpiarUiCapturaMuestraPacking_();
+            packingNViaje = textoMetaCampoPdfPacking_(d.N_VIAJE ?? d.n_viaje) || '';
+            actualizarBtnViajePackingTitulo_();
             reiniciarCardsPacking();
         }
         setPackingCardHabilitada(muestraSeleccionada());
@@ -4678,6 +4747,17 @@
     elObsGuardar?.addEventListener('click', guardarModalObservacionPacking);
     bindCerrarModalAlClickFueraPacking(elObsModal, cerrarModalObservacionPacking);
 
+    elBtnViajePacking?.addEventListener('click', abrirModalViajePacking);
+    elViajeCancelPacking?.addEventListener('click', cerrarModalViajePacking);
+    elViajeGuardarPacking?.addEventListener('click', guardarModalViajePacking);
+    bindCerrarModalAlClickFueraPacking(elViajeModalPacking, cerrarModalViajePacking);
+    elViajeInputPacking?.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            guardarModalViajePacking();
+        }
+    });
+
     elBtnTempPacking?.addEventListener('click', () => abrirModalControlGlobalPacking('temperatura'));
     elBtnHumPacking?.addEventListener('click', () => abrirModalControlGlobalPacking('humedad'));
     elControlCancelPacking?.addEventListener('click', cerrarModalControlGlobalPacking);
@@ -4852,9 +4932,10 @@
         return 'Ensayo ' + n;
     }
 
-    function metaTrazDesdeDetallePdfPacking_(detalle, previewMeta) {
+    function metaTrazDesdeDetallePdfPacking_(detalle, previewMeta, nViajeEstado) {
         const d = detalle && typeof detalle === 'object' ? detalle : {};
         const meta = previewMeta && typeof previewMeta === 'object' ? previewMeta : {};
+        const viaje = viajePdfDesdeFuentesPacking_(nViajeEstado, meta, d);
         if (d.TRAZ_ETAPA != null || d.TRAZ_CAMPO != null || d.TRAZ_LIBRE != null) {
             const etapa = String(d.TRAZ_ETAPA ?? '').trim();
             const campo = String(d.TRAZ_CAMPO ?? '').trim();
@@ -4866,8 +4947,8 @@
                 traz: [etapa, campo, turno].filter(Boolean).join('-'),
                 variedad: String(d.VARIEDAD ?? meta.variedad ?? '').trim(),
                 placa: String(d.PLACA_VEHICULO ?? meta.placa ?? '').trim().toUpperCase(),
-                guia: textoMetaCampoPdfPacking_(d.GUIA_REMISION ?? meta.guia),
-                viaje: textoMetaCampoPdfPacking_(d.N_VIAJE ?? d.n_viaje ?? meta.viaje),
+                guia: textoMetaCampoPdfPacking_(d.GUIA_REMISION || meta.guia),
+                viaje,
                 rotulo: String(d.ENSAYO_NOMBRE ?? meta.rotulo ?? '').trim()
             };
         }
@@ -4880,14 +4961,14 @@
             traz,
             variedad: String(meta.variedad || '').trim(),
             placa: String(meta.placa || '').trim().toUpperCase(),
-            guia: textoMetaCampoPdfPacking_(meta.guia),
-            viaje: textoMetaCampoPdfPacking_(meta.viaje),
+            guia: textoMetaCampoPdfPacking_(meta.guia || d.GUIA_REMISION),
+            viaje,
             rotulo: String(meta.rotulo || '').trim()
         };
     }
 
     function construirDatosPdfPackingDesdeEstado_(numMuestra, ensayoNumero, estado, detalle) {
-        const trazMeta = metaTrazDesdeDetallePdfPacking_(detalle, estado?.previewMeta);
+        const trazMeta = metaTrazDesdeDetallePdfPacking_(detalle, estado?.previewMeta, estado?.nViaje);
         const tiempos = Array.isArray(estado?.tiempos) ? estado.tiempos : [];
         const tiemposFmt = tiempos.map(formatoHoraPdfPacking);
         const cards = (Array.isArray(estado?.packingCards) ? estado.packingCards : [])
