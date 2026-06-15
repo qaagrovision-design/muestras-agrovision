@@ -258,6 +258,11 @@
             color: rgba(255, 255, 255, 0.78);
         }
 
+        .acopio-peso-field label {
+            font-size: 10px;
+            line-height: 1.25;
+        }
+
         .header-app-version {
             display: block;
             margin-top: 5px;
@@ -336,7 +341,7 @@
             display: inline-flex;
             align-items: center;
             max-width: 100%;
-            padding: 6px 11px;
+            padding: 6px 9px;
             border-radius: 999px;
             font-size: 12px;
             font-weight: 700;
@@ -2233,6 +2238,32 @@
         .logistic-point svg { color: var(--primary); width: 18px; height: 18px; }
         .logistic-point b { color: var(--primary); font-size: 14px; }
 
+        .logistics-info--tres {
+            gap: 6px;
+        }
+
+        .logistics-info--tres .logistic-point {
+            flex: 1;
+            min-width: 0;
+            gap: 5px;
+        }
+
+        .logistics-info--tres .logistic-point p {
+            font-size: 8px;
+            line-height: 1.15;
+        }
+
+        .logistics-info--tres .logistic-point b {
+            font-size: 12px;
+        }
+
+        .logistics-info--tres .logistic-point i,
+        .logistics-info--tres .logistic-point svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
         /* Modal Superior */
         .modal-overlay {
             position: fixed;
@@ -2375,7 +2406,7 @@
         }
 
         .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+        .form-group label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
         .form-group input,
         .form-group select {
             width: 100%; padding: 14px;

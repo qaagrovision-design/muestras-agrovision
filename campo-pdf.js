@@ -2,7 +2,27 @@
  * PDF Agrovision (Campo) — Hoja 1 igual al formulario físico PE-F-QPH-306.
  */
 (function campoPdfModule() {
-    const LOGO_URL = './log.png';
+    /** Raíz del proyecto: Visual en /, Acopio en /acopio/. */
+    function baseRaizCampoPdf_() {
+        if (String(window.CAMPO_REGISTRO_MODO || '').trim() === 'acopio') return '../';
+        const path = String(window.location.pathname || '').replace(/\\/g, '/');
+        if (/\/acopio(\/|$)/i.test(path)) return '../';
+        return './';
+    }
+
+    function urlCampoPdfDesdeRaiz_(rel) {
+        const base = baseRaizCampoPdf_();
+        try {
+            return new URL(base + rel, document.baseURI || window.location.href).href;
+        } catch (_) {
+            return base + rel;
+        }
+    }
+
+    function logoUrlCampoPdf_() {
+        return urlCampoPdfDesdeRaiz_('log.png');
+    }
+
     const PAGE = { w: 297, h: 210, margin: 7 };
     const GRIS_CABECERA = { r: 217, g: 217, b: 217 };
     /** Igual que Excel «Girar texto hacia arriba»: 90° CCW, centrado en la celda. */
@@ -32,19 +52,11 @@
     const PDF_PREVIEW_DPR = () => Math.min(window.devicePixelRatio || 1, 3);
 
     function workerSrcPdfJs() {
-        try {
-            return new URL('librerias/pdf.worker.min.js', document.baseURI || window.location.href).href;
-        } catch (_) {
-            return './librerias/pdf.worker.min.js';
-        }
+        return urlCampoPdfDesdeRaiz_('librerias/pdf.worker.min.js');
     }
 
     function standardFontsUrlPdfJs() {
-        try {
-            return new URL('librerias/standard_fonts/', document.baseURI || window.location.href).href;
-        } catch (_) {
-            return './librerias/standard_fonts/';
-        }
+        return urlCampoPdfDesdeRaiz_('librerias/standard_fonts/');
     }
 
     function obtenerPdfJs() {
@@ -158,7 +170,7 @@
     async function cargarLogoDataUrl() {
         if (logoDataUrlCache) return logoDataUrlCache;
         try {
-            const r = await fetch(LOGO_URL, { cache: 'force-cache' });
+            const r = await fetch(logoUrlCampoPdf_(), { cache: 'force-cache' });
             if (!r.ok) return null;
             const blob = await r.blob();
             return await new Promise((resolve) => {
@@ -235,14 +247,32 @@
         if (o.fillGray) rellenoGris(doc, x, y, w, h);
         else borde(doc, x, y, w, h);
         if (!txt(texto)) return;
-        const fs = o.fontSize || 7;
+        const fsInicial = o.fontSize || 7;
         const align = o.align || 'center';
-        doc.setFont('helvetica', o.bold ? 'bold' : 'normal');
-        doc.setFontSize(fs);
         const pad = o.pad != null ? o.pad : 1;
         const maxW = Math.max(2, w - pad * 2);
+        doc.setFont('helvetica', o.bold ? 'bold' : 'normal');
+
+        if (o.nowrap) {
+            let fs = fsInicial;
+            const linea = String(texto).replace(/\s+/g, ' ').trim();
+            doc.setFontSize(fs);
+            let dim = medirTextoHorizontal(doc, linea, fs);
+            const fsMin = o.fsMin != null ? o.fsMin : 4.2;
+            while (dim.ancho > maxW && fs > fsMin) {
+                fs -= 0.15;
+                doc.setFontSize(fs);
+                dim = medirTextoHorizontal(doc, linea, fs);
+            }
+            const ty = y + h / 2 + fs * 0.15;
+            if (align === 'left') doc.text(linea, x + pad, ty, { align: 'left' });
+            else doc.text(linea, x + w / 2, ty, { align: 'center' });
+            return;
+        }
+
+        doc.setFontSize(fsInicial);
         const lines = doc.splitTextToSize(String(texto), maxW);
-        const lineH = fs * 0.4;
+        const lineH = fsInicial * 0.4;
         const blockH = lines.length * lineH;
         let ty = y + (h - blockH) / 2 + lineH * 0.85;
         lines.forEach((ln) => {
@@ -296,7 +326,7 @@
         if (o.fillGray) rellenoGris(doc, x, y, w, h);
         else borde(doc, x, y, w, h);
         if (!txt(texto)) return;
-        const t = String(texto).split('\n')[0].trim() || String(texto).trim();
+        const t = String(texto).replace(/\s+/g, ' ').trim();
         if (!t) return;
 
         doc.setFont('helvetica', o.bold ? 'bold' : 'normal');
@@ -443,7 +473,7 @@
         const padDer = 2;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.8);
-        doc.text(`Código: ${datos.codigo || 'PE-F-QPH-306'}`, xDer + padDer, y0 + 6.2, { align: 'left' });
+        doc.text(`Código: ${datos.codigo || (esPdfCampoModoAcopio_(datos) ? 'PE-F-QPH-305' : 'PE-F-QPH-306')}`, xDer + padDer, y0 + 6.2, { align: 'left' });
         doc.text(`Versión: ${datos.version || '1'}`, xDer + padDer, y0 + 12.2, { align: 'left' });
 
         return y0 + headH + 0.75;
@@ -557,6 +587,37 @@
         doc.setFont('helvetica', 'normal');
     }
 
+    function esPdfCampoModoAcopio_(datos) {
+        const m = String(datos?.modoRegistro || datos?.muestras?.[0]?.modoRegistro || '').trim();
+        if (m === 'acopio') return true;
+        if (m === 'visual') return false;
+        return String(window.CAMPO_REGISTRO_MODO || '').trim() === 'acopio';
+    }
+
+    /** PESO 5 Acopio: única cabecera con 2 líneas (corte antes de CAMPO). */
+    const PESO_ACOPIO_HDR_P5_LINEAS = [
+        'PESO 5 DESPACHO ACOPIO',
+        '- CAMPO (PESO CLAMSHELL)'
+    ];
+
+    /** Cabeceras PESO BRUTO modo Acopio — una sola línea vertical (sin salto). */
+    const PESO_ACOPIO_HDR = [
+        'PESO 1 - TÉRMINO DE COSECHA',
+        'PESO 2 - LLEGADA ACOPIO',
+        'PESO 3 - ACOPIO CALIBRADO',
+        'PESO 4 CLAMSHELL CALIBRADO'
+    ];
+
+    /** Cabeceras TIEMPOS modo Acopio — una sola línea vertical (sin salto). */
+    const TIEMPO_ACOPIO_HDR = [
+        'INICIO DE COSECHA',
+        'TÉRMINO DE COSECHA',
+        'LLEGADA ACOPIO - CAMPO',
+        'ACOPIO CALIBRADO',
+        'TÉRMINO DE CALIBRADO',
+        'DESPACHO ACOPIO - CAMPO'
+    ];
+
     function generarHoja1(doc, datos, logoUrl) {
         const layout = layoutHojaImpresion();
         const m = layout.margin;
@@ -564,16 +625,27 @@
         let y = encabezadoPagina(doc, datos, datos.tituloHoja1, logoUrl, layout);
         y = bloqueMeta(doc, datos, y, layout);
 
-        const weights = [
+        const modoAcopio = esPdfCampoModoAcopio_(datos);
+        const weightsVisual = [
             1.85, 1.95,
             2.5, 2.5, 2.5, 2.5, 2.5, 2.6, 2.6,
             2.8, 3.0, 2.8, 2.6, 2.6,
             3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3,
             2.6, 3.2, 2.4, 2.4, 2.6
         ];
+        /** Acopio: 2 + 5 peso + 6 tiempos + 8 temp + 5 jarras = 26 (sin cols llegada/despacho peso). */
+        const weightsAcopio = [
+            1.85, 1.95,
+            2.5, 2.5, 2.5, 2.5, 2.5,
+            2.8, 3.0, 2.8, 2.6, 2.6, 2.8,
+            3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3,
+            2.6, 3.2, 2.4, 2.4, 2.6
+        ];
+        const weights = modoAcopio ? weightsAcopio : weightsVisual;
         const cw = pesosColumnas(weights, W);
-        const nCols = 27;
-        const idxTemp = 14;
+        const nCols = modoAcopio ? 26 : 27;
+        const idxTemp = modoAcopio ? 13 : 14;
+        const idxJarraLlenado = modoAcopio ? 21 : 22;
         const nTemp = 8;
 
         const hGroup = 7;
@@ -606,19 +678,27 @@
             ['LLEGADA', 'ACOPIO', 'CAMPO'],
             ['DESPACHO', 'ACOPIO -', 'CAMPO']
         ];
-        const trasladoLineas = ['TRASLADO U OTRA', 'OBSERVACION'];
         const tempSubLabels = ['T° AMBIENTE', 'T° PULPA'];
 
-        const labelsGroup = [
-            { i: 2, n: 7, t: 'PESO BRUTO (G)' },
-            { i: 9, n: 5, t: 'TIEMPOS DE LA MUESTRA (HORA)' },
-            { i: 14, n: 8, t: 'TEMPERATURA MUESTRA(°C)' },
-            { i: 22, n: 5, t: 'TIEMPO DE LLENADO DE JARRAS (HORA)' }
-        ];
+        const labelsGroup = modoAcopio
+            ? [
+                { i: 2, n: 5, t: 'PESO BRUTO (G)' },
+                { i: 7, n: 6, t: 'TIEMPOS DE LA MUESTRA (HORA)' },
+                { i: 13, n: 8, t: 'TEMPERATURA MUESTRA(°C)' },
+                { i: 21, n: 5, t: 'TIEMPO DE LLENADO DE JARRAS (HORA)' }
+            ]
+            : [
+                { i: 2, n: 7, t: 'PESO BRUTO (G)' },
+                { i: 9, n: 5, t: 'TIEMPOS DE LA MUESTRA (HORA)' },
+                { i: 14, n: 8, t: 'TEMPERATURA MUESTRA(°C)' },
+                { i: 22, n: 5, t: 'TIEMPO DE LLENADO DE JARRAS (HORA)' }
+            ];
 
         const vHdr = { bold: true, fillGray: true, fontSize: FS_CABECERA_TABLA, fsFijo: true };
         const PADX_TIEMPOS_MUESTRA = 4.2;
-        const idxPadTiemposMuestra = new Set([9, 10, 11, 12, 13]);
+        const idxPadTiemposMuestra = modoAcopio
+            ? new Set([7, 8, 9, 10, 11, 12])
+            : new Set([9, 10, 11, 12, 13]);
         const wClamJarra = cw[0] + cw[1];
         /** N° CLAMSHELL + N° JARRA: hueco blanco arriba (sin borde arriba/izquierda, como formato físico). */
         doc.setFillColor(255, 255, 255);
@@ -635,7 +715,7 @@
         let x = m + wClamJarra;
         labelsGroup.forEach((g) => {
             const w = cw.slice(g.i, g.i + g.n).reduce((a, b) => a + b, 0);
-            dibujarCelda(doc, x, yTab, w, hGroup, g.t, { fontSize: FS_CABECERA_GRUPO, bold: true, fillGray: true });
+            dibujarCelda(doc, x, yTab, w, hGroup, g.t, { fontSize: FS_CABECERA_GRUPO, bold: true, fillGray: true, nowrap: true });
             x += w;
         });
 
@@ -645,7 +725,17 @@
         for (let i = 2; i < idxTemp; i++) {
             const xi = m + cw.slice(0, i).reduce((a, b) => a + b, 0);
             const hdrCol = idxPadTiemposMuestra.has(i) ? { ...vHdr, padX: PADX_TIEMPOS_MUESTRA } : vHdr;
-            dibujarCeldaVertical(doc, xi, yDet, cw[i], hDetalleUnico, subLabels[i], hdrCol);
+            if (modoAcopio && i === 6) {
+                dibujarCeldaVerticalConLineas(
+                    doc, xi, yDet, cw[i], hDetalleUnico, PESO_ACOPIO_HDR_P5_LINEAS, hdrCol
+                );
+            } else if (modoAcopio && i >= 2 && i <= 5) {
+                dibujarCeldaVertical(doc, xi, yDet, cw[i], hDetalleUnico, PESO_ACOPIO_HDR[i - 2], hdrCol);
+            } else if (modoAcopio && i >= 7 && i <= 12) {
+                dibujarCeldaVertical(doc, xi, yDet, cw[i], hDetalleUnico, TIEMPO_ACOPIO_HDR[i - 7], hdrCol);
+            } else {
+                dibujarCeldaVertical(doc, xi, yDet, cw[i], hDetalleUnico, subLabels[i], hdrCol);
+            }
         }
 
         let xt = m + cw.slice(0, idxTemp).reduce((a, b) => a + b, 0);
@@ -669,12 +759,17 @@
             xt += cw[idxTemp + i];
         }
 
-        for (let i = 22; i < nCols; i++) {
+        const trasladoLineas = ['TRASLADO U OTRA', 'OBSERVACION'];
+        const subLabelsJarraLlenado = [
+            'Nº DE JARRA - LLENADO', 'TRASLADO U OTRA OBSERVACION', 'INICIO', 'TERMINO', 'TIEMPO EMPLEADO'
+        ];
+        for (let j = 0; j < subLabelsJarraLlenado.length; j++) {
+            const i = idxJarraLlenado + j;
             const xi = m + cw.slice(0, i).reduce((a, b) => a + b, 0);
-            if (i === 23) {
+            if (j === 1) {
                 dibujarCeldaVerticalConLineas(doc, xi, yDet, cw[i], hDetalleUnico, trasladoLineas, vHdr);
             } else {
-                dibujarCeldaVertical(doc, xi, yDet, cw[i], hDetalleUnico, subLabels[i], vHdr);
+                dibujarCeldaVertical(doc, xi, yDet, cw[i], hDetalleUnico, subLabelsJarraLlenado[j], vHdr);
             }
         }
 
@@ -683,11 +778,22 @@
         for (let ri = 0; ri < nFilasCuerpo; ri++) {
             const fila = (datos.filas || [])[ri] || {};
             x = m;
+            const tiemposFila = modoAcopio
+                ? [
+                    fila.tInicioCosecha, fila.tTermino, fila.tLlegada,
+                    fila.tAcopioCalibrado, fila.tTerminoCalibrado, fila.tDespacho
+                ]
+                : [
+                    fila.tInicioCosecha, fila.tPerdida, fila.tTermino, fila.tLlegada, fila.tDespacho
+                ];
+            const pesosFila = modoAcopio
+                ? [fila.p1, fila.p2, fila.p3, fila.p4, fila.p5]
+                : [fila.p1, fila.p2, fila.p3, fila.p4, fila.p5, fila.llegada, fila.despacho];
             const vals = [
                 fila.nClam,
                 fila.jarra,
-                fila.p1, fila.p2, fila.p3, fila.p4, fila.p5, fila.llegada, fila.despacho,
-                fila.tInicioCosecha, fila.tPerdida, fila.tTermino, fila.tLlegada, fila.tDespacho,
+                ...pesosFila,
+                ...tiemposFila,
                 fila.tempInicioAmb, fila.tempInicioPul, fila.tempTerminoAmb, fila.tempTerminoPul,
                 fila.tempLlegadaAmb, fila.tempLlegadaPul, fila.tempDespachoAmb, fila.tempDespachoPul,
                 fila.jarraLlenado, fila.trasladoObs, fila.jarraInicio, fila.jarraTermino, fila.jarraTiempo
@@ -758,7 +864,8 @@
         y = bloqueMeta(doc, datos, y, layout);
 
         const p2 = datos.pagina2 || {};
-        const eventos = ['INICIO DE COSECHA', 'TÉRMINO DE COSECHA', 'LLEGADA ACOPIO', 'DESPACHO- ACOPIO'];
+        const eventos = ['INICIO DE COSECHA', 'TÉRMINO DE COSECHA', 'LLEGADA ACOPIO', 'DESPACHO - ACOPIO'];
+        const vHdrH2 = { fillGray: true, bold: true, fontSize: FS_CABECERA_TABLA, fsFijo: true };
         const grupos = [
             { tit: 'HUMEDAD RELATIVA(%)', vals: p2.humedad || [] },
             { tit: 'TEMPERATURA AMBIENTE (°C)', vals: p2.tempAmbiente || [] },
@@ -794,18 +901,13 @@
 
         grupos.forEach((g, gi) => {
             const xg = m + gi * colW * 4;
-            dibujarCelda(doc, xg, yTab, colW * 4, hG, g.tit, { fontSize: FS_CABECERA_GRUPO, bold: true, fillGray: true });
+            dibujarCelda(doc, xg, yTab, colW * 4, hG, g.tit, { fontSize: FS_CABECERA_GRUPO, bold: true, fillGray: true, nowrap: true });
         });
         rellenoGris(doc, obsX, yTab, obsW, hObsHdr);
 
         let x = m;
         for (let i = 0; i < 16; i++) {
-            dibujarCeldaVertical(doc, x, ySub, colW, hSub, eventos[i % 4], {
-                fillGray: true,
-                bold: true,
-                fontSize: FS_CABECERA_TABLA,
-                fsFijo: true
-            });
+            dibujarCeldaVertical(doc, x, ySub, colW, hSub, eventos[i % 4], vHdrH2);
             x += colW;
         }
         doc.setFont('helvetica', 'bold');

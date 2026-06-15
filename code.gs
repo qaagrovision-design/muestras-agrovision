@@ -1,39 +1,257 @@
 /**
  * Google Apps Script - MTTP Arándano
  * Recibe datos del formulario y los escribe en la hoja activa.
- * Hoja 1: 48 cols — orden = formulario (… OBSERVACION, OBSERVACION_FORMATO, HORA_REGISTRO); packing desde col 49.
+ * Hoja 1 (Visual): 50 cols registro (5 pesos + 6 tiempos) + packing desde col 51.
+ * Hoja 3 (Acopio): misma estructura; encabezados de peso/tiempo acopio. Hoja 2 / Hoja 4 = jarras.
+ * NUM_MUESTRA: secuencia global única (max Hoja 1 + Hoja 3 + watermark).
  *
  * ANTI-DUPLICADOS: UID + clave de fila normalizada.
  *
- * --- PACKING (cols 49–89) ---
+ * --- PACKING (cols 51–91) ---
  */
-var PACKING_START_COL = 49;
+var PACKING_START_COL = 51;
 var PACKING_META_COLS = 4;
 var PACKING_DATA_COLS = 37;
 var PACKING_COLS = PACKING_META_COLS + PACKING_DATA_COLS;
-var THERMOKING_START_COL = PACKING_START_COL + PACKING_COLS; // 90
+var THERMOKING_START_COL = PACKING_START_COL + PACKING_COLS; // 92
 var THERMOKING_COLS = 39;
-var C5_START_COL = THERMOKING_START_COL + THERMOKING_COLS; // 128
+var C5_START_COL = THERMOKING_START_COL + THERMOKING_COLS; // 131
 
-/** 48 columnas Hoja 1 (registro): un solo orden; debe coincidir con app.js construirFilaBaseRegistro. */
-var NUM_COLS_REGISTRO = 48;
+/** 50 columnas registro: 5 pesos + 6 tiempos; debe coincidir con app.js construirFilaBaseRegistro. */
+var NUM_COLS_REGISTRO = 50;
+/** POST expandido: 21 cols Hoja1 + 6 Hoja2 + 29 cierre = 56 celdas. */
+var REGISTRO_PRE_JARRA_COLS = 21;
+var REGISTRO_POST_EXPANDED_LEN = 56;
+/** Índice 0-based: PESO_5 / DESPACHO_ACOPIO (esquema 50 columnas). */
+var IDX_COL_PESO_DESPACHO = 20;
 
 /** Máximo NUM_MUESTRA “consumido” en el tiempo; solo sube (borrar filas en hoja no retrocede la secuencia). */
 var NUM_MUESTRA_WATERMARK_KEY = 'mtpp_num_muestra_watermark_v1';
 
+/** Visual: Hoja 1 (índice 0) + Hoja 2 (1). Acopio: Hoja 3 (2) + Hoja 4 (3). */
+var SHEET_IDX_VISUAL_REGISTRO = 0;
+var SHEET_IDX_VISUAL_JARRAS = 1;
+var SHEET_IDX_ACOPIO_REGISTRO = 2;
+var SHEET_IDX_ACOPIO_JARRAS = 3;
+
 function getRegistroHeadersHoja1_() {
   return [
     "FECHA", "ENSAYO_NOMBRE", "NUM_MUESTRA", "RESPONSABLE", "DIAS_PRECOSECHA", "HORA_INICIO_GENERAL", "FUNDO",
-    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_LIBRE", "VARIEDAD", "GUIA_REMISION", "PLACA_VEHICULO", "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
-    "PESO_1", "PESO_2", "LLEGADA_ACOPIO", "DESPACHO_ACOPIO",
+    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_LIBRE", "VARIEDAD", "GUIA_REMISION", "PLACA_VEHICULO",     "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
+    "PESO_1", "PESO_2", "LLEGADA_ACOPIO", "PESO_RESERVA", "DESPACHO_ACOPIO",
     "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
     "TEMP_MUE_LLEGADA_AMB", "TEMP_MUE_LLEGADA_PUL", "TEMP_MUE_DESPACHO_AMB", "TEMP_MUE_DESPACHO_PUL",
-    "TIEMPO_INICIO_COSECHA", "TIEMPO_PERDIDA_PESO", "TIEMPO_TERMINO_COSECHA", "TIEMPO_LLEGADA_ACOPIO", "TIEMPO_DESPACHO_ACOPIO",
+    "TIEMPO_INICIO_COSECHA", "TIEMPO_PERDIDA_PESO", "TIEMPO_TERMINO_COSECHA", "TIEMPO_LLEGADA_ACOPIO", "TIEMPO_DESPACHO_ACOPIO", "TIEMPO_RESERVA",
     "HUMEDAD_INICIO", "HUMEDAD_TERMINO", "HUMEDAD_LLEGADA", "HUMEDAD_DESPACHO",
     "PRESION_AMB_INICIO", "PRESION_AMB_TERMINO", "PRESION_AMB_LLEGADA", "PRESION_AMB_DESPACHO",
     "PRESION_FRUTA_INICIO", "PRESION_FRUTA_TERMINO", "PRESION_FRUTA_LLEGADA", "PRESION_FRUTA_DESPACHO",
     "OBSERVACION", "OBSERVACION_FORMATO", "HORA_REGISTRO"
   ];
+}
+
+/**
+ * Hoja 3 (Acopio): 50 columnas — 5 pesos + 6 tiempos (modal Acopio / PDF PE-F-QPH-305).
+ */
+function getRegistroHeadersHoja3Acopio_() {
+  return [
+    "FECHA", "ENSAYO_NOMBRE", "NUM_MUESTRA", "RESPONSABLE", "DIAS_PRECOSECHA", "HORA_INICIO_GENERAL", "FUNDO",
+    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_LIBRE", "VARIEDAD", "GUIA_REMISION_ACOPIO_CAMPO", "PLACA_VEHICULO",
+    "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
+    "PESO_1_TERMINO_COSECHA", "PESO_2_LLEGADA_ACOPIO", "PESO_3_ACOPIO_CALIBRADO", "PESO_4_CLAMSHELL_CALIBRADO", "PESO_5_DESPACHO_CAMPO",
+    "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
+    "TEMP_MUE_LLEGADA_AMB", "TEMP_MUE_LLEGADA_PUL", "TEMP_MUE_DESPACHO_AMB", "TEMP_MUE_DESPACHO_PUL",
+    "TIEMPO_INICIO_COSECHA", "TIEMPO_TERMINO_COSECHA", "TIEMPO_LLEGADA_ACOPIO_CAMPO",
+    "TIEMPO_ACOPIO_CALIBRADO", "TIEMPO_TERMINO_CALIBRADO", "TIEMPO_DESPACHO_ACOPIO_CAMPO",
+    "HUMEDAD_INICIO", "HUMEDAD_TERMINO", "HUMEDAD_LLEGADA", "HUMEDAD_DESPACHO",
+    "PRESION_AMB_INICIO", "PRESION_AMB_TERMINO", "PRESION_AMB_LLEGADA", "PRESION_AMB_DESPACHO",
+    "PRESION_FRUTA_INICIO", "PRESION_FRUTA_TERMINO", "PRESION_FRUTA_LLEGADA", "PRESION_FRUTA_DESPACHO",
+    "OBSERVACION", "OBSERVACION_FORMATO", "HORA_REGISTRO"
+  ];
+}
+
+/** Hoja 2 (Visual) y Hoja 4 (Acopio): tiempos de llenado de jarras — mismos encabezados. */
+function getRegistroHeadersHojaJarras_() {
+  return [
+    "FECHA", "ENSAYO_NUMERO", "N_JARRA",
+    "INICIO_C", "TERMINO_C", "MIN_C",
+    "INICIO_T", "TERMINO_T", "MIN_T"
+  ];
+}
+
+function esModoRegistroAcopioPost_(data) {
+  if (!data) return false;
+  var m = String(data.modo_registro || data.modoRegistro || '').trim().toLowerCase();
+  return m === 'acopio';
+}
+
+function indiceHojaRegistroPrincipal_(esAcopio) {
+  return esAcopio ? SHEET_IDX_ACOPIO_REGISTRO : SHEET_IDX_VISUAL_REGISTRO;
+}
+
+function indiceHojaRegistroJarras_(esAcopio) {
+  return esAcopio ? SHEET_IDX_ACOPIO_JARRAS : SHEET_IDX_VISUAL_JARRAS;
+}
+
+function obtenerHojaPorIndice_(ss, idx) {
+  var sheets = ss.getSheets();
+  while (sheets.length <= idx) {
+    ss.insertSheet('Hoja ' + (sheets.length + 1));
+    sheets = ss.getSheets();
+  }
+  var sh = sheets[idx];
+  var nombreEsperado = '';
+  if (idx === SHEET_IDX_ACOPIO_REGISTRO) nombreEsperado = 'Hoja 3';
+  else if (idx === SHEET_IDX_ACOPIO_JARRAS) nombreEsperado = 'Hoja 4';
+  if (nombreEsperado && sh.getName() !== nombreEsperado) {
+    try {
+      sh.setName(nombreEsperado);
+    } catch (eName) { /* nombre ya usado u otro conflicto */ }
+  }
+  return sh;
+}
+
+/** Hojas con columna NUM_MUESTRA (Visual H1 + Acopio H3). */
+function hojasRegistroNumMuestra_(ss) {
+  var sheets = ss.getSheets();
+  var out = [];
+  if (sheets.length > SHEET_IDX_VISUAL_REGISTRO) out.push(sheets[SHEET_IDX_VISUAL_REGISTRO]);
+  if (sheets.length > SHEET_IDX_ACOPIO_REGISTRO) out.push(sheets[SHEET_IDX_ACOPIO_REGISTRO]);
+  return out;
+}
+
+function maxNumMuestraGlobalEnRegistro_(ss) {
+  var hojas = hojasRegistroNumMuestra_(ss);
+  var maxN = 0;
+  for (var i = 0; i < hojas.length; i++) {
+    var n = maxNumMuestraEnHoja_(hojas[i]);
+    if (n > maxN) maxN = n;
+  }
+  return maxN;
+}
+
+function ultimoNumMuestraCeldaGlobal_(ss) {
+  var hojas = hojasRegistroNumMuestra_(ss);
+  var best = { valorTexto: '', fila: 0, digitos: 0 };
+  for (var i = 0; i < hojas.length; i++) {
+    var u = ultimoNumMuestraCeldaHoja_(hojas[i]);
+    if (u.digitos > best.digitos) best = u;
+  }
+  return best;
+}
+
+/**
+ * Próximo NUM_MUESTRA global (Hoja 1 + Hoja 3 + watermark al guardar).
+ * @param {boolean} soloDesdeHoja Si true: solo datos en hojas (consultas app). Si false: incluye watermark.
+ */
+function resolverProximoNumMuestraJsonGlobal_(ss, soloDesdeHoja) {
+  var ultimoCelda = ultimoNumMuestraCeldaGlobal_(ss);
+  var sheetMax = maxNumMuestraGlobalEnRegistro_(ss);
+  var baseUltimo = ultimoCelda.digitos > 0 ? ultimoCelda.digitos : sheetMax;
+  var prefijo = resolverPrefijoNumMuestraGs_(ultimoCelda, sheetMax, baseUltimo);
+  if (soloDesdeHoja) {
+    var nextSolo = baseUltimo + 1;
+    return {
+      max_en_hoja: baseUltimo,
+      ultimo_num_muestra_celda: ultimoCelda.valorTexto,
+      ultimo_num_muestra_fila: ultimoCelda.fila,
+      ultimo_num_muestra_en_hoja: baseUltimo,
+      max_digitos_columna: sheetMax,
+      num_muestra_prefijo: prefijo,
+      proximo_num_muestra: formatearNumMuestraDesdeSecuenciaGs_(nextSolo, prefijo)
+    };
+  }
+  var wm = leerWatermarkNumMuestra_();
+  var M = Math.max(sheetMax, wm);
+  fusionarWatermarkNumMuestra_(M);
+  var nextN = M + 1;
+  return {
+    max_en_hoja: M,
+    num_muestra_prefijo: prefijo,
+    proximo_num_muestra: formatearNumMuestraDesdeSecuenciaGs_(nextN, prefijo)
+  };
+}
+
+function buscarDuplicadoNumMuestraGlobal_(ss, numMuestraNorm) {
+  var hojas = hojasRegistroNumMuestra_(ss);
+  for (var i = 0; i < hojas.length; i++) {
+    var dup = buscarDuplicadoNumMuestraEnHoja_(hojas[i], numMuestraNorm);
+    if (dup) return dup;
+  }
+  return null;
+}
+
+function ensayosRegistradosEnFechaGlobal_(ss, fechaNorm) {
+  var ensSet = {};
+  var hojas = hojasRegistroNumMuestra_(ss);
+  for (var hi = 0; hi < hojas.length; hi++) {
+    var sh = hojas[hi];
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) continue;
+    var dataOp = sh.getRange(2, 1, lastRow, 14).getValues();
+    for (var oi = 0; oi < dataOp.length; oi++) {
+      var fOp = formatFechaPacking(dataOp[oi][0]);
+      if (fOp !== fechaNorm) continue;
+      var enOp = dataOp[oi][13];
+      var enOpStr = (enOp !== null && enOp !== undefined && enOp !== '')
+        ? (Number(enOp) === Math.floor(Number(enOp)) ? String(Number(enOp)) : String(enOp).trim())
+        : '';
+      if (enOpStr) ensSet[enOpStr] = true;
+    }
+  }
+  return Object.keys(ensSet).sort();
+}
+
+/** Inserta columna PESO_4 (col 20) y 6.º tiempo (col 35) si la hoja aún tiene esquema de 48 cols. */
+function migrarRegistro48a50Cols_(sheet) {
+  if (sheet.getLastRow() === 0) return;
+  var col20 = String(sheet.getRange(1, 20).getValue() || "").trim().toUpperCase();
+  if (col20 === "DESPACHO_ACOPIO" || col20 === "PESO_5_DESPACHO_CAMPO") {
+    sheet.insertColumnsAfter(19, 1);
+  }
+  var col35 = String(sheet.getRange(1, 35).getValue() || "").trim().toUpperCase();
+  if (col35 === "HUMEDAD_INICIO") {
+    sheet.insertColumnsAfter(34, 1);
+  }
+}
+
+function asegurarEncabezadoHoja3Acopio_(sheet) {
+  migrarRegistro48a50Cols_(sheet);
+  var h = getRegistroHeadersHoja3Acopio_();
+  if (h.length !== NUM_COLS_REGISTRO) {
+    throw new Error("getRegistroHeadersHoja3Acopio_: longitud distinta a NUM_COLS_REGISTRO");
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, h.length).setValues([h]);
+    asegurarEncabezadosPackingEnHoja_(sheet);
+    return;
+  }
+  var a1 = String(sheet.getRange(1, 1).getValue() || "").trim().toUpperCase();
+  if (a1 !== "FECHA") {
+    sheet.getRange(1, 1, 1, h.length).setValues([h]);
+    asegurarEncabezadosPackingEnHoja_(sheet);
+    return;
+  }
+  var p4 = String(sheet.getRange(1, 20).getValue() || "").trim().toUpperCase();
+  var tCal = String(sheet.getRange(1, 34).getValue() || "").trim().toUpperCase();
+  if (p4 === "PESO_4_CLAMSHELL_CALIBRADO" && tCal === "TIEMPO_TERMINO_CALIBRADO") {
+    asegurarEncabezadosPackingEnHoja_(sheet);
+    return;
+  }
+  sheet.getRange(1, 1, 1, h.length).setValues([h]);
+  asegurarEncabezadosPackingEnHoja_(sheet);
+}
+
+function asegurarEncabezadoHojaJarras_(sheet2) {
+  if (!sheet2) return;
+  var h = getRegistroHeadersHojaJarras_();
+  if (sheet2.getLastRow() === 0) {
+    sheet2.getRange(1, 1, 1, h.length).setValues([h]);
+    return;
+  }
+  var a1 = String(sheet2.getRange(1, 1).getValue() || "").trim().toUpperCase();
+  var d4 = String(sheet2.getRange(1, 4).getValue() || "").trim().toUpperCase();
+  if (a1 === "FECHA" && d4 === "INICIO_C") return;
+  sheet2.getRange(1, 1, 1, h.length).setValues([h]);
 }
 
 /** Inserta AU–AV (OBSERVACION_FORMATO, HORA_REGISTRO) si la hoja aún tiene FECHA_INSPECCION en col 47. */
@@ -54,6 +272,7 @@ function migrarInsertarColsFormato_(sheet) {
  * reemplaza la fila 1 para alinear con los datos que envía el front.
  */
 function asegurarEncabezadoHoja1Registro_(sheet) {
+  migrarRegistro48a50Cols_(sheet);
   var h = getRegistroHeadersHoja1_();
   if (h.length !== NUM_COLS_REGISTRO) {
     throw new Error("getRegistroHeadersHoja1_: longitud distinta a NUM_COLS_REGISTRO");
@@ -75,8 +294,10 @@ function asegurarEncabezadoHoja1Registro_(sheet) {
   var h46 = String(sheet.getRange(1, colObs).getValue() || "").trim().toUpperCase();
   var h47 = String(sheet.getRange(1, colObs + 1).getValue() || "").trim().toUpperCase();
   var h48 = String(sheet.getRange(1, colObs + 2).getValue() || "").trim().toUpperCase();
-  // Esquema actual: ENSAYO_NOMBRE + GUIA_REMISION + OBSERVACION_FORMATO / HORA_REGISTRO tras OBSERVACION.
-  if (b1 === "ENSAYO_NOMBRE" && l1 === "GUIA_REMISION" && h46 === "OBSERVACION" && h47 === "OBSERVACION_FORMATO" && h48 === "HORA_REGISTRO") {
+  var pReserva = String(sheet.getRange(1, 20).getValue() || "").trim().toUpperCase();
+  // Esquema 50 cols: ENSAYO_NOMBRE + GUIA_REMISION + OBSERVACION_FORMATO / HORA_REGISTRO.
+  if (b1 === "ENSAYO_NOMBRE" && l1 === "GUIA_REMISION" && h46 === "OBSERVACION" && h47 === "OBSERVACION_FORMATO" && h48 === "HORA_REGISTRO"
+      && (pReserva === "PESO_RESERVA" || pReserva === "")) {
     return;
   }
   var viejoB = b1 === "RESPONSABLE" || b1 === "GUIA_REMISION";
@@ -553,7 +774,7 @@ function doPost(e) {
   }
 
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
     var rawBody = String(e.postData.contents || '');
     var data;
     try {
@@ -566,13 +787,24 @@ function doPost(e) {
       });
     }
 
+    var sheetVisual = ss.getSheets()[SHEET_IDX_VISUAL_REGISTRO];
     if (data.mode === 'packing') {
-      var packingResult = doPostPacking(sheet, data);
+      var sheetPack = resolverHojaRegistroPacking_(ss, data);
+      var packingResult = doPostPacking(sheetPack, data);
       return out(packingResult);
     }
     if (data.mode === 'recepcion-c5' || data.mode === 'recepcion_c5') {
-      var c5Result = doPostRecepcionC5(sheet, data);
+      var sheetC5 = resolverHojaRegistroPacking_(ss, data);
+      var c5Result = doPostRecepcionC5(sheetC5, data);
       return out(c5Result);
+    }
+
+    var esAcopio = esModoRegistroAcopioPost_(data);
+    var sheet = obtenerHojaPorIndice_(ss, indiceHojaRegistroPrincipal_(esAcopio));
+    if (esAcopio) {
+      asegurarEncabezadoHoja3Acopio_(sheet);
+    } else {
+      asegurarEncabezadoHoja1Registro_(sheet);
     }
 
     const rows = data.rows || [];
@@ -596,10 +828,8 @@ function doPost(e) {
       }
     }
 
-    asegurarEncabezadoHoja1Registro_(sheet);
-
     const NUM_COLS = NUM_COLS_REGISTRO;
-    /** Fila expandida 54: pos. 0–19 + 20–25 (Hoja2) + 26–53 → 48 col Hoja1. */
+    /** Fila expandida 56: pos. 0–20 + 21–26 (Hoja2) + 27–55 → 50 col registro. */
 
     function normalizarParaClave(v) {
       if (v === null || v === undefined) return "";
@@ -627,25 +857,25 @@ function doPost(e) {
       return String(cell);
     }
 
-    /** 54 celdas: 20 inicio Hoja1 + 6 (Hoja2) + 28 cierre → 48 col Hoja1. */
+    /** 56 celdas: 21 inicio registro + 6 (Hoja2) + 29 cierre → 50 col registro. */
     function toRowRegistro(row) {
-      var minLen = 54;
+      var minLen = REGISTRO_POST_EXPANDED_LEN;
       while (row.length < minLen) row.push("");
-      var a = row.slice(0, 20).concat(row.slice(26, 54));
+      var a = row.slice(0, REGISTRO_PRE_JARRA_COLS).concat(row.slice(REGISTRO_PRE_JARRA_COLS + 6, REGISTRO_POST_EXPANDED_LEN));
       return a.slice(0, NUM_COLS).map(celdaAString);
     }
 
     function rowHoja2(fila, rowOriginal) {
       var c = celdaAString;
       var out = [c(fila[0]), c(fila[13]), c(fila[15]), '', '', '', '', '', ''];
-      /** Hueco 20-25: Cosecha + Trasvasado desde el panel de jarras (POST 54 celdas). */
-      if (rowOriginal && rowOriginal.length >= 26) {
-        out[3] = c(rowOriginal[20]);
-        out[4] = c(rowOriginal[21]);
-        out[5] = c(rowOriginal[22]);
-        out[6] = c(rowOriginal[23]);
-        out[7] = c(rowOriginal[24]);
-        out[8] = c(rowOriginal[25]);
+      /** Hueco 21-26: Cosecha + Trasvasado desde el panel de jarras (POST expandido). */
+      if (rowOriginal && rowOriginal.length >= REGISTRO_PRE_JARRA_COLS + 6) {
+        out[3] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS]);
+        out[4] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS + 1]);
+        out[5] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS + 2]);
+        out[6] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS + 3]);
+        out[7] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS + 4]);
+        out[8] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS + 5]);
       }
       return out;
     }
@@ -658,7 +888,7 @@ function doPost(e) {
       return isNaN(n) || n === 0;
     }
 
-    var minExpanded = 54;
+    var minExpanded = REGISTRO_POST_EXPANDED_LEN;
     var nuevasFilas = [];
     var filasHoja2 = [];
     rows.forEach(function(row) {
@@ -668,10 +898,16 @@ function doPost(e) {
       if (existingKeys[key]) return;
       existingKeys[key] = true;
       filasHoja2.push(rowHoja2(fila, row.length >= minExpanded ? row : null));
-      // Mantener criterio alineado al front:
-      // UI solo exige PESO_1 para guardar clamshell; PESO_2 y llegada/despacho pueden ir vacíos al inicio.
-      // Índices: 14=N_CLAMSHELL, 16=PESO_1.
-      if (!esCero(fila[14]) && !esCero(fila[16])) nuevasFilas.push(fila);
+      // Visual: PESO_1 + clamshell. Acopio: PESO_4 + PESO_5 + clamshell (P1–P3 opcionales).
+      var filaInsertable = false;
+      if (!esCero(fila[14])) {
+        if (esAcopio) {
+          filaInsertable = !esCero(fila[19]) && !esCero(fila[20]);
+        } else {
+          filaInsertable = !esCero(fila[16]);
+        }
+      }
+      if (filaInsertable) nuevasFilas.push(fila);
     });
 
     lastRow = sheet.getLastRow();
@@ -698,20 +934,16 @@ function doPost(e) {
       // NUM_MUESTRA (col 3) debe mantenerse como texto para conservar ceros a la izquierda (ej: 0001, C260001).
       sheet.getRange(startRow, 3, numRows, 1).setNumberFormat('@');
       sheet.getRange(startRow, 1, numRows, NUM_COLS).setValues(nuevasFilas);
-      sheet.getRange(startRow, 38, numRows, 8).setNumberFormat('0.000');
+      sheet.getRange(startRow, 40, numRows, 8).setNumberFormat('0.000');
       for (var wmi = 0; wmi < nuevasFilas.length; wmi++) {
         fusionarWatermarkNumMuestra_(parseNumMuestraDigitosGs_(nuevasFilas[wmi][2]));
       }
     }
     if (filasHoja2.length > 0) {
-      var sheet2 = SpreadsheetApp.getActiveSpreadsheet().getSheets()[1];
-      if (sheet2) {
-        if (sheet2.getLastRow() === 0) {
-          sheet2.appendRow(["FECHA", "ENSAYO_NUMERO", "N_JARRA", "INICIO_C", "TERMINO_C", "MIN_C", "INICIO_T", "TERMINO_T", "MIN_T"]);
-        }
-        var startRow2 = sheet2.getLastRow() + 1;
-        sheet2.getRange(startRow2, 1, filasHoja2.length, 9).setValues(filasHoja2);
-      }
+      var sheet2 = obtenerHojaPorIndice_(ss, indiceHojaRegistroJarras_(esAcopio));
+      asegurarEncabezadoHojaJarras_(sheet2);
+      var startRow2 = sheet2.getLastRow() + 1;
+      sheet2.getRange(startRow2, 1, filasHoja2.length, 9).setValues(filasHoja2);
     }
 
     if (nuevasFilas.length === 0 && rows.length > 0) {
@@ -816,10 +1048,10 @@ function normalizarPresionVaporCelda_(v) {
   return Math.round(n * 1000) / 1000;
 }
 
-/** Cols presión registro Campo Hoja1: índices 37–44. */
+/** Cols presión registro Campo: índices 39–46 (0-based). */
 function aplicarPresionVaporDecimalEnFilaRegistro_(fila) {
   var i;
-  for (i = 37; i <= 44; i++) {
+  for (i = 39; i <= 46; i++) {
     if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
   }
   return fila;
@@ -924,7 +1156,7 @@ function doPostPacking(sheet, data) {
       return { ok: false, error: 'No hay datos en la hoja' };
     }
 
-    var dataRows = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+    var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
     var rowIndices = [];
     for (var k = 0; k < dataRows.length; k++) {
       var r = dataRows[k];
@@ -1068,7 +1300,7 @@ function doPostRecepcionC5(sheet, data) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return { ok: false, error: 'No hay datos en la hoja' };
 
-    var dataRows = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+    var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
     var rowIndices = [];
     for (var k = 0; k < dataRows.length; k++) {
       var r = dataRows[k];
@@ -1089,6 +1321,250 @@ function doPostRecepcionC5(sheet, data) {
   } catch (err) {
     return { ok: false, error: err.toString() };
   }
+}
+
+function normalizarEnsayoNumeroGs_(en) {
+  if (en === null || en === undefined || String(en).trim() === '') return '';
+  var n = Number(en);
+  return (!isNaN(n) && n === Math.floor(n)) ? String(n) : String(en).trim();
+}
+
+function contarFilasFechaEnsayoEnHoja_(sheet, fecha, ensayoNumero) {
+  if (!sheet) return 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var fechaNorm = formatFechaPacking(fecha) || fecha;
+  var enNorm = normalizarEnsayoNumeroGs_(ensayoNumero);
+  var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
+  var n = 0;
+  for (var k = 0; k < dataRows.length; k++) {
+    var rowFechaStr = formatFechaPacking(dataRows[k][0]);
+    var rowEnStr = normalizarEnsayoNumeroGs_(dataRows[k][13]);
+    if (rowFechaStr === fechaNorm && rowEnStr === enNorm) n++;
+  }
+  return n;
+}
+
+/** Fila 1: columnas Packing + Thermo King + C5 (mismas que Hoja 1). */
+function asegurarEncabezadosPackingEnHoja_(sheet) {
+  if (!sheet) return;
+  migrarRegistro48a50Cols_(sheet);
+  migrarInsertarHoraRegistroPacking_(sheet);
+  var startCol = PACKING_START_COL;
+  var packHeaders = ['FECHA_INSPECCION', 'RESPONSABLE', 'HORA_RECEPCION', 'N_VIAJE'].concat(getPackingHeaderNamesPerRow());
+  var hPack = String(sheet.getRange(1, startCol).getValue() || '').trim().toUpperCase();
+  if (hPack !== 'FECHA_INSPECCION') {
+    sheet.getRange(1, startCol, 1, packHeaders.length).setValues([packHeaders]);
+  }
+  var tkHeaders = getThermokingFlatHeaders();
+  var hTk = String(sheet.getRange(1, THERMOKING_START_COL).getValue() || '').trim().toUpperCase();
+  if (hTk !== 'FECHA_INSPECCION_THERMOKING') {
+    sheet.getRange(1, THERMOKING_START_COL, 1, tkHeaders.length).setValues([tkHeaders]);
+  }
+  var c5Headers = getC5FlatHeaders();
+  var hC5 = String(sheet.getRange(1, C5_START_COL).getValue() || '').trim().toUpperCase();
+  if (hC5 !== 'HORA_INICIO_RECEPCION_C5') {
+    sheet.getRange(1, C5_START_COL, 1, c5Headers.length).setValues([c5Headers]);
+  }
+}
+
+function prepararHojaRegistroCampo_(sheet, esAcopio) {
+  if (!sheet) return;
+  if (esAcopio) {
+    asegurarEncabezadoHoja3Acopio_(sheet);
+  } else {
+    asegurarEncabezadoHoja1Registro_(sheet);
+  }
+}
+
+/** Packing y detalle: Hoja 3 (Acopio) o Hoja 1 (Visual); auto-detecta por fecha+ensayo. */
+function resolverHojaRegistroPacking_(ss, params) {
+  var fecha = String((params && params.fecha) || '').trim();
+  var ensayo = String((params && params.ensayo_numero) || '').trim();
+  var s1 = ss.getSheets()[SHEET_IDX_VISUAL_REGISTRO];
+  if (esModoRegistroAcopioPost_(params)) {
+    var sAc = obtenerHojaPorIndice_(ss, SHEET_IDX_ACOPIO_REGISTRO);
+    prepararHojaRegistroCampo_(sAc, true);
+    return sAc;
+  }
+  prepararHojaRegistroCampo_(s1, false);
+  if (fecha && ensayo) {
+    var fechaNorm = formatFechaPacking(fecha) || fecha;
+    if (contarFilasFechaEnsayoEnHoja_(s1, fechaNorm, ensayo) > 0) return s1;
+    var s3 = obtenerHojaPorIndice_(ss, SHEET_IDX_ACOPIO_REGISTRO);
+    if (contarFilasFechaEnsayoEnHoja_(s3, fechaNorm, ensayo) > 0) {
+      prepararHojaRegistroCampo_(s3, true);
+      return s3;
+    }
+  }
+  return s1;
+}
+
+function hojasRegistroConDatos_(ss) {
+  return hojasRegistroNumMuestra_(ss);
+}
+
+/** Packing: muestras del día — Hoja 1 (Visual) + Hoja 3 (Acopio), sin duplicar num|ensayo. */
+function listadoMuestrasPorFechaGlobal_(ss, fechaRaw) {
+  var fechaLm = formatFechaPacking(fechaRaw) || String(fechaRaw || '').trim();
+  if (!fechaLm) {
+    return { ok: false, error: 'Falta parámetro: fecha', fecha: '', muestras: [] };
+  }
+  var muestrasLm = [];
+  var seenLm = {};
+  var hojasLm = hojasRegistroNumMuestra_(ss);
+  for (var hli = 0; hli < hojasLm.length; hli++) {
+    var shLm = hojasLm[hli];
+    var lrLm = shLm.getLastRow();
+    if (lrLm < 2) continue;
+    var idxLm = indiceColumnaNumMuestraHoja1_(shLm);
+    var dataLm = shLm.getRange(2, 1, lrLm, Math.max(14, idxLm + 1)).getValues();
+    for (var lmi = 0; lmi < dataLm.length; lmi++) {
+      var rl = dataLm[lmi];
+      var fl = formatFechaPacking(rl[0]);
+      if (fl !== fechaLm) continue;
+      var enStrLm = normalizarEnsayoNumeroGs_(rl[13]);
+      var numLm = (rl.length > idxLm && rl[idxLm] != null && rl[idxLm] !== undefined)
+        ? String(rl[idxLm]).trim()
+        : '';
+      if (!enStrLm || !numLm) continue;
+      var keyLm = numLm + '|' + enStrLm;
+      if (seenLm[keyLm]) continue;
+      seenLm[keyLm] = true;
+      muestrasLm.push({
+        num_muestra: numLm,
+        ensayo_numero: enStrLm,
+        etiqueta: numLm + ' - ' + enStrLm + ' muestra'
+      });
+    }
+  }
+  muestrasLm.sort(function (a, b) {
+    var na = Number(a.ensayo_numero) || 0;
+    var nb = Number(b.ensayo_numero) || 0;
+    if (na !== nb) return na - nb;
+    return String(a.num_muestra).localeCompare(String(b.num_muestra));
+  });
+  return { ok: true, fecha: fechaLm, muestras: muestrasLm };
+}
+
+/** Solo lectura: Hoja 1 o Hoja 3 donde exista fecha+ensayo (sin migrar ni escribir encabezados). */
+function encontrarHojaRegistroFechaEnsayo_(ss, fechaNorm, ensayoNorm) {
+  var hojas = hojasRegistroNumMuestra_(ss);
+  for (var i = 0; i < hojas.length; i++) {
+    if (contarFilasFechaEnsayoEnHoja_(hojas[i], fechaNorm, ensayoNorm) > 0) return hojas[i];
+  }
+  return null;
+}
+
+/** GET rápido Packing/campo: detalle por fecha + ensayo (batch read, H1 o H3). */
+function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw) {
+  var fecha = formatFechaPacking(fechaRaw) || String(fechaRaw || '').trim();
+  var enNorm = normalizarEnsayoNumeroGs_(ensayoRaw);
+  if (!fecha || !enNorm) {
+    return { ok: false, error: 'Faltan parámetros: fecha y ensayo_numero', data: null };
+  }
+  var sheet = encontrarHojaRegistroFechaEnsayo_(ss, fecha, enNorm);
+  if (!sheet) {
+    return { ok: false, error: 'No hay registro para esa fecha y ensayo', data: null };
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { ok: false, error: 'No hay registro para esa fecha y ensayo', data: null };
+  }
+  var numFilasData = lastRow - 1;
+  var idxNumRow = indiceColumnaNumMuestraHoja1_(sheet);
+  var baseCols = Math.max(15, idxNumRow + 1, IDX_COL_PESO_DESPACHO + 1);
+  var data = sheet.getRange(2, 1, numFilasData, baseCols).getValues();
+  var c5NumCols = getC5FlatHeaders().length;
+  var packBlock = sheet.getRange(2, PACKING_START_COL, numFilasData, PACKING_COLS).getValues();
+  var tkBlock = sheet.getRange(2, THERMOKING_START_COL, numFilasData, THERMOKING_COLS).getValues();
+  var c5Block = sheet.getRange(2, C5_START_COL, numFilasData, c5NumCols).getValues();
+
+  var row = null;
+  var filaEnSheet = null;
+  var numFilas = 0;
+  var filasPackingRegistradas = 0;
+  var despachoPorFila = [];
+  var tienePacking = false;
+  var tieneRecepcionC5 = false;
+  var tieneThermoKing = false;
+
+  for (var k = 0; k < data.length; k++) {
+    var r = data[k];
+    var rowFechaStr = formatFechaPacking(r[0]);
+    var rowEnStr = normalizarEnsayoNumeroGs_(r[13]);
+    if (rowFechaStr !== fecha || rowEnStr !== enNorm) continue;
+    if (row == null) {
+      row = r;
+      filaEnSheet = 2 + k;
+    }
+    numFilas++;
+    var desp = r[IDX_COL_PESO_DESPACHO];
+    var numDesp = (desp !== null && desp !== undefined && String(desp).trim() !== '')
+      ? parseFloat(String(desp).replace(',', '.'))
+      : NaN;
+    despachoPorFila.push(!isNaN(numDesp) ? numDesp : null);
+    var packRow = packBlock[k] || [];
+    if (rowHasPackingData_(packRow)) {
+      tienePacking = true;
+      filasPackingRegistradas++;
+    }
+    if (c5Block[k] && rowHasAnyNonEmpty_(c5Block[k])) tieneRecepcionC5 = true;
+    if (tkBlock[k] && rowHasAnyNonEmpty_(tkBlock[k])) tieneThermoKing = true;
+  }
+
+  if (!row) {
+    return { ok: false, error: 'No hay registro para esa fecha y ensayo', data: null };
+  }
+
+  var nClamshellRaw = row[14];
+  var maxClamshell = 0;
+  if (nClamshellRaw !== null && nClamshellRaw !== undefined && String(nClamshellRaw).trim() !== '') {
+    var nCl = parseInt(String(nClamshellRaw).trim(), 10);
+    if (!isNaN(nCl) && nCl > 0) maxClamshell = nCl;
+  }
+  if (numFilas > 0 && (maxClamshell <= 0 || maxClamshell < numFilas)) {
+    maxClamshell = numFilas;
+  }
+  var despachoRaw = row[IDX_COL_PESO_DESPACHO];
+  var despachoGramos = null;
+  if (despachoRaw !== null && despachoRaw !== undefined && String(despachoRaw).trim() !== '') {
+    var numDesp2 = parseFloat(String(despachoRaw).replace(',', '.'));
+    if (!isNaN(numDesp2)) despachoGramos = numDesp2;
+  }
+
+  return {
+    ok: true,
+    data: {
+      fila: filaEnSheet,
+      numFilas: numFilas,
+      FILAS_REGISTRADAS: numFilas,
+      FILAS_TOTAL_CAMPO: numFilas,
+      FILAS_PACKING_REGISTRADAS: filasPackingRegistradas,
+      MAX_CLAMSHELL: maxClamshell,
+      N_CLAMSHELL: (nClamshellRaw !== null && nClamshellRaw !== undefined) ? String(nClamshellRaw).trim() : '',
+      puede_registrar_mas: maxClamshell > 0 ? (filasPackingRegistradas < maxClamshell) : true,
+      tienePacking: tienePacking,
+      tieneRecepcionC5: tieneRecepcionC5,
+      tieneThermoKing: tieneThermoKing,
+      despachoPorFila: despachoPorFila,
+      DESPACHO_ACOPIO: despachoGramos,
+      despacho_acopio_gramos: despachoGramos,
+      ENSAYO_NOMBRE: row[1],
+      NUM_MUESTRA: (row.length > idxNumRow && row[idxNumRow] != null && row[idxNumRow] !== undefined)
+        ? String(row[idxNumRow]).trim()
+        : '',
+      RESPONSABLE: row[3],
+      ENSAYO_NUMERO: row[13],
+      TRAZ_ETAPA: row[7],
+      TRAZ_CAMPO: row[8],
+      TRAZ_LIBRE: row[9],
+      VARIEDAD: row[10],
+      PLACA_VEHICULO: row[12],
+      FUNDO: row[6],
+      GUIA_REMISION: row[11]
+    }
+  };
 }
 
 function doGet(e) {
@@ -1123,11 +1599,11 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    // Siguiente NUM_MUESTRA: max(hoja, watermark monotónico) + 1 (borrar filas no retrocede).
+    // Siguiente NUM_MUESTRA: max(Hoja1+Hoja3, watermark monotónico) + 1 (borrar filas no retrocede).
     var proximoNumMuestra = (params.proximo_num_muestra || '').toString().trim() === '1';
     if (proximoNumMuestra) {
-      var sheetPm = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-      var pm = resolverProximoNumMuestraJson_(sheetPm, true);
+      var ssPm = SpreadsheetApp.getActiveSpreadsheet();
+      var pm = resolverProximoNumMuestraJsonGlobal_(ssPm, true);
       result.ok = true;
       result.max_en_hoja = pm.max_en_hoja;
       result.ultimo_num_muestra_celda = pm.ultimo_num_muestra_celda;
@@ -1142,8 +1618,8 @@ function doGet(e) {
     // Una sola lectura: próximo N° muestra + ensayos ya registrados en una fecha (bloqueo rápido).
     var estadoOperativo = (params.estado_operativo || '').toString().trim() === '1';
     if (estadoOperativo) {
-      var sheetOp = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-      var pmOp = resolverProximoNumMuestraJson_(sheetOp, true);
+      var ssOp = SpreadsheetApp.getActiveSpreadsheet();
+      var pmOp = resolverProximoNumMuestraJsonGlobal_(ssOp, true);
       result.ok = true;
       result.max_en_hoja = pmOp.max_en_hoja;
       result.ultimo_num_muestra_celda = pmOp.ultimo_num_muestra_celda;
@@ -1156,21 +1632,7 @@ function doGet(e) {
       var fechaOp = (params.fecha || '').toString().trim();
       if (fechaOp) {
         var fechaOpNorm = formatFechaPacking(fechaOp) || fechaOp;
-        var lastRowOp = sheetOp.getLastRow();
-        if (lastRowOp >= 2) {
-          var dataOp = sheetOp.getRange(2, 1, lastRowOp, 14).getValues();
-          var ensSetOp = {};
-          for (var oi = 0; oi < dataOp.length; oi++) {
-            var fOp = formatFechaPacking(dataOp[oi][0]);
-            if (fOp !== fechaOpNorm) continue;
-            var enOp = dataOp[oi][13];
-            var enOpStr = (enOp !== null && enOp !== undefined && enOp !== '')
-              ? (Number(enOp) === Math.floor(Number(enOp)) ? String(Number(enOp)) : String(enOp).trim())
-              : '';
-            if (enOpStr) ensSetOp[enOpStr] = true;
-          }
-          result.ensayos = Object.keys(ensSetOp).sort();
-        }
+        result.ensayos = ensayosRegistradosEnFechaGlobal_(ssOp, fechaOpNorm);
       }
       return returnOutput(result);
     }
@@ -1182,49 +1644,65 @@ function doGet(e) {
         result.error = 'Falta parámetro: num_muestra';
         return returnOutput(result);
       }
-      var sheetNm = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-      var lastRowNm = sheetNm.getLastRow();
+      var ssNm = SpreadsheetApp.getActiveSpreadsheet();
       var numMuestraBaseParam = normalizarNumMuestraClave(numMuestraParam);
-      if (lastRowNm < 2) {
-        result.ok = true;
-        result.existe = false;
-        result.num_muestra = numMuestraBaseParam;
-        return returnOutput(result);
-      }
-      var idxNm = indiceColumnaNumMuestraHoja1_(sheetNm);
-      var numColsNm = Math.max(14, idxNm + 1, NUM_COLS_REGISTRO);
-      var dataNm = sheetNm.getRange(2, 1, lastRowNm - 1, numColsNm).getValues();
-      for (var ni = 0; ni < dataNm.length; ni++) {
-        var nmBase = normalizarNumMuestraClave(dataNm[ni].length > idxNm ? dataNm[ni][idxNm] : '');
-        if (nmBase && nmBase === numMuestraBaseParam) {
-          var fNm = formatFechaPacking(dataNm[ni][0]);
-          var enNm = dataNm[ni][13];
-          var enNmStr = (enNm !== null && enNm !== undefined && enNm !== '') ? (Number(enNm) === Math.floor(Number(enNm)) ? String(Number(enNm)) : String(enNm).trim()) : '';
-          result.ok = true;
-          result.existe = true;
-          result.num_muestra = numMuestraBaseParam;
-          result.fecha = fNm || '';
-          result.ensayo_numero = enNmStr;
-          return returnOutput(result);
-        }
-      }
+      var dupNm = buscarDuplicadoNumMuestraGlobal_(ssNm, numMuestraBaseParam);
       result.ok = true;
-      result.existe = false;
       result.num_muestra = numMuestraBaseParam;
+      if (dupNm) {
+        result.existe = true;
+        result.fecha = dupNm.fecha || '';
+        result.ensayo_numero = dupNm.ensayo_numero || '';
+      } else {
+        result.existe = false;
+      }
       return returnOutput(result);
     }
 
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    // Packing — dropdown MUESTRA: todas las del día (Visual H1 + Acopio H3).
+    var listadoMuestrasFechaEarly = (params.listado_muestras_fecha || '').toString().trim() === '1';
+    if (listadoMuestrasFechaEarly) {
+      if (!fechaParam) {
+        result.error = 'Falta parámetro: fecha';
+        return returnOutput(result);
+      }
+      var ssLm = SpreadsheetApp.getActiveSpreadsheet();
+      var lmOut = listadoMuestrasPorFechaGlobal_(ssLm, fechaParam);
+      result.ok = lmOut.ok;
+      result.fecha = lmOut.fecha;
+      result.muestras = lmOut.muestras;
+      if (lmOut.error) result.error = lmOut.error;
+      return returnOutput(result);
+    }
+
+    // Detalle campo/Packing por fecha + ensayo (ruta rápida; sin migrar ni leer toda la hoja).
+    var pedidoDetalleCampo = fechaParam && ensayoNumero
+      && (params.listado_registrados || '').toString().trim() !== '1'
+      && (params.existe_registro || '').toString().trim() !== '1';
+    if (pedidoDetalleCampo) {
+      var ssDet = SpreadsheetApp.getActiveSpreadsheet();
+      var detOut = obtenerDetalleRegistroCampoPacking_(ssDet, fechaParam, ensayoNumero);
+      result.ok = detOut.ok;
+      result.data = detOut.data;
+      if (detOut.error) result.error = detOut.error;
+      return returnOutput(result);
+    }
+
+    var ssGet = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = resolverHojaRegistroPacking_(ssGet, params);
     migrarInsertarHoraRegistroPacking_(sheet);
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) {
+    var listadoReg = (params.listado_registrados || '').toString().trim() === '1';
+    var soloFechas = !fechaParam && !ensayoNumero;
+    var soloEnsayosPorFecha = !!(fechaParam && !ensayoNumero);
+    if (lastRow < 2 && !listadoReg && !soloFechas && !soloEnsayosPorFecha) {
       result.error = 'No hay datos en la hoja';
       return returnOutput(result);
     }
 
     var idxNumRow = indiceColumnaNumMuestraHoja1_(sheet);
     var dataColW = Math.max(20, idxNumRow + 1, NUM_COLS_REGISTRO, PACKING_START_COL + PACKING_COLS - 1);
-    var data = sheet.getRange(2, 1, lastRow, dataColW).getValues();
+    var data = (lastRow >= 2) ? sheet.getRange(2, 1, lastRow, dataColW).getValues() : [];
 
     function formatFecha(val) {
       if (val === null || val === undefined || val === '') return '';
@@ -1281,7 +1759,6 @@ function doGet(e) {
       return true;
     }
 
-    var listadoReg = (params.listado_registrados || '').toString().trim() === '1';
     if (listadoReg) {
       var rangoHist = fechasHistorialDefecto_();
       var fechaDesdeHist = normalizarFechaParamHistorial_(params.fecha_desde) || rangoHist.desde;
@@ -1294,14 +1771,23 @@ function doGet(e) {
       var registrados = [];
       var idxHoraReg = NUM_COLS_REGISTRO - 1;
       var idxPackStart = PACKING_START_COL - 1;
-      for (var i = 0; i < data.length; i++) {
-        var r = data[i];
+      var hojasHist = hojasRegistroConDatos_(ssGet);
+      for (var hhi = 0; hhi < hojasHist.length; hhi++) {
+        var shHist = hojasHist[hhi];
+        migrarInsertarHoraRegistroPacking_(shHist);
+        var lrHist = shHist.getLastRow();
+        if (lrHist < 2) continue;
+        var idxNumHist = indiceColumnaNumMuestraHoja1_(shHist);
+        var wHist = Math.max(20, idxNumHist + 1, NUM_COLS_REGISTRO, PACKING_START_COL + PACKING_COLS - 1);
+        var dataHist = shHist.getRange(2, 1, lrHist, wHist).getValues();
+        for (var i = 0; i < dataHist.length; i++) {
+        var r = dataHist[i];
         var f = formatFecha(r[0]);
         if (!fechaEnRangoHistorial_(f, fechaDesdeHist, fechaHastaHist)) continue;
         var en = r[13];
         var enStr = (en !== null && en !== undefined && en !== '') ? (Number(en) === Math.floor(Number(en)) ? String(Number(en)) : String(en).trim()) : '';
         var nom = (r[1] != null && r[1] !== undefined && String(r[1]).trim() !== '') ? String(r[1]).trim() : ('Ensayo ' + enStr);
-        var numMuestra = (r.length > idxNumRow && r[idxNumRow] != null && r[idxNumRow] !== undefined) ? String(r[idxNumRow]).trim() : '';
+        var numMuestra = (r.length > idxNumHist && r[idxNumHist] != null && r[idxNumHist] !== undefined) ? String(r[idxNumHist]).trim() : '';
         var nClamshell = (r[14] != null && r[14] !== undefined) ? String(r[14]).trim() : '';
         if (!f || enStr === '') continue;
         var horaRegistro = (r.length > idxHoraReg) ? formatHoraRegistro_(r[idxHoraReg]) : '';
@@ -1323,6 +1809,7 @@ function doGet(e) {
           tiene_packing: tienePacking,
           tipo_dato: tipoDatoDesdeFlags_(tieneCampo, tienePacking)
         });
+        }
       }
       result.ok = true;
       result.registrados = registrados;
@@ -1331,53 +1818,18 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    var listadoMuestrasFecha = (params.listado_muestras_fecha || '').toString().trim() === '1';
-    if (listadoMuestrasFecha) {
-      if (!fechaParam) {
-        result.error = 'Falta parámetro: fecha';
-        return returnOutput(result);
-      }
-      var fechaLm = (fechaParam && formatFecha(fechaParam)) ? formatFecha(fechaParam) : fechaParam;
-      var muestrasLm = [];
-      var seenLm = {};
-      for (var lmi = 0; lmi < data.length; lmi++) {
-        var rl = data[lmi];
-        var fl = formatFecha(rl[0]);
-        if (fl !== fechaLm) continue;
-        var enl = rl[13];
-        var enStrLm = (enl !== null && enl !== undefined && enl !== '')
-          ? (Number(enl) === Math.floor(Number(enl)) ? String(Number(enl)) : String(enl).trim())
-          : '';
-        var numLm = (rl.length > idxNumRow && rl[idxNumRow] != null && rl[idxNumRow] !== undefined)
-          ? String(rl[idxNumRow]).trim()
-          : '';
-        if (!enStrLm || !numLm) continue;
-        var keyLm = numLm + '|' + enStrLm;
-        if (seenLm[keyLm]) continue;
-        seenLm[keyLm] = true;
-        muestrasLm.push({
-          num_muestra: numLm,
-          ensayo_numero: enStrLm,
-          etiqueta: numLm + ' - ' + enStrLm + ' muestra'
-        });
-      }
-      muestrasLm.sort(function (a, b) {
-        var na = Number(a.ensayo_numero) || 0;
-        var nb = Number(b.ensayo_numero) || 0;
-        if (na !== nb) return na - nb;
-        return String(a.num_muestra).localeCompare(String(b.num_muestra));
-      });
-      result.ok = true;
-      result.fecha = fechaLm;
-      result.muestras = muestrasLm;
-      return returnOutput(result);
-    }
-
-    if (!fecha && !ensayoNumero) {
+    if (soloFechas) {
       var fechasSet = {};
-      for (var i = 0; i < data.length; i++) {
-        var f = formatFecha(data[i][0]);
-        if (f) fechasSet[f] = true;
+      var hojasF = hojasRegistroConDatos_(ssGet);
+      for (var hfi = 0; hfi < hojasF.length; hfi++) {
+        var shF = hojasF[hfi];
+        var lrF = shF.getLastRow();
+        if (lrF < 2) continue;
+        var dataF = shF.getRange(2, 1, lrF, 14).getValues();
+        for (var i = 0; i < dataF.length; i++) {
+          var f = formatFecha(dataF[i][0]);
+          if (f) fechasSet[f] = true;
+        }
       }
       var fechasList = Object.keys(fechasSet).sort().reverse();
       result.ok = true;
@@ -1387,20 +1839,28 @@ function doGet(e) {
 
     if (fecha && !ensayoNumero) {
       var c5NumColsLista = getC5FlatHeaders().length;
-      var packingBlock = (lastRow >= 2) ? sheet.getRange(2, PACKING_START_COL, lastRow, PACKING_COLS).getValues() : [];
-      var tkBlock = (lastRow >= 2) ? sheet.getRange(2, THERMOKING_START_COL, lastRow, THERMOKING_COLS).getValues() : [];
-      var c5Block = (lastRow >= 2) ? sheet.getRange(2, C5_START_COL, lastRow, c5NumColsLista).getValues() : [];
       var ensayosInfo = {};
-      for (var j = 0; j < data.length; j++) {
-        var rowFechaStr = formatFecha(data[j][0]);
-        if (rowFechaStr === fecha) {
-          var en = String(data[j][13] || '').trim();
-          if (en) {
-            if (!ensayosInfo[en]) ensayosInfo[en] = { tieneVisual: false, tienePacking: false, tieneRecepcionC5: false, tieneThermoKing: false };
-            ensayosInfo[en].tieneVisual = true;
-            if (packingBlock[j] && rowHasAnyNonEmpty_(packingBlock[j])) ensayosInfo[en].tienePacking = true;
-            if (c5Block[j] && rowHasAnyNonEmpty_(c5Block[j])) ensayosInfo[en].tieneRecepcionC5 = true;
-            if (tkBlock[j] && rowHasAnyNonEmpty_(tkBlock[j])) ensayosInfo[en].tieneThermoKing = true;
+      var hojasEns = hojasRegistroConDatos_(ssGet);
+      for (var hei = 0; hei < hojasEns.length; hei++) {
+        var shEns = hojasEns[hei];
+        migrarInsertarHoraRegistroPacking_(shEns);
+        var lrEns = shEns.getLastRow();
+        if (lrEns < 2) continue;
+        var dataEns = shEns.getRange(2, 1, lrEns, 14).getValues();
+        var packingBlock = shEns.getRange(2, PACKING_START_COL, lrEns, PACKING_COLS).getValues();
+        var tkBlock = shEns.getRange(2, THERMOKING_START_COL, lrEns, THERMOKING_COLS).getValues();
+        var c5Block = shEns.getRange(2, C5_START_COL, lrEns, c5NumColsLista).getValues();
+        for (var j = 0; j < dataEns.length; j++) {
+          var rowFechaStr = formatFecha(dataEns[j][0]);
+          if (rowFechaStr === fecha) {
+            var en = String(dataEns[j][13] || '').trim();
+            if (en) {
+              if (!ensayosInfo[en]) ensayosInfo[en] = { tieneVisual: false, tienePacking: false, tieneRecepcionC5: false, tieneThermoKing: false };
+              ensayosInfo[en].tieneVisual = true;
+              if (packingBlock[j] && rowHasAnyNonEmpty_(packingBlock[j])) ensayosInfo[en].tienePacking = true;
+              if (c5Block[j] && rowHasAnyNonEmpty_(c5Block[j])) ensayosInfo[en].tieneRecepcionC5 = true;
+              if (tkBlock[j] && rowHasAnyNonEmpty_(tkBlock[j])) ensayosInfo[en].tieneThermoKing = true;
+            }
           }
         }
       }
@@ -1473,7 +1933,7 @@ function doGet(e) {
           filaEnSheet = 2 + k;
         }
         numFilas++;
-        var desp = r[19];
+        var desp = r[IDX_COL_PESO_DESPACHO];
         var numDesp = (desp !== null && desp !== undefined && String(desp).trim() !== '') ? parseFloat(String(desp).replace(',', '.')) : NaN;
         despachoPorFila.push(!isNaN(numDesp) ? numDesp : null);
         var filaSheetK = 2 + k;
@@ -1501,7 +1961,7 @@ function doGet(e) {
     if (numFilas > 0 && (maxClamshell <= 0 || maxClamshell < numFilas)) {
       maxClamshell = numFilas;
     }
-    var despachoRaw = row[19];
+    var despachoRaw = row[IDX_COL_PESO_DESPACHO];
     var despachoGramos = null;
     if (despachoRaw !== null && despachoRaw !== undefined && String(despachoRaw).trim() !== '') {
       var numDesp = parseFloat(String(despachoRaw).replace(',', '.'));

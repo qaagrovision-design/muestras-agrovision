@@ -128,6 +128,148 @@ const META_SAVE_IDS = [
         const fabOptionsBtn = document.getElementById('fab-options-btn');
         const HEADER_TIPO_REGISTRO_KEY = 'tiempos-header-tipo-registro-v2';
 
+        const IDS_PESO_MODAL_CAMPO = {
+            visual: {
+                p1: 'visual-p1',
+                p2: 'visual-p2',
+                acopio: 'visual-acopio',
+                despacho: 'visual-despacho'
+            },
+            acopio: {
+                p1: 'acopio-peso-1-termino-cosecha',
+                p2: 'acopio-peso-2-llegada',
+                acopio: 'acopio-peso-3-calibrado',
+                p4: 'acopio-peso-4-clamshell-calibrado',
+                despacho: 'acopio-peso-5-despacho-campo'
+            }
+        };
+
+        const IDS_TIEMPO_MODAL_CAMPO = {
+            visual: [
+                'visual-tiempo-1-iniciocosecha-1',
+                'visual-tiempo-1-inicioperdida-2',
+                'visual-tiempo-1-terminocosecha-3',
+                'visual-tiempo-1-terminocosecha-4',
+                'visual-tiempo-1-despachoacopio-5'
+            ],
+            acopio: [
+                'acopio-tiempo-1-iniciocosecha',
+                'acopio-tiempo-2-terminocosecha',
+                'acopio-tiempo-3-llegada-acopio',
+                'acopio-tiempo-4-acopio-calibrado',
+                'acopio-tiempo-5-termino-calibrado',
+                'acopio-tiempo-6-despacho-acopio'
+            ]
+        };
+
+        function esModoRegistroAcopio_() {
+            return String(window.CAMPO_REGISTRO_MODO || '').trim() === 'acopio';
+        }
+
+        function modoRegistroPostBody_() {
+            return esModoRegistroAcopio_() ? 'acopio' : 'visual';
+        }
+
+        function codigoPdfCampo_() {
+            return esModoRegistroAcopio_() ? 'PE-F-QPH-305' : 'PE-F-QPH-306';
+        }
+
+        function idInputPesoModalCampo_(campo) {
+            const modo = esModoRegistroAcopio_() ? 'acopio' : 'visual';
+            return IDS_PESO_MODAL_CAMPO[modo][campo] || IDS_PESO_MODAL_CAMPO.visual[campo];
+        }
+
+        function elInputPesoModalCampo_(campo) {
+            return document.getElementById(idInputPesoModalCampo_(campo));
+        }
+
+        function etiquetasPesoUiCampo_() {
+            if (esModoRegistroAcopio_()) {
+                return {
+                    modal: [
+                        'PESO 1 - TÉRMINO DE COSECHA (g)',
+                        'PESO 2 - LLEGADA ACOPIO (g)',
+                        'PESO 3 - ACOPIO CALIBRADO (g)',
+                        'PESO 4 CLAMSHELL CALIBRADO (g)',
+                        'PESO 5 DESPACHO ACOPIO - CAMPO (PESO CLAMSHELL) (g)'
+                    ],
+                    cardP1: 'Peso 1 · Término cosecha',
+                    cardP2: 'Peso 2 · Llegada acopio',
+                    cardP3: 'Peso 3 · Acopio calibrado',
+                    cardP4: 'Peso 4 · Clamshell calibrado',
+                    cardP5: 'Peso 5 · Despacho campo',
+                    iconLogP3: 'warehouse',
+                    iconLogP4: 'box',
+                    iconLogP5: 'truck',
+                    cardAcopio: 'Peso 3 · Acopio calibrado',
+                    cardDespacho: 'Peso 5 · Despacho campo'
+                };
+            }
+            return {
+                modal: ['PESO 1 (g)', 'PESO 2 (g)', 'LLEGADA ACOPIO (g)', 'DESPACHO ACOPIO (g)'],
+                cardP1: 'Peso Inicial 1',
+                cardP2: 'Peso Inicial 2',
+                cardAcopio: 'LLEGADA ACOPIO-CAMPO',
+                cardDespacho: 'DESPACHO ACOPIO-CAMPO'
+            };
+        }
+
+        function bloqueLogisticaPesosCardHtml_(item, lblPeso) {
+            if (esModoRegistroAcopio_()) {
+                return `
+                    <div class="logistics-info logistics-info--tres">
+                        <div class="logistic-point"><i data-lucide="${lblPeso.iconLogP3}"></i><div><p style="color: #94A3B8; font-size: 9px;">${lblPeso.cardP3}</p><b class="${pesoVacio(item.acopio) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.acopio)}</b></div></div>
+                        <div class="logistic-point"><i data-lucide="${lblPeso.iconLogP4}"></i><div><p style="color: #94A3B8; font-size: 9px;">${lblPeso.cardP4}</p><b class="${pesoVacio(item.p4) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.p4)}</b></div></div>
+                        <div class="logistic-point"><i data-lucide="${lblPeso.iconLogP5}"></i><div><p style="color: #94A3B8; font-size: 9px;">${lblPeso.cardP5}</p><b class="${pesoVacio(item.despacho) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.despacho)}</b></div></div>
+                    </div>`;
+            }
+            return `
+                    <div class="logistics-info">
+                        <div class="logistic-point"><i data-lucide="calendar-check-2"></i><div><p style="color: #94A3B8; font-size: 9px;">${lblPeso.cardAcopio}</p><b class="${pesoVacio(item.acopio) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.acopio)}</b></div></div>
+                        <div class="logistic-point"><i data-lucide="truck"></i><div><p style="color: #94A3B8; font-size: 9px;">${lblPeso.cardDespacho}</p><b class="${pesoVacio(item.despacho) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.despacho)}</b></div></div>
+                    </div>`;
+        }
+
+        function idsInputCriticosCampo_() {
+            if (!esModoRegistroAcopio_()) return INPUT_IDS_CRITICOS;
+            const omitirAcopio = new Set(['visual-p1', 'visual-p2', 'visual-acopio']);
+            const mapaPeso = {
+                'visual-p4': 'acopio-peso-4-clamshell-calibrado',
+                'visual-despacho': 'acopio-peso-5-despacho-campo'
+            };
+            const mapaTiempo = {
+                'visual-tiempo-1-iniciocosecha-1': 'acopio-tiempo-1-iniciocosecha',
+                'visual-tiempo-1-inicioperdida-2': 'acopio-tiempo-4-acopio-calibrado',
+                'visual-tiempo-1-terminocosecha-3': 'acopio-tiempo-2-terminocosecha',
+                'visual-tiempo-1-terminocosecha-4': 'acopio-tiempo-3-llegada-acopio',
+                'visual-tiempo-1-despachoacopio-5': 'acopio-tiempo-6-despacho-acopio'
+            };
+            const out = [];
+            INPUT_IDS_CRITICOS.forEach((id) => {
+                if (omitirAcopio.has(id)) return;
+                out.push(mapaPeso[id] || mapaTiempo[id] || id);
+                if (id === 'visual-m-jarra') out.push('acopio-peso-4-clamshell-calibrado');
+            });
+            return out;
+        }
+
+        function keysTiempoValidacionCampo_() {
+            if (esModoRegistroAcopio_()) {
+                return ['inicioCosecha', 'terminoCosecha', 'llegadaAcopio', 'acopioCalibrado', 'terminoCalibrado', 'despachoAcopio'];
+            }
+            return ['inicioCosecha', 'inicioPerdida', 'terminoCosecha', 'llegadaAcopio', 'despachoAcopio'];
+        }
+
+        function tiempoPerdidaPesoParaEnvioCampo_(t) {
+            if (esModoRegistroAcopio_()) {
+                const ac = strOrEmpty(t?.acopioCalibrado);
+                const tc = strOrEmpty(t?.terminoCalibrado);
+                if (ac && tc) return `${ac} / ${tc}`;
+                return ac || tc;
+            }
+            return strOrEmpty(t?.inicioPerdida);
+        }
+
         const FORZAR_NUM_DESDE_SERVIDOR_KEY = 'tiempos-forzar-num-desde-servidor-v1';
 
         (function limpiarDatosLocalesUnaVez() {
@@ -160,15 +302,32 @@ const META_SAVE_IDS = [
             const sel = document.getElementById('header-tipo-registro');
             if (!sel) return;
             const valid = [...sel.options].map((o) => o.value);
+            const modoPagina = String(window.CAMPO_REGISTRO_MODO || 'visual').trim();
+            const urlAcopio = modoPagina === 'acopio' ? './' : './acopio/';
+            const urlVisual = modoPagina === 'acopio' ? '../' : './';
             try {
                 const v = localStorage.getItem(HEADER_TIPO_REGISTRO_KEY);
+                if (modoPagina === 'visual' && v === 'acopio') {
+                    window.location.replace('./acopio/');
+                    return;
+                }
+                if (modoPagina === 'acopio' && v === 'visual') {
+                    window.location.replace('../');
+                    return;
+                }
                 if (v && valid.includes(v)) sel.value = v;
-                else if (v && !valid.includes(v)) sel.value = 'visual';
+                else sel.value = modoPagina;
             } catch (e) { /* ignore */ }
             sel.addEventListener('change', () => {
+                const v = sel.value;
                 try {
-                    localStorage.setItem(HEADER_TIPO_REGISTRO_KEY, sel.value);
+                    localStorage.setItem(HEADER_TIPO_REGISTRO_KEY, v);
                 } catch (e) { /* ignore */ }
+                if (v === 'acopio' && modoPagina !== 'acopio') {
+                    window.location.href = urlAcopio;
+                } else if (v === 'visual' && modoPagina === 'acopio') {
+                    window.location.href = urlVisual;
+                }
             });
         }());
 
@@ -583,6 +742,43 @@ const META_SAVE_IDS = [
             return String(v).trim();
         }
 
+        /** Errores de cadena opcional P1→P2→P3 (solo entre pesos con valor > 0). */
+        function validarCadenaPesosOpcionalAcopio_(p1, p2, p3, nroClamshell) {
+            const n = Number(nroClamshell) || 1;
+            const p1Eff = clamshellUsaPeso1DesdePeso2(n) && !pesoVacio(p2) ? Number(p2) : Number(p1);
+            const cadena = [];
+            if (!pesoVacio(p1Eff)) cadena.push({ k: 'Peso 1', v: p1Eff });
+            if (!pesoVacio(p2)) cadena.push({ k: 'Peso 2', v: Number(p2) });
+            if (!pesoVacio(p3)) cadena.push({ k: 'Peso 3', v: Number(p3) });
+            for (let i = 1; i < cadena.length; i++) {
+                if (cadena[i].v > cadena[i - 1].v) {
+                    return `${cadena[i].k} no puede ser mayor que ${cadena[i - 1].k}.`;
+                }
+            }
+            return '';
+        }
+
+        /** Validación de pesos Acopio por clamshell (envío). */
+        function validarPesosAcopioClamshell_(item, n) {
+            const errs = [];
+            const label = `Clamshell ${n}`;
+            if (pesoVacio(item?.p4)) errs.push(`${label}: Peso 4 · Clamshell calibrado`);
+            if (pesoVacio(item?.despacho)) errs.push(`${label}: Peso 5 · Despacho campo`);
+            const p4 = Number(item?.p4);
+            const p5 = Number(item?.despacho);
+            if (!pesoVacio(item?.p4) && !pesoVacio(item?.despacho) && p5 > p4) {
+                errs.push(`${label}: Peso 5 debe ser menor o igual a Peso 4`);
+            }
+            const msgCadena = validarCadenaPesosOpcionalAcopio_(
+                peso1EfectivoCampo(item, n),
+                item?.p2,
+                item?.acopio,
+                n
+            );
+            if (msgCadena) errs.push(`${label}: ${msgCadena}`);
+            return errs;
+        }
+
         /** Presión vapor (Kpa): siempre punto decimal y 3 cifras para el POST (servidor convierte a Number). */
         function presionStrParaEnvio(v) {
             if (v === null || v === undefined || String(v).trim() === '') return '';
@@ -591,8 +787,9 @@ const META_SAVE_IDS = [
             return n.toFixed(3);
         }
 
-        /** Clamshell 5+: Peso 1 es copia de Peso 2 (jarra adicional en la misma muestra). */
+        /** Visual: clamshell 5+ copia Peso 1 desde Peso 2. Acopio: los 5 pesos son editables en cada clamshell. */
         function clamshellUsaPeso1DesdePeso2(nroClamshell) {
+            if (esModoRegistroAcopio_()) return false;
             return Number(nroClamshell) >= 5;
         }
 
@@ -611,18 +808,28 @@ const META_SAVE_IDS = [
         }
 
         function configurarModalPesosClamshell_(nroClamshell) {
-            const inpP1 = document.getElementById('visual-p1');
-            const inpP2 = document.getElementById('visual-p2');
-            if (!inpP1 || !inpP2) return;
+            const inpP1 = elInputPesoModalCampo_('p1');
+            const inpP2 = elInputPesoModalCampo_('p2');
+            const inpAcopio = elInputPesoModalCampo_('acopio');
+            const inpP4 = elInputPesoModalCampo_('p4');
+            const inpDespacho = elInputPesoModalCampo_('despacho');
             const auto = clamshellUsaPeso1DesdePeso2(nroClamshell);
-            inpP1.disabled = auto;
-            inpP1.title = auto ? 'Se copia automáticamente desde Peso 2' : '';
-            if (auto) inpP1.value = inpP2.value;
+            if (inpP1) {
+                inpP1.disabled = auto;
+                inpP1.title = auto ? 'Se copia automáticamente desde Peso 2' : '';
+                if (auto && inpP2) inpP1.value = inpP2.value;
+            }
+            [inpP2, inpAcopio, inpP4, inpDespacho].forEach((inp) => {
+                if (inp) {
+                    inp.disabled = false;
+                    inp.removeAttribute('readonly');
+                }
+            });
         }
 
         function sincronizarPeso1DesdePeso2EnModal_() {
-            const inpP1 = document.getElementById('visual-p1');
-            const inpP2 = document.getElementById('visual-p2');
+            const inpP1 = elInputPesoModalCampo_('p1');
+            const inpP2 = elInputPesoModalCampo_('p2');
             if (!inpP1 || !inpP2 || !inpP1.disabled) return;
             inpP1.value = inpP2.value;
         }
@@ -709,7 +916,7 @@ const META_SAVE_IDS = [
                 return faltantes;
             }
 
-            const keysTiempo = ['inicioCosecha', 'inicioPerdida', 'terminoCosecha', 'llegadaAcopio', 'despachoAcopio'];
+            const keysTiempo = keysTiempoValidacionCampo_();
             const keysTemp = ['inicioAmbiente', 'inicioPulpa', 'terminoAmbiente', 'terminoPulpa', 'llegadaAmbiente', 'llegadaPulpa', 'despachoAmbiente', 'despachoPulpa'];
             const keysHum = ['inicio', 'termino', 'llegada', 'despacho'];
             const keysPresAmb = ['presionAmbienteInicio', 'presionAmbienteTermino', 'presionAmbienteLlegada', 'presionAmbienteDespacho'];
@@ -719,14 +926,18 @@ const META_SAVE_IDS = [
             items.forEach((item, idx) => {
                 const n = idx + 1;
                 if (campoVacio(item?.jarra)) faltantes.push(`Clamshell ${n}: N° jarra`);
-                if (clamshellUsaPeso1DesdePeso2(n)) {
-                    if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
+                if (esModoRegistroAcopio_()) {
+                    validarPesosAcopioClamshell_(item, n).forEach((e) => faltantes.push(e));
                 } else {
-                    if (pesoVacio(item?.p1)) faltantes.push(`Clamshell ${n}: Peso inicial 1`);
-                    if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
+                    if (clamshellUsaPeso1DesdePeso2(n)) {
+                        if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
+                    } else {
+                        if (pesoVacio(item?.p1)) faltantes.push(`Clamshell ${n}: Peso inicial 1`);
+                        if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
+                    }
+                    if (pesoVacio(item?.acopio)) faltantes.push(`Clamshell ${n}: Llegada acopio-campo`);
+                    if (pesoVacio(item?.despacho)) faltantes.push(`Clamshell ${n}: Despacho acopio-campo`);
                 }
-                if (pesoVacio(item?.acopio)) faltantes.push(`Clamshell ${n}: Llegada acopio-campo`);
-                if (pesoVacio(item?.despacho)) faltantes.push(`Clamshell ${n}: Despacho acopio-campo`);
 
                 const t = item?.metric?.tiempo || {};
                 // Regla operativa: tiempos se capturan en el clamshell líder (primero) y se replican.
@@ -1845,7 +2056,11 @@ const META_SAVE_IDS = [
         programarActualizarErroresMetaFormulario();
         function metricaVacia() {
             return {
-                tiempo: { inicioCosecha: '', inicioPerdida: '', terminoCosecha: '', llegadaAcopio: '', despachoAcopio: '' },
+                tiempo: {
+                    inicioCosecha: '', inicioPerdida: '', terminoCosecha: '',
+                    llegadaAcopio: '', despachoAcopio: '',
+                    acopioCalibrado: '', terminoCalibrado: ''
+                },
                 temperatura: {
                     inicioAmbiente: '', inicioPulpa: '',
                     terminoAmbiente: '', terminoPulpa: '',
@@ -2216,6 +2431,12 @@ const META_SAVE_IDS = [
         }
 
         function conteoLlenadoMetrica(item, kind) {
+            if (kind === 'tiempo') {
+                const t = item?.metric?.tiempo || {};
+                const keys = keysTiempoValidacionCampo_();
+                const done = keys.filter((k) => String(t[k] ?? '').trim() !== '').length;
+                return { done, total: keys.length };
+            }
             const m = item?.metric?.[kind];
             if (!m) return { done: 0, total: 0 };
             const vals = Object.values(m);
@@ -2305,6 +2526,10 @@ const META_SAVE_IDS = [
                 visuales.map((it) => String(it?.metric?.tiempo?.llegadaAcopio || '').trim()).filter(Boolean).slice(-1)[0] || '';
             const despachoGlobal =
                 visuales.map((it) => String(it?.metric?.tiempo?.despachoAcopio || '').trim()).filter(Boolean).slice(-1)[0] || '';
+            const acopioCalibradoGlobal =
+                visuales.map((it) => String(it?.metric?.tiempo?.acopioCalibrado || '').trim()).filter(Boolean).slice(-1)[0] || '';
+            const terminoCalibradoGlobal =
+                visuales.map((it) => String(it?.metric?.tiempo?.terminoCalibrado || '').trim()).filter(Boolean).slice(-1)[0] || '';
 
             visuales.forEach((it) => {
                 const nJarra = Number(it.jarra);
@@ -2315,24 +2540,50 @@ const META_SAVE_IDS = [
                 const terminoCosechaActual = String(it.metric?.tiempo?.terminoCosecha || '').trim();
                 const llegadaActual = String(it.metric?.tiempo?.llegadaAcopio || '').trim();
                 const despachoActual = String(it.metric?.tiempo?.despachoAcopio || '').trim();
+                const acopioCalibradoActual = String(it.metric?.tiempo?.acopioCalibrado || '').trim();
+                const terminoCalibradoActual = String(it.metric?.tiempo?.terminoCalibrado || '').trim();
 
                 // Si no hay dato proveniente de jarras/trasvasados, conservar lo ya registrado.
                 it.metric.tiempo.inicioCosecha = inicioCosechaEnsayo || inicioCosechaActual;
-                it.metric.tiempo.inicioPerdida = terminoTrasvasadoPorJarra.get(nJarra) || inicioPerdidaActual;
-                // Término de cosecha (métrica): término del ÚLTIMO trasvasado del ensayo (lj-campo-termino más tardío entre todas las filas T), igual en todos los clamshells.
                 it.metric.tiempo.terminoCosecha = terminoUltimoTrasvasadoEnsayo || terminoCosechaActual;
                 it.metric.tiempo.llegadaAcopio = llegadaGlobal || llegadaActual;
                 it.metric.tiempo.despachoAcopio = despachoGlobal || despachoActual;
+                if (esModoRegistroAcopio_()) {
+                    it.metric.tiempo.acopioCalibrado = acopioCalibradoGlobal || acopioCalibradoActual;
+                    it.metric.tiempo.terminoCalibrado = terminoCalibradoGlobal || terminoCalibradoActual;
+                } else {
+                    it.metric.tiempo.inicioPerdida = terminoTrasvasadoPorJarra.get(nJarra) || inicioPerdidaActual;
+                }
             });
         }
 
         function validarSecuenciaTiempoMetrica(t) {
             const inicioCosecha = String(t?.inicioCosecha || '').trim();
-            const inicioPerdida = String(t?.inicioPerdida || '').trim();
             const terminoCosecha = String(t?.terminoCosecha || '').trim();
             const llegadaAcopio = String(t?.llegadaAcopio || '').trim();
             const despachoAcopio = String(t?.despachoAcopio || '').trim();
             const errores = [];
+            if (esModoRegistroAcopio_()) {
+                const acopioCalibrado = String(t?.acopioCalibrado || '').trim();
+                const terminoCalibrado = String(t?.terminoCalibrado || '').trim();
+                if (inicioCosecha && terminoCosecha && horarioFinalMenorQueInicio(inicioCosecha, terminoCosecha)) {
+                    errores.push('Término de cosecha debe ser mayor o igual a Inicio de cosecha.');
+                }
+                if (terminoCosecha && llegadaAcopio && horarioFinalMenorQueInicio(terminoCosecha, llegadaAcopio)) {
+                    errores.push('Llegada acopio-campo debe ser mayor o igual a Término de cosecha.');
+                }
+                if (llegadaAcopio && acopioCalibrado && horarioFinalMenorQueInicio(llegadaAcopio, acopioCalibrado)) {
+                    errores.push('Acopio calibrado debe ser mayor o igual a Llegada acopio-campo.');
+                }
+                if (acopioCalibrado && terminoCalibrado && horarioFinalMenorQueInicio(acopioCalibrado, terminoCalibrado)) {
+                    errores.push('Término de calibrado debe ser mayor o igual a Acopio calibrado.');
+                }
+                if (terminoCalibrado && despachoAcopio && horarioFinalMenorQueInicio(terminoCalibrado, despachoAcopio)) {
+                    errores.push('Despacho acopio-campo debe ser mayor o igual a Término de calibrado.');
+                }
+                return errores;
+            }
+            const inicioPerdida = String(t?.inicioPerdida || '').trim();
             if (inicioCosecha && inicioPerdida && horarioFinalMenorQueInicio(inicioCosecha, inicioPerdida)) {
                 errores.push('Inicio pérdida de peso debe ser mayor o igual a Inicio de cosecha.');
             }
@@ -2350,12 +2601,22 @@ const META_SAVE_IDS = [
 
         function obtenerTiempoDesdeModalMetrica() {
             const read = (k) => document.querySelector(`#metric-modal-body [data-metric="${k}"]`)?.value || '';
-            return {
+            const base = {
                 inicioCosecha: read('inicioCosecha'),
-                inicioPerdida: read('inicioPerdida'),
                 terminoCosecha: read('terminoCosecha'),
                 llegadaAcopio: read('llegadaAcopio'),
                 despachoAcopio: read('despachoAcopio')
+            };
+            if (esModoRegistroAcopio_()) {
+                return {
+                    ...base,
+                    acopioCalibrado: read('acopioCalibrado'),
+                    terminoCalibrado: read('terminoCalibrado')
+                };
+            }
+            return {
+                ...base,
+                inicioPerdida: read('inicioPerdida')
             };
         }
 
@@ -2602,6 +2863,7 @@ const META_SAVE_IDS = [
                 card.className = 'clamshell-card';
                 card.onclick = () => abrirModal(`Editar Clamshell #${nroClamshell}`, item);
                 const obs = String(item.observacion || '').trim();
+                const lblPeso = etiquetasPesoUiCampo_();
                 card.innerHTML = `
                     <div class="card-header">
                         <div class="id-badge">
@@ -2621,8 +2883,8 @@ const META_SAVE_IDS = [
 
                     <div class="weights-panel">
                         <div class="weights-grid">
-                            <div class="weight-box"><label>Peso Inicial 1</label><span class="${clasePesoCampo(peso1EfectivoCampo(item, nroClamshell))}">${textoPesoCampo(peso1EfectivoCampo(item, nroClamshell))}</span></div>
-                            <div class="weight-box"><label>Peso Inicial 2</label><span class="${clasePesoCampo(item.p2)}">${textoPesoCampo(item.p2)}</span></div>
+                            <div class="weight-box"><label>${lblPeso.cardP1}</label><span class="${clasePesoCampo(peso1EfectivoCampo(item, nroClamshell))}">${textoPesoCampo(peso1EfectivoCampo(item, nroClamshell))}</span></div>
+                            <div class="weight-box"><label>${lblPeso.cardP2}</label><span class="${clasePesoCampo(item.p2)}">${textoPesoCampo(item.p2)}</span></div>
                             <div class="observation-box">
                                 <button type="button" onclick="abrirModalObservacion(event, ${item.id})" title="Editar observación">
                                     <span class="observation-text ${obs ? '' : 'is-empty'}">${obs || 'Sin observación registrada'}</span>
@@ -2651,10 +2913,7 @@ const META_SAVE_IDS = [
                         </div>
                     </div>
 
-                    <div class="logistics-info">
-                        <div class="logistic-point"><i data-lucide="calendar-check-2"></i><div><p style="color: #94A3B8; font-size: 9px;">LLEGADA ACOPIO-CAMPO</p><b class="${pesoVacio(item.acopio) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.acopio)}</b></div></div>
-                        <div class="logistic-point"><i data-lucide="truck"></i><div><p style="color: #94A3B8; font-size: 9px;">DESPACHO ACOPIO-CAMPO</p><b class="${pesoVacio(item.despacho) ? 'is-empty-peso' : ''}">${textoPesoCampo(item.despacho)}</b></div></div>
-                    </div>
+                    ${bloqueLogisticaPesosCardHtml_(item, lblPeso)}
                 `;
                 container.appendChild(card);
             });
@@ -2664,6 +2923,11 @@ const META_SAVE_IDS = [
 
         function esClamshellSinDatos_(item) {
             if (!item) return false;
+            if (esModoRegistroAcopio_()) {
+                if (!pesoVacio(item.p4)) return false;
+                if (!pesoVacio(item.despacho)) return false;
+                return !String(item.observacion || '').trim();
+            }
             const n = numeroClamshellPorEnsayo(item);
             if (!pesoVacio(peso1EfectivoCampo(item, n))) return false;
             if (!pesoVacio(item.p2)) return false;
@@ -2677,11 +2941,12 @@ const META_SAVE_IDS = [
             return lista.find((it) => esClamshellSinDatos_(it)) || null;
         }
 
-        function aplicarDatosModalAClamshell_(target, jarraSel, p1Val, p2Val, acopioVal, despachoVal) {
+        function aplicarDatosModalAClamshell_(target, jarraSel, p1Val, p2Val, acopioVal, p4Val, despachoVal) {
             target.jarra = jarraSel;
             target.p1 = p1Val;
             target.p2 = Number.isFinite(p2Val) ? p2Val : 0;
             target.acopio = Number.isFinite(acopioVal) ? acopioVal : 0;
+            target.p4 = Number.isFinite(p4Val) ? p4Val : 0;
             target.despacho = Number.isFinite(despachoVal) ? despachoVal : 0;
         }
 
@@ -2697,6 +2962,7 @@ const META_SAVE_IDS = [
                 p1: 0,
                 p2: 0,
                 acopio: 0,
+                p4: 0,
                 despacho: 0,
                 observacion: '',
                 placaVehiculo: '',
@@ -3790,68 +4056,80 @@ const META_SAVE_IDS = [
             const temp = m.temperatura || {};
             const hum = m.humedad || {};
             const numMuestraUnica = String(leerNumMuestraDesdePantalla(ensayoNombre) || '').trim();
+            const esAcopio = esModoRegistroAcopio_();
+            const celdasTiempos = esAcopio ? [
+                strOrEmpty(t.inicioCosecha),
+                strOrEmpty(t.terminoCosecha),
+                strOrEmpty(t.llegadaAcopio),
+                strOrEmpty(t.acopioCalibrado),
+                strOrEmpty(t.terminoCalibrado),
+                strOrEmpty(t.despachoAcopio)
+            ] : [
+                strOrEmpty(t.inicioCosecha),
+                strOrEmpty(t.inicioPerdida),
+                strOrEmpty(t.terminoCosecha),
+                strOrEmpty(t.llegadaAcopio),
+                strOrEmpty(t.despachoAcopio),
+                ''
+            ];
 
             return [
-                // Hoja 1: mismo orden que el formulario; NUM_MUESTRA única por fila.
-                hoyIsoLocal(), // FECHA
-                strOrEmpty(ensayoNombre), // ENSAYO_NOMBRE (Muestra)
-                numMuestraUnica, // NUM_MUESTRA
-                strOrEmpty(meta['visual-responsable']), // RESPONSABLE
-                strOrEmpty(meta['visual-guia-precosecha']), // DIAS_PRECOSECHA
-                strOrEmpty(meta['visual-hora']), // HORA_INICIO_GENERAL
-                strOrEmpty(meta['visual-meta-fundo'] || meta['meta-fundo']), // FUNDO
-                strOrEmpty(meta['visual-traz-etapa'] || meta['meta-traz-etapa']), // TRAZ_ETAPA
-                strOrEmpty(meta['visual-traz-campo'] || meta['meta-traz-campo']), // TRAZ_CAMPO
-                strOrEmpty(meta['visual-traz-turno']), // TRAZ_LIBRE
-                strOrEmpty(meta['visual-meta-variedad'] || meta['meta-variedad']), // VARIEDAD
-                strOrEmpty(item?.guiaRemision || document.getElementById('visual-guia-acopio')?.value), // GUIA_REMISION
-                strOrEmpty(item?.placaVehiculo || document.getElementById('visual-placa-vehiculo')?.value).toUpperCase(), // PLACA_VEHICULO
-                ensayoNumero, // ENSAYO_NUMERO
-                String(idx + 1), // N_CLAMSHELL
-                strOrEmpty(item?.jarra), // N_JARRA
-                pesoStrOrEmpty(peso1EfectivoCampo(item, idx + 1)), // PESO_1
-                pesoStrOrEmpty(item?.p2), // PESO_2
-                pesoStrOrEmpty(item?.acopio), // LLEGADA_ACOPIO
-                pesoStrOrEmpty(item?.despacho), // DESPACHO_ACOPIO
-                // 21..28 (temperatura)
-                strOrEmpty(temp.inicioAmbiente), // TEMP_MUE_INICIO_AMB
-                strOrEmpty(temp.inicioPulpa), // TEMP_MUE_INICIO_PUL
-                strOrEmpty(temp.terminoAmbiente), // TEMP_MUE_TERMINO_AMB
-                strOrEmpty(temp.terminoPulpa), // TEMP_MUE_TERMINO_PUL
-                strOrEmpty(temp.llegadaAmbiente), // TEMP_MUE_LLEGADA_AMB
-                strOrEmpty(temp.llegadaPulpa), // TEMP_MUE_LLEGADA_PUL
-                strOrEmpty(temp.despachoAmbiente), // TEMP_MUE_DESPACHO_AMB
-                strOrEmpty(temp.despachoPulpa), // TEMP_MUE_DESPACHO_PUL
-                // 29..33 (tiempos)
-                strOrEmpty(t.inicioCosecha), // TIEMPO_INICIO_COSECHA
-                strOrEmpty(t.inicioPerdida), // TIEMPO_PERDIDA_PESO
-                strOrEmpty(t.terminoCosecha), // TIEMPO_TERMINO_COSECHA
-                strOrEmpty(t.llegadaAcopio), // TIEMPO_LLEGADA_ACOPIO
-                strOrEmpty(t.despachoAcopio), // TIEMPO_DESPACHO_ACOPIO
-                // 34..37 (humedad)
-                strOrEmpty(hum.inicio), // HUMEDAD_INICIO
-                strOrEmpty(hum.termino), // HUMEDAD_TERMINO
-                strOrEmpty(hum.llegada), // HUMEDAD_LLEGADA
-                strOrEmpty(hum.despacho), // HUMEDAD_DESPACHO
-                // 38..41 (presion ambiente)
-                presionStrParaEnvio(temp.presionAmbienteInicio), // PRESION_AMB_INICIO
-                presionStrParaEnvio(temp.presionAmbienteTermino), // PRESION_AMB_TERMINO
-                presionStrParaEnvio(temp.presionAmbienteLlegada), // PRESION_AMB_LLEGADA
-                presionStrParaEnvio(temp.presionAmbienteDespacho), // PRESION_AMB_DESPACHO
-                // 42..45 (presion fruta)
-                presionStrParaEnvio(temp.presionFrutaInicio), // PRESION_FRUTA_INICIO
-                presionStrParaEnvio(temp.presionFrutaTermino), // PRESION_FRUTA_TERMINO
-                presionStrParaEnvio(temp.presionFrutaLlegada), // PRESION_FRUTA_LLEGADA
-                presionStrParaEnvio(temp.presionFrutaDespacho), // PRESION_FRUTA_DESPACHO
-                strOrEmpty(item?.observacion), // OBSERVACION
-                strOrEmpty(meta['visual-observacion-formato'] || document.getElementById('visual-observacion-formato')?.value), // OBSERVACION_FORMATO
-                strOrEmpty(horaRegistro) // HORA_REGISTRO
+                // 50 columnas registro: 5 pesos + 6 tiempos (Acopio) o 5 tiempos + reserva (Visual).
+                hoyIsoLocal(), // 0 FECHA
+                strOrEmpty(ensayoNombre), // 1 ENSAYO_NOMBRE
+                numMuestraUnica, // 2 NUM_MUESTRA
+                strOrEmpty(meta['visual-responsable']), // 3 RESPONSABLE
+                strOrEmpty(meta['visual-guia-precosecha']), // 4 DIAS_PRECOSECHA
+                strOrEmpty(meta['visual-hora']), // 5 HORA_INICIO_GENERAL
+                strOrEmpty(meta['visual-meta-fundo'] || meta['meta-fundo']), // 6 FUNDO
+                strOrEmpty(meta['visual-traz-etapa'] || meta['meta-traz-etapa']), // 7 TRAZ_ETAPA
+                strOrEmpty(meta['visual-traz-campo'] || meta['meta-traz-campo']), // 8 TRAZ_CAMPO
+                strOrEmpty(meta['visual-traz-turno']), // 9 TRAZ_LIBRE
+                strOrEmpty(meta['visual-meta-variedad'] || meta['meta-variedad']), // 10 VARIEDAD
+                strOrEmpty(item?.guiaRemision || document.getElementById('visual-guia-acopio')?.value), // 11 GUIA
+                strOrEmpty(item?.placaVehiculo || document.getElementById('visual-placa-vehiculo')?.value).toUpperCase(), // 12 PLACA
+                ensayoNumero, // 13 ENSAYO_NUMERO
+                String(idx + 1), // 14 N_CLAMSHELL
+                strOrEmpty(item?.jarra), // 15 N_JARRA
+                pesoStrOrEmpty(peso1EfectivoCampo(item, idx + 1)), // 16 PESO_1
+                pesoStrOrEmpty(item?.p2), // 17 PESO_2
+                pesoStrOrEmpty(item?.acopio), // 18 PESO_3 / LLEGADA_ACOPIO
+                esAcopio ? pesoStrOrEmpty(item?.p4) : '', // 19 PESO_4 / PESO_RESERVA
+                pesoStrOrEmpty(item?.despacho), // 20 PESO_5 / DESPACHO_ACOPIO
+                // 21..28 temperatura
+                strOrEmpty(temp.inicioAmbiente),
+                strOrEmpty(temp.inicioPulpa),
+                strOrEmpty(temp.terminoAmbiente),
+                strOrEmpty(temp.terminoPulpa),
+                strOrEmpty(temp.llegadaAmbiente),
+                strOrEmpty(temp.llegadaPulpa),
+                strOrEmpty(temp.despachoAmbiente),
+                strOrEmpty(temp.despachoPulpa),
+                // 29..34 tiempos (6)
+                ...celdasTiempos,
+                // 35..38 humedad
+                strOrEmpty(hum.inicio),
+                strOrEmpty(hum.termino),
+                strOrEmpty(hum.llegada),
+                strOrEmpty(hum.despacho),
+                // 39..46 presión
+                presionStrParaEnvio(temp.presionAmbienteInicio),
+                presionStrParaEnvio(temp.presionAmbienteTermino),
+                presionStrParaEnvio(temp.presionAmbienteLlegada),
+                presionStrParaEnvio(temp.presionAmbienteDespacho),
+                presionStrParaEnvio(temp.presionFrutaInicio),
+                presionStrParaEnvio(temp.presionFrutaTermino),
+                presionStrParaEnvio(temp.presionFrutaLlegada),
+                presionStrParaEnvio(temp.presionFrutaDespacho),
+                strOrEmpty(item?.observacion), // 47 OBSERVACION
+                strOrEmpty(meta['visual-observacion-formato'] || document.getElementById('visual-observacion-formato')?.value), // 48 OBSERVACION_FORMATO
+                strOrEmpty(horaRegistro) // 49 HORA_REGISTRO
             ];
         }
 
         /**
-         * Hoja 2: INICIO_C/TERMINO_C/MIN_C = fila Cosecha de esa jarra; INICIO_T/TERMINO_T/MIN_T = fila Trasvasado (mismo concepto).
-         * Se envían en el hueco 20-25 de una fila de 54 (el servidor hace toRowRegistro y copia a Hoja 2).
+         * Hoja 2: INICIO_C/TERMINO_C/MIN_C = fila Cosecha de esa jarra; INICIO_T/TERMINO_T/MIN_T = fila Trasvasado.
+         * Se envían en el hueco 21-26 de una fila expandida de 56 (el servidor hace toRowRegistro y copia a Hoja 2).
          */
         function minutosDiferenciaHorasHoja2(horaIni, horaFin) {
             if (!horaIni || !horaFin) return '';
@@ -3884,14 +4162,17 @@ const META_SAVE_IDS = [
             ];
         }
 
-        /** 54 celdas: 20 + hueco Hoja2 (6) + 28 = misma convención que code.gs toRowRegistro. */
-        function construirFilaPost54ConHoja2(item, idx, totalEnLote, horaRegistro) {
-            const f48 = construirFilaBaseRegistro(item, idx, totalEnLote, horaRegistro);
+        /** 56 celdas: 21 + hueco Hoja2 (6) + 29 = 50 cols registro (misma convención que code.gs toRowRegistro). */
+        const REGISTRO_PRE_JARRA_COLS = 21;
+        const REGISTRO_POST_EXPANDED_LEN = 56;
+
+        function construirFilaPostExpandidaConHoja2(item, idx, totalEnLote, horaRegistro) {
+            const f50 = construirFilaBaseRegistro(item, idx, totalEnLote, horaRegistro);
             const h6 = seisCeldasHoja2DesdeLlenadoJarras(String(item.ensayo || 'Ensayo 1'), item?.jarra);
-            return f48.slice(0, 20).concat(h6, f48.slice(20, 48));
+            return f50.slice(0, REGISTRO_PRE_JARRA_COLS).concat(h6, f50.slice(REGISTRO_PRE_JARRA_COLS, 50));
         }
 
-        // Avance etapa 1: filas para POST (54 cols con tiempos Hoja 2 desde panel jarras, no desde métricas de fila).
+        // Filas para POST (56 cols con tiempos Hoja 2 desde panel jarras).
         function construirRowsRegistroBasePorEnsayo(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
             sincronizarTiempoPorJarra(ensayo);
@@ -3901,7 +4182,7 @@ const META_SAVE_IDS = [
                 .sort((a, b) => Number(a.id) - Number(b.id));
             const n = items.length;
             const horaRegistro = horaLocalActual();
-            return items.map((item, idx) => construirFilaPost54ConHoja2(item, idx, n, horaRegistro));
+            return items.map((item, idx) => construirFilaPostExpandidaConHoja2(item, idx, n, horaRegistro));
         }
         function construirRowsRegistroBase() {
             return construirRowsRegistroBasePorEnsayo(obtenerEnsayoActivo());
@@ -4011,7 +4292,7 @@ const META_SAVE_IDS = [
 
         function leerInputsCriticosActuales() {
             const out = {};
-            INPUT_IDS_CRITICOS.forEach((id) => {
+            idsInputCriticosCampo_().forEach((id) => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 out[id] = el.value;
@@ -4027,11 +4308,28 @@ const META_SAVE_IDS = [
             migrarClavesInputsCriticos(inputs);
             delete inputs['visual-num-muestra'];
             delete inputs.numMuestra;
-            INPUT_IDS_CRITICOS.forEach((id) => {
-                if (inputs[id] === undefined) return;
+            const mapaAcopio = {
+                'visual-p1': 'acopio-peso-1-termino-cosecha',
+                'visual-p2': 'acopio-peso-2-llegada',
+                'visual-acopio': 'acopio-peso-3-calibrado',
+                'visual-p4': 'acopio-peso-4-clamshell-calibrado',
+                'visual-despacho': 'acopio-peso-5-despacho-campo',
+                'visual-tiempo-1-iniciocosecha-1': 'acopio-tiempo-1-iniciocosecha',
+                'visual-tiempo-1-inicioperdida-2': 'acopio-tiempo-4-acopio-calibrado',
+                'visual-tiempo-1-terminocosecha-3': 'acopio-tiempo-2-terminocosecha',
+                'visual-tiempo-1-terminocosecha-4': 'acopio-tiempo-3-llegada-acopio',
+                'visual-tiempo-1-despachoacopio-5': 'acopio-tiempo-6-despacho-acopio'
+            };
+            idsInputCriticosCampo_().forEach((id) => {
+                let val = inputs[id];
+                if (val === undefined && esModoRegistroAcopio_()) {
+                    const legacy = Object.keys(mapaAcopio).find((k) => mapaAcopio[k] === id);
+                    if (legacy && inputs[legacy] !== undefined) val = inputs[legacy];
+                }
+                if (val === undefined) return;
                 const el = document.getElementById(id);
                 if (!el) return;
-                el.value = String(inputs[id] ?? '');
+                el.value = String(val ?? '');
             });
         }
 
@@ -4521,6 +4819,11 @@ const META_SAVE_IDS = [
             const ensayo = String(obtenerEnsayoActivo() || document.getElementById('visual-meta-muestra')?.value || 'Ensayo 1').trim() || 'Ensayo 1';
             cargarSimulacion8Clamshell(ensayo);
             establecerAcordeonMetaAbierto(true);
+            if (esModoRegistroAcopio_()) {
+                document.querySelector('.logistica-formato-block')?.setAttribute('open', '');
+                document.querySelector('.logistica-despacho-block')?.setAttribute('open', '');
+                document.querySelector('.llenado-jarras-wrapper')?.setAttribute('open', '');
+            }
             sincronizarLogisticaAcopioDesdeEnsayo();
             actualizarIconos();
         }
@@ -4528,12 +4831,29 @@ const META_SAVE_IDS = [
 
         function cargarSimulacion8Clamshell(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1').trim() || 'Ensayo 1';
+            const esAcopio = esModoRegistroAcopio_();
             cambiarEnsayoActivoEnFormulario_(ensayo);
 
             const ahora = new Date();
             const hh = String(ahora.getHours()).padStart(2, '0');
             const mm = String(ahora.getMinutes()).padStart(2, '0');
-            const metaDemo = {
+            const metaDemo = esAcopio ? {
+                'visual-meta-muestra': ensayo,
+                'visual-rotulo': ensayo,
+                'visual-responsable': 'SIMULACION ACOPIO',
+                'visual-guia-precosecha': '5 / 12',
+                'visual-hora': `${hh}:${mm}`,
+                'visual-meta-fundo': 'LN',
+                'visual-traz-acopio': 'Acopio 1',
+                'visual-traz-etapa': 'E02',
+                'visual-traz-campo': 'C03',
+                'visual-traz-turno': '12',
+                'visual-meta-variedad': 'Sekoya Pop',
+                'visual-guia-acopio': '208353',
+                'visual-placa-vehiculo': '9967-OK',
+                'visual-observacion-formato': 'Simulación Acopio — datos de prueba para envío.',
+                'visual-trazabilidad': 'E02-C03-12'
+            } : {
                 'visual-meta-muestra': ensayo,
                 'visual-rotulo': ensayo,
                 'visual-responsable': 'SIMULACION CAMPO',
@@ -4588,17 +4908,49 @@ const META_SAVE_IDS = [
                     inicio: '08:25',
                     termino: '09:05',
                     tiempo: ''
+                },
+                {
+                    id: siguienteIdFilaJarras++,
+                    ensayo,
+                    jarra: '2',
+                    tipo: 'C',
+                    inicio: '09:08',
+                    termino: '09:18',
+                    tiempo: ''
+                },
+                {
+                    id: siguienteIdFilaJarras++,
+                    ensayo,
+                    jarra: '2',
+                    tipo: 'T',
+                    inicio: '09:18',
+                    termino: '09:38',
+                    tiempo: ''
                 }
             ];
 
+            const presionGlobal = {
+                presionAmbienteInicio: '101.325', presionAmbienteTermino: '101.280',
+                presionAmbienteLlegada: '101.310', presionAmbienteDespacho: '101.295',
+                presionFrutaInicio: '98.450', presionFrutaTermino: '98.520',
+                presionFrutaLlegada: '98.610', presionFrutaDespacho: '98.580'
+            };
             const tempGlobal = {
                 inicioAmbiente: '23.1', inicioPulpa: '14.1',
                 terminoAmbiente: '23.8', terminoPulpa: '14.7',
                 llegadaAmbiente: '24.2', llegadaPulpa: '15.0',
-                despachoAmbiente: '24.6', despachoPulpa: '15.2'
+                despachoAmbiente: '24.6', despachoPulpa: '15.2',
+                ...presionGlobal
             };
             const humGlobal = { inicio: '66.4', termino: '64.9', llegada: '63.5', despacho: '62.8' };
-            const tiempoLider = {
+            const tiempoLider = esAcopio ? {
+                inicioCosecha: '08:10',
+                terminoCosecha: '09:05',
+                llegadaAcopio: '09:28',
+                acopioCalibrado: '09:35',
+                terminoCalibrado: '09:42',
+                despachoAcopio: '09:47'
+            } : {
                 inicioCosecha: '08:10',
                 inicioPerdida: '08:25',
                 terminoCosecha: '09:05',
@@ -4613,15 +4965,19 @@ const META_SAVE_IDS = [
                 metric.temperatura = { ...metric.temperatura, ...tempGlobal };
                 metric.humedad = { ...metric.humedad, ...humGlobal };
                 if (n === 1) metric.tiempo = { ...metric.tiempo, ...tiempoLider };
+                const nJarra = n <= 4 ? 1 : 2;
+                const p4Sim = 125 - n;
+                const p5Sim = 118 - n;
                 data.push({
                     id: maxId,
-                    jarra: 1,
+                    jarra: nJarra,
                     ensayo,
                     p1: 145 + n,
                     p2: 133 + n,
                     acopio: 123 + n,
-                    despacho: 121 + n,
-                    observacion: `SIM-${n}`,
+                    p4: esAcopio ? p4Sim : undefined,
+                    despacho: esAcopio ? p5Sim : (121 + n),
+                    observacion: esAcopio ? `SIM-ACOPIO-${n}` : `SIM-${n}`,
                     placaVehiculo: '9967-OK',
                     guiaRemision: '208353',
                     metric
@@ -4633,9 +4989,11 @@ const META_SAVE_IDS = [
             renderizarTarjetas();
             renderizarPanelLlenadoJarras();
             actualizarBarraHeaderEstado();
+            actualizarBloqueoControlesPorPeso1();
             programarGuardadoMeta();
             programarGuardadoDraftCompleto();
-            mostrarToast('success', 'Simulación lista', `${ensayo}: 8 clamshell de prueba. El N° muestra lo asigna el servidor.`);
+            const etiquetaModo = esAcopio ? 'Acopio' : 'Visual';
+            mostrarToast('success', 'Simulación lista', `${ensayo} (${etiquetaModo}): meta, 8 clamshell, jarras y métricas de prueba.`);
         }
         window.cargarSimulacion8Clamshell = cargarSimulacion8Clamshell;
 
@@ -5591,24 +5949,25 @@ const META_SAVE_IDS = [
                 pesos: {
                     p1: Number(r?.[16] || 0),
                     p2: Number(r?.[17] || 0),
-                    llegada_acopio: Number(r?.[18] || 0),
-                    despacho_acopio: Number(r?.[19] || 0)
+                    p3: Number(r?.[18] || 0),
+                    p4: Number(r?.[19] || 0),
+                    p5: Number(r?.[20] || 0)
                 },
                 temperatura: {
-                    inicio_amb: String(r?.[26] || ''),
-                    inicio_pulpa: String(r?.[27] || ''),
-                    termino_amb: String(r?.[28] || ''),
-                    termino_pulpa: String(r?.[29] || ''),
-                    llegada_amb: String(r?.[30] || ''),
-                    llegada_pulpa: String(r?.[31] || ''),
-                    despacho_amb: String(r?.[32] || ''),
-                    despacho_pulpa: String(r?.[33] || '')
+                    inicio_amb: String(r?.[21] || ''),
+                    inicio_pulpa: String(r?.[22] || ''),
+                    termino_amb: String(r?.[23] || ''),
+                    termino_pulpa: String(r?.[24] || ''),
+                    llegada_amb: String(r?.[25] || ''),
+                    llegada_pulpa: String(r?.[26] || ''),
+                    despacho_amb: String(r?.[27] || ''),
+                    despacho_pulpa: String(r?.[28] || '')
                 },
                 humedad: {
-                    inicio: String(r?.[39] || ''),
-                    termino: String(r?.[40] || ''),
-                    llegada: String(r?.[41] || ''),
-                    despacho: String(r?.[42] || '')
+                    inicio: String(r?.[35] || ''),
+                    termino: String(r?.[36] || ''),
+                    llegada: String(r?.[37] || ''),
+                    despacho: String(r?.[38] || '')
                 }
             }));
         }
@@ -5621,6 +5980,7 @@ const META_SAVE_IDS = [
             }
             const body = {
                 uid: payload.uid,
+                modo_registro: payload.modo_registro || modoRegistroPostBody_(),
                 rows: payload.rows
             };
 
@@ -5807,6 +6167,7 @@ const META_SAVE_IDS = [
                 ensayo_numero: ensayoNumero,
                 fecha,
                 num_muestra: numMuestra,
+                modo_registro: modoRegistroPostBody_(),
                 rows
             };
         }
@@ -5832,6 +6193,7 @@ const META_SAVE_IDS = [
                 num_muestra: numsPorEnsayo[primero] || '',
                 ensayos_incluidos: lista,
                 nums_por_ensayo: numsPorEnsayo,
+                modo_registro: modoRegistroPostBody_(),
                 rows: allRows
             };
         }
@@ -5843,7 +6205,11 @@ const META_SAVE_IDS = [
                 mostrarAlertaRegla('Sin filas para enviar', 'Agrega al menos un clamshell para generar datos.');
                 return { ok: false, estado: 'sin_filas' };
             }
-            const body = { uid: payload.uid, rows: payload.rows };
+            const body = {
+                uid: payload.uid,
+                modo_registro: payload.modo_registro || modoRegistroPostBody_(),
+                rows: payload.rows
+            };
             const etiquetas = lista.map((e) => `${mostrarMuestra(e)} N°${payload.nums_por_ensayo?.[e] || '?'}`).join(', ');
             console.log(`[SYNC] Lote conjunto: ${body.rows.length} filas, ${lista.length} muestra(s). uid: ${body.uid}`);
             console.log('[SYNC] Muestras:', etiquetas);
@@ -5989,6 +6355,7 @@ const META_SAVE_IDS = [
                 ensayo_numero: payload.ensayo_numero,
                 num_muestra: payload.num_muestra || '',
                 ensayo: payload.ensayo,
+                modo_registro: payload.modo_registro || modoRegistroPostBody_(),
                 rows: payload.rows,
                 estado: 'pendiente',
                 intentos: 0,
@@ -6118,6 +6485,7 @@ const META_SAVE_IDS = [
                     try {
                         const body = {
                             uid: reg.uid,
+                            modo_registro: reg.modo_registro || 'visual',
                             timestamp: formatearTimestampCampo_(reg.creado_en || reg.actualizado_en || Date.now()),
                             status: String(reg.estado || 'pendiente'),
                             rows: reg.rows
@@ -6316,31 +6684,48 @@ const META_SAVE_IDS = [
             const clave = String(ensayo || 'Ensayo 1');
             const setJarras = new Set();
 
-            // Regla principal: habilitar jarras que ya tienen trasvasado registrado/completo.
-            const filas = obtenerFilasLlenadoJarras(clave);
-            filas.forEach((f) => {
-                if (String(f.tipo || '').trim() !== 'T') return;
-                const ini = String(f.inicio || '').trim();
-                const fin = String(f.termino || '').trim();
-                if (!ini || !fin) return;
-                const txt = String(f.jarra ?? '').trim();
-                const r = parseRangoJarraLlenado(txt);
-                if (r) {
-                    setJarras.add(r.a);
-                    setJarras.add(r.b);
-                    return;
-                }
-                const n = Number(txt);
-                if (Number.isFinite(n) && n >= 1) setJarras.add(n);
-            });
-
-            // Fallback: si todavía no hay trasvasados completos, usar jarras ya registradas en clamshell.
-            if (!setJarras.size) {
+            if (esModoRegistroAcopio_()) {
                 data
                     .filter((it) => String(it.ensayo || 'Ensayo 1') === clave)
                     .map((it) => Number(it.jarra))
                     .filter((n) => Number.isFinite(n) && n >= 1)
                     .forEach((n) => setJarras.add(n));
+                obtenerFilasLlenadoJarras(clave).forEach((f) => {
+                    const txt = String(f.jarra ?? '').trim();
+                    const r = parseRangoJarraLlenado(txt);
+                    if (r) {
+                        setJarras.add(r.a);
+                        setJarras.add(r.b);
+                        return;
+                    }
+                    const n = Number(txt);
+                    if (Number.isFinite(n) && n >= 1) setJarras.add(n);
+                });
+            } else {
+                // Visual: habilitar jarras con trasvasado (T) completo.
+                const filas = obtenerFilasLlenadoJarras(clave);
+                filas.forEach((f) => {
+                    if (String(f.tipo || '').trim() !== 'T') return;
+                    const ini = String(f.inicio || '').trim();
+                    const fin = String(f.termino || '').trim();
+                    if (!ini || !fin) return;
+                    const txt = String(f.jarra ?? '').trim();
+                    const r = parseRangoJarraLlenado(txt);
+                    if (r) {
+                        setJarras.add(r.a);
+                        setJarras.add(r.b);
+                        return;
+                    }
+                    const n = Number(txt);
+                    if (Number.isFinite(n) && n >= 1) setJarras.add(n);
+                });
+                if (!setJarras.size) {
+                    data
+                        .filter((it) => String(it.ensayo || 'Ensayo 1') === clave)
+                        .map((it) => Number(it.jarra))
+                        .filter((n) => Number.isFinite(n) && n >= 1)
+                        .forEach((n) => setJarras.add(n));
+                }
             }
 
             const actualNum = Number(jarraActual);
@@ -6389,12 +6774,20 @@ const META_SAVE_IDS = [
             poblarSelectJarraModal(ensayoAct, itemTrabajo ? itemTrabajo.jarra : null);
             const nroModal = nroClamshellModalActual_(itemTrabajo);
             const esAutoP1 = clamshellUsaPeso1DesdePeso2(nroModal);
-            document.getElementById('visual-p2').value = itemTrabajo ? valorPesoInput(itemTrabajo.p2) : '';
-            document.getElementById('visual-p1').value = itemTrabajo
-                ? (esAutoP1 ? valorPesoInput(itemTrabajo.p2) : valorPesoInput(itemTrabajo.p1))
-                : '';
-            document.getElementById('visual-acopio').value = itemTrabajo ? valorPesoInput(itemTrabajo.acopio) : '';
-            document.getElementById('visual-despacho').value = itemTrabajo ? valorPesoInput(itemTrabajo.despacho) : '';
+            const inpP2 = elInputPesoModalCampo_('p2');
+            const inpP1 = elInputPesoModalCampo_('p1');
+            const inpAcopio = elInputPesoModalCampo_('acopio');
+            const inpP4 = elInputPesoModalCampo_('p4');
+            const inpDespacho = elInputPesoModalCampo_('despacho');
+            if (inpP2) inpP2.value = itemTrabajo ? valorPesoInput(itemTrabajo.p2) : '';
+            if (inpP1) {
+                inpP1.value = itemTrabajo
+                    ? (esAutoP1 ? valorPesoInput(itemTrabajo.p2) : valorPesoInput(itemTrabajo.p1))
+                    : '';
+            }
+            if (inpAcopio) inpAcopio.value = itemTrabajo ? valorPesoInput(itemTrabajo.acopio) : '';
+            if (inpP4) inpP4.value = itemTrabajo ? valorPesoInput(itemTrabajo.p4) : '';
+            if (inpDespacho) inpDespacho.value = itemTrabajo ? valorPesoInput(itemTrabajo.despacho) : '';
             configurarModalPesosClamshell_(nroModal);
             overlay.style.display = 'flex';
         }
@@ -6416,16 +6809,38 @@ const META_SAVE_IDS = [
 
                 const nroModal = nroClamshellModalActual_(itemEdit);
                 const esAutoP1 = clamshellUsaPeso1DesdePeso2(nroModal);
-                let p1Val = Number(document.getElementById('visual-p1').value || 0);
-                const p2Val = Number(document.getElementById('visual-p2').value || 0);
-                const acopioVal = Number(document.getElementById('visual-acopio').value || 0);
-                const despachoVal = Number(document.getElementById('visual-despacho').value || 0);
+                let p1Val = Number(elInputPesoModalCampo_('p1')?.value || 0);
+                const p2Val = Number(elInputPesoModalCampo_('p2')?.value || 0);
+                const acopioVal = Number(elInputPesoModalCampo_('acopio')?.value || 0);
+                const p4Val = Number(elInputPesoModalCampo_('p4')?.value || 0);
+                const despachoVal = Number(elInputPesoModalCampo_('despacho')?.value || 0);
                 const jarraSel = Number(document.getElementById('visual-m-jarra')?.value || 0);
                 if (!Number.isFinite(jarraSel) || jarraSel < 1) {
                     mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido para continuar.');
                     return;
                 }
-                if (esAutoP1) {
+
+                if (esModoRegistroAcopio_()) {
+                    if (!(Number.isFinite(p4Val) && p4Val > 0)) {
+                        mostrarAlertaRegla('Falta Peso 4', 'Registra Peso 4 · Clamshell calibrado (obligatorio en Acopio).');
+                        return;
+                    }
+                    if (!(Number.isFinite(despachoVal) && despachoVal > 0)) {
+                        mostrarAlertaRegla('Falta Peso 5', 'Registra Peso 5 · Despacho campo (obligatorio en Acopio).');
+                        return;
+                    }
+                    if (despachoVal > p4Val) {
+                        mostrarAlertaRegla('Pesos inválidos', 'Peso 5 debe ser menor o igual a Peso 4.');
+                        return;
+                    }
+                    const msgCadena = validarCadenaPesosOpcionalAcopio_(p1Val, p2Val, acopioVal, nroModal);
+                    if (msgCadena) {
+                        mostrarAlertaRegla('Cadena de pesos', msgCadena);
+                        return;
+                    }
+                    if (esAutoP1 && !pesoVacio(p2Val)) p1Val = p2Val;
+                    else if (pesoVacio(p1Val)) p1Val = 0;
+                } else if (esAutoP1) {
                     if (!(Number.isFinite(p2Val) && p2Val > 0)) {
                         mostrarAlertaRegla('Falta Peso 2', 'Debes registrar Peso 2 para guardar.');
                         return;
@@ -6445,6 +6860,7 @@ const META_SAVE_IDS = [
                         p1: p1Val,
                         p2: Number.isFinite(p2Val) ? p2Val : 0,
                         acopio: Number.isFinite(acopioVal) ? acopioVal : 0,
+                        p4: Number.isFinite(p4Val) ? p4Val : 0,
                         despacho: Number.isFinite(despachoVal) ? despachoVal : 0,
                         observacion: '',
                         placaVehiculo: '',
@@ -6465,7 +6881,7 @@ const META_SAVE_IDS = [
                     return;
                 }
                 const eraVacio = esClamshellSinDatos_(item);
-                aplicarDatosModalAClamshell_(item, jarraSel, p1Val, p2Val, acopioVal, despachoVal);
+                aplicarDatosModalAClamshell_(item, jarraSel, p1Val, p2Val, acopioVal, p4Val, despachoVal);
                 cerrarModal();
                 renderizarTarjetas();
                 programarGuardadoDraftCompleto();
@@ -6511,7 +6927,7 @@ const META_SAVE_IDS = [
         }
 
         function initCerrarModalesCampo() {
-            const inpP2 = document.getElementById('visual-p2');
+            const inpP2 = elInputPesoModalCampo_('p2');
             if (inpP2 && !inpP2.dataset.peso1AutoBound) {
                 inpP2.dataset.peso1AutoBound = '1';
                 inpP2.addEventListener('input', sincronizarPeso1DesdePeso2EnModal_);
@@ -6979,16 +7395,30 @@ const META_SAVE_IDS = [
 
             if (kind === 'tiempo') {
                 title.textContent = 'Tiempos de la muestra (hora) · Clamshell #' + nroClamshell;
-                body.innerHTML = `
-                    <div class="metric-grid-2">
-                        <div class="form-group"><label>Inicio de cosecha</label><input type="time" id="visual-tiempo-1-iniciocosecha-1" data-metric="inicioCosecha" value="${metric.tiempo.inicioCosecha || ''}" disabled title="Primer inicio de cosecha de la muestra (igual en todos los clamshells)"></div>
-                        <div class="form-group"><label>Inicio pérdida de peso</label><input type="time" id="visual-tiempo-1-inicioperdida-2" data-metric="inicioPerdida" value="${metric.tiempo.inicioPerdida || ''}" disabled title="Dato automático por trasvasado"></div>
-                        <div class="form-group"><label>Término de cosecha</label><input type="time" id="visual-tiempo-1-terminocosecha-3" data-metric="terminoCosecha" value="${metric.tiempo.terminoCosecha || ''}" disabled title="FINAL del último trasvasado del ensayo (hora más tardía en panel, todas las filas T)"></div>
-                        <div class="form-group"><label>Llegada acopio-campo</label><input type="time" id="visual-tiempo-1-terminocosecha-4" data-metric="llegadaAcopio" value="${metric.tiempo.llegadaAcopio || ''}"></div>
-                    </div>
-                    <div class="form-group"><label>Despacho acopio-campo</label><input type="time" id="visual-tiempo-1-despachoacopio-5" data-metric="despachoAcopio" value="${metric.tiempo.despachoAcopio || ''}"></div>
-                    <div id="visual-tiempo-alert" class="metric-inline-alert" style="display:none;"></div>
-                `;
+                if (esModoRegistroAcopio_()) {
+                    body.innerHTML = `
+                        <div class="metric-grid-2">
+                            <div class="form-group"><label>Inicio de cosecha</label><input type="time" id="acopio-tiempo-1-iniciocosecha" data-metric="inicioCosecha" value="${metric.tiempo.inicioCosecha || ''}" disabled title="Primer inicio de cosecha de la muestra (igual en todos los clamshells)"></div>
+                            <div class="form-group"><label>Término de cosecha</label><input type="time" id="acopio-tiempo-2-terminocosecha" data-metric="terminoCosecha" value="${metric.tiempo.terminoCosecha || ''}" disabled title="FINAL del último trasvasado del ensayo"></div>
+                            <div class="form-group"><label>Llegada acopio-campo</label><input type="time" id="acopio-tiempo-3-llegada-acopio" data-metric="llegadaAcopio" value="${metric.tiempo.llegadaAcopio || ''}"></div>
+                            <div class="form-group"><label>Acopio calibrado</label><input type="time" id="acopio-tiempo-4-acopio-calibrado" data-metric="acopioCalibrado" value="${metric.tiempo.acopioCalibrado || ''}"></div>
+                            <div class="form-group"><label>Término de calibrado</label><input type="time" id="acopio-tiempo-5-termino-calibrado" data-metric="terminoCalibrado" value="${metric.tiempo.terminoCalibrado || ''}"></div>
+                            <div class="form-group"><label>Despacho acopio-campo</label><input type="time" id="acopio-tiempo-6-despacho-acopio" data-metric="despachoAcopio" value="${metric.tiempo.despachoAcopio || ''}"></div>
+                        </div>
+                        <div id="visual-tiempo-alert" class="metric-inline-alert" style="display:none;"></div>
+                    `;
+                } else {
+                    body.innerHTML = `
+                        <div class="metric-grid-2">
+                            <div class="form-group"><label>Inicio de cosecha</label><input type="time" id="visual-tiempo-1-iniciocosecha-1" data-metric="inicioCosecha" value="${metric.tiempo.inicioCosecha || ''}" disabled title="Primer inicio de cosecha de la muestra (igual en todos los clamshells)"></div>
+                            <div class="form-group"><label>Inicio pérdida de peso</label><input type="time" id="visual-tiempo-1-inicioperdida-2" data-metric="inicioPerdida" value="${metric.tiempo.inicioPerdida || ''}" disabled title="Dato automático por trasvasado"></div>
+                            <div class="form-group"><label>Término de cosecha</label><input type="time" id="visual-tiempo-1-terminocosecha-3" data-metric="terminoCosecha" value="${metric.tiempo.terminoCosecha || ''}" disabled title="FINAL del último trasvasado del ensayo (hora más tardía en panel, todas las filas T)"></div>
+                            <div class="form-group"><label>Llegada acopio-campo</label><input type="time" id="visual-tiempo-1-terminocosecha-4" data-metric="llegadaAcopio" value="${metric.tiempo.llegadaAcopio || ''}"></div>
+                        </div>
+                        <div class="form-group"><label>Despacho acopio-campo</label><input type="time" id="visual-tiempo-1-despachoacopio-5" data-metric="despachoAcopio" value="${metric.tiempo.despachoAcopio || ''}"></div>
+                        <div id="visual-tiempo-alert" class="metric-inline-alert" style="display:none;"></div>
+                    `;
+                }
                 body.querySelectorAll('input[data-metric]').forEach((inp) => {
                     inp.addEventListener('input', validarTiempoModalEnVivo);
                     inp.addEventListener('change', validarTiempoModalEnVivo);
@@ -7118,7 +7548,9 @@ const META_SAVE_IDS = [
             if (metricModalState.kind === 'tiempo') {
                 const llegada = String(item.metric?.tiempo?.llegadaAcopio || '').trim();
                 const despacho = String(item.metric?.tiempo?.despachoAcopio || '').trim();
-                if (llegada || despacho) {
+                const acopioCalibrado = String(item.metric?.tiempo?.acopioCalibrado || '').trim();
+                const terminoCalibrado = String(item.metric?.tiempo?.terminoCalibrado || '').trim();
+                if (llegada || despacho || acopioCalibrado || terminoCalibrado) {
                     const clave = String(item.ensayo || 'Ensayo 1');
                     data.forEach((it) => {
                         if (String(it.ensayo || 'Ensayo 1') !== clave) return;
@@ -7126,6 +7558,8 @@ const META_SAVE_IDS = [
                         it.metric.tiempo = it.metric.tiempo || {};
                         if (llegada) it.metric.tiempo.llegadaAcopio = llegada;
                         if (despacho) it.metric.tiempo.despachoAcopio = despacho;
+                        if (acopioCalibrado) it.metric.tiempo.acopioCalibrado = acopioCalibrado;
+                        if (terminoCalibrado) it.metric.tiempo.terminoCalibrado = terminoCalibrado;
                     });
                 }
                 sincronizarTiempoPorJarra(item.ensayo || 'Ensayo 1');
@@ -7141,7 +7575,7 @@ const META_SAVE_IDS = [
         }
 
         function cerrarModal() {
-            const inpP1 = document.getElementById('visual-p1');
+            const inpP1 = elInputPesoModalCampo_('p1');
             if (inpP1) {
                 inpP1.disabled = false;
                 inpP1.removeAttribute('title');
@@ -7230,7 +7664,15 @@ const META_SAVE_IDS = [
             });
         }
         INPUT_IDS_CRITICOS.forEach((id) => {
-            const el = document.getElementById(id);
+            const elId = esModoRegistroAcopio_()
+                ? ({
+                    'visual-p1': 'acopio-peso-1-termino-cosecha',
+                    'visual-p2': 'acopio-peso-2-llegada',
+                    'visual-acopio': 'acopio-peso-3-calibrado',
+                    'visual-despacho': 'acopio-peso-5-despacho-campo'
+                }[id] || id)
+                : id;
+            const el = document.getElementById(elId);
             if (!el) return;
             el.addEventListener('input', programarGuardadoDraftCompleto);
             el.addEventListener('change', programarGuardadoDraftCompleto);
@@ -7399,7 +7841,7 @@ const META_SAVE_IDS = [
                 jarra: '',
                 p1: '', p2: '', p3: '', p4: '', p5: '',
                 llegada: '', despacho: '',
-                tInicioCosecha: '', tPerdida: '', tTermino: '', tLlegada: '', tDespacho: '',
+                tInicioCosecha: '', tPerdida: '', tTermino: '', tLlegada: '', tAcopioCalibrado: '', tTerminoCalibrado: '', tDespacho: '',
                 tempInicioAmb: '', tempInicioPul: '', tempTerminoAmb: '', tempTerminoPul: '',
                 tempLlegadaAmb: '', tempLlegadaPul: '', tempDespachoAmb: '', tempDespachoPul: '',
                 jarraLlenado: '', trasladoObs: '', jarraInicio: '', jarraTermino: '', jarraTiempo: '',
@@ -7434,13 +7876,17 @@ const META_SAVE_IDS = [
                 jarra: item ? strOrEmpty(item.jarra) : '',
                 p1: item ? pesoStrOrEmpty(peso1EfectivoCampo(item, nClam)) : '',
                 p2: item ? pesoStrOrEmpty(item.p2) : '',
-                p3: '', p4: '', p5: '',
-                llegada: item ? strOrEmpty(item.acopio) : '',
-                despacho: item ? strOrEmpty(item.despacho) : '',
+                p3: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.acopio) : '',
+                p4: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.p4) : '',
+                p5: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.despacho) : '',
+                llegada: !esModoRegistroAcopio_() && item ? strOrEmpty(item.acopio) : '',
+                despacho: !esModoRegistroAcopio_() && item ? strOrEmpty(item.despacho) : '',
                 tInicioCosecha: strOrEmpty(t.inicioCosecha),
-                tPerdida: strOrEmpty(t.inicioPerdida),
+                tPerdida: esModoRegistroAcopio_() ? '' : strOrEmpty(t.inicioPerdida),
                 tTermino: strOrEmpty(t.terminoCosecha),
                 tLlegada: strOrEmpty(t.llegadaAcopio),
+                tAcopioCalibrado: esModoRegistroAcopio_() ? strOrEmpty(t.acopioCalibrado) : '',
+                tTerminoCalibrado: esModoRegistroAcopio_() ? strOrEmpty(t.terminoCalibrado) : '',
                 tDespacho: strOrEmpty(t.despachoAcopio),
                 ...temps,
                 observacion: item ? strOrEmpty(item.observacion) : ''
@@ -7526,9 +7972,10 @@ const META_SAVE_IDS = [
             const obsPartes = items.map((it) => strOrEmpty(it.observacion)).filter(Boolean);
             return {
                 ensayo: clave,
+                modoRegistro: esModoRegistroAcopio_() ? 'acopio' : 'visual',
                 fecha: fechaDisplayDdMmYyyy(hoyIsoLocal()),
                 empresa: 'AGROVISION',
-                codigo: 'PE-F-QPH-306',
+                codigo: codigoPdfCampo_(),
                 version: '1',
                 tituloHoja1: 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN COSECHA ARÁNDANO - C5-C6-A9-LN',
                 tituloHoja2: 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN COSECHA ARÁNDANO - CS-C6-A9-LN',
@@ -7586,8 +8033,9 @@ const META_SAVE_IDS = [
             return {
                 fecha: fechaDisplayDdMmYyyy(hoyIsoLocal()),
                 empresa: 'AGROVISION',
-                codigo: 'PE-F-QPH-306',
+                codigo: codigoPdfCampo_(),
                 version: '1',
+                modoRegistro: esModoRegistroAcopio_() ? 'acopio' : 'visual',
                 muestras
             };
         };

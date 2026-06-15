@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="application-name" content="Muestras Web">
+    <meta name="apple-mobile-web-app-title" content="Muestras Web">
+    <meta name="theme-color" content="#164C7C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+    <title>Muestras Web · Acopio</title>
+    <link rel="icon" href="../QA2026-2.0.png" type="image/png">
+    <link rel="icon" href="../icons/icon-32.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="../QA2026-2.0.png">
+    <link rel="manifest" href="../manifest.json">
+    <link rel="stylesheet" href="../librerias/flatpickr.min.css">
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body class="campo-acopio-page">
+
+    <header>
+        <div class="header-top-row">
+            <h2 class="header-title">
+                <span class="header-title-prefix">Registro:</span>
+                <select id="header-tipo-registro" class="header-tipo-select" name="tipoRegistro" aria-label="Visual o Acopio">
+                    <option value="visual">Visual</option>
+                    <option value="acopio">Acopio</option>
+                </select>
+            </h2>
+            <div class="header-status-card is-online" id="header-status-card" aria-live="polite" aria-label="Pendientes y conexión">
+                <div class="header-status-ring" aria-hidden="true">
+                    <span class="header-status-ring-inner">
+                        <i data-lucide="wifi" class="header-status-wifi" id="header-status-wifi"></i>
+                    </span>
+                </div>
+                <div class="header-status-body">
+                    <div class="header-status-pend">Pendientes: <span class="header-status-pend-num" id="header-pendientes-count">00</span></div>
+                    <div class="header-status-conn">
+                        <span class="header-status-conn-dot" aria-hidden="true"></span>
+                        <span class="header-status-conn-text" id="header-conn-label">En línea</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="meta-shell meta-accordion" id="meta-accordion">
+            <button type="button" class="meta-accordion-trigger" id="meta-accordion-trigger" aria-expanded="false" aria-controls="meta-accordion-panel">
+                <div class="meta-preview">
+                    <span class="meta-preview-kicker">Se va a tomar las mediciones:</span>
+                    <div class="meta-preview-row">
+                        <span class="meta-preview-pill meta-preview-pill--empty" id="preview-num">--</span>
+                        <span class="meta-preview-pill meta-preview-pill--empty" id="preview-muestra">--</span>
+                        <span class="meta-preview-pill meta-preview-pill--traz meta-preview-pill--empty" id="preview-traz">--</span>
+                    </div>
+                </div>
+                <span class="meta-accordion-chevron" aria-hidden="true"><i data-lucide="chevron-down"></i></span>
+            </button>
+
+            <div class="meta-accordion-body" id="meta-accordion-panel" role="region" aria-labelledby="meta-accordion-trigger" aria-hidden="true">
+                <div class="meta-accordion-inner">
+                    <form id="form-operativo-meta" autocomplete="on" aria-label="Datos del turno">
+                        <div class="meta-sheet-top">
+                            <div>
+                                <p class="meta-kicker">Detalle</p>
+                                <h3 class="meta-sheet-title">Completar registro</h3>
+                            </div>
+                            <div class="meta-progress-wrap">
+                                <div class="meta-progress-label">
+                                    <span>Listo</span>
+                                    <span id="meta-progress-text">0 / 6</span>
+                                </div>
+                                <div class="meta-progress-track" aria-hidden="true">
+                                    <div class="meta-progress-fill" id="meta-progress-fill"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="visual-rotulo" name="rotulo" value="">
+
+                        <div class="meta-block">
+                            <div class="meta-row-2 meta-row-2--muestra">
+                                <div>
+                                    <label class="meta-block-title" for="visual-meta-muestra" style="margin-bottom: 8px;">Muestra</label>
+                                    <select class="meta-inp" id="visual-meta-muestra" name="muestra">
+                                        <option value="">Seleccionar muestra</option>
+                                        <option value="Ensayo 1">Muestra 1</option>
+                                        <option value="Ensayo 2">Muestra 2</option>
+                                        <option value="Ensayo 3">Muestra 3</option>
+                                        <option value="Ensayo 4">Muestra 4</option>
+                                        <option value="Ensayo 5">Muestra 5</option>
+                                        <option value="Ensayo 6">Muestra 6</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="meta-block-title" for="visual-num-muestra" style="margin-bottom: 8px;">N° muestra</label>
+                                    <div class="meta-num-muestra-wrap" id="visual-num-muestra-wrap">
+                                        <input class="meta-inp meta-inp--num-muestra-auto" id="visual-num-muestra" name="numMuestra" type="text" maxlength="8" placeholder="Automático" disabled aria-describedby="visual-num-muestra-hint" title="Se asigna solo según el último número en la planilla (sin duplicados)">
+                                        <span class="meta-num-muestra-spinner" id="visual-num-muestra-spinner" aria-hidden="true"></span>
+                                    </div>
+                                    <span id="visual-num-muestra-hint" class="sr-only">Campo automático. El número avanza según los registros ya guardados.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="meta-block">
+                            <label class="meta-block-title" for="visual-responsable" style="margin-bottom: 8px;">Responsable</label>
+                            <input class="meta-inp" id="visual-responsable" name="responsable" type="text" placeholder="Nombre">
+                        </div>
+
+                        <div class="meta-block">
+                            <div class="meta-row-2 meta-row-2--guia-hora">
+                                <div>
+                                    <label class="meta-block-title" for="visual-guia-precosecha" style="margin-bottom: 8px;">Días Prec. / N° Cos.</label>
+                                    <input class="meta-inp" id="visual-guia-precosecha" name="guiaPrecosecha" type="text" placeholder="Ej. 5 / 12" inputmode="text" autocomplete="off" aria-label="Días de precosecha y número de cosecha">
+                                </div>
+                                <div>
+                                    <label class="meta-block-title" for="visual-hora" style="margin-bottom: 8px;">Hora inicio</label>
+                                    <input class="meta-inp" id="visual-hora" name="hora" type="time" enterkeyhint="done">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="meta-block">
+                            <span class="meta-block-title" style="display:block;margin-bottom:8px;">Fundo</span>
+                            <div class="meta-row-fundo-acopio">
+                                <select class="meta-inp" id="visual-meta-fundo" name="fundo" aria-label="Fundo">
+                                    <option value="">Seleccionar</option>
+                                </select>
+                                <select class="meta-inp meta-inp--acopio" id="visual-traz-acopio" name="trazAcopio" aria-label="Acopio">
+                                    <option value="">Acopio</option>
+                                    <option value="Acopio 1">Acopio 1</option>
+                                    <option value="Acopio 2">Acopio 2</option>
+                                    <option value="Acopio 3">Acopio 3</option>
+                                    <option value="Acopio 4">Acopio 4</option>
+                                    <option value="Acopio 5">Acopio 5</option>
+                                    <option value="Acopio 6">Acopio 6</option>
+                                    <option value="Acopio 7">Acopio 7</option>
+                                    <option value="Acopio 8">Acopio 8</option>
+                                    <option value="Acopio 9">Acopio 9</option>
+                                    <option value="Acopio 10">Acopio 10</option>
+                                    <option value="Acopio 11">Acopio 11</option>
+                                    <option value="Acopio 12">Acopio 12</option>
+                                    <option value="Acopio 13">Acopio 13</option>
+                                    <option value="Acopio 14">Acopio 14</option>
+                                    <option value="Acopio 15">Acopio 15</option>
+                                    <option value="Acopio 16">Acopio 16</option>
+                                    <option value="Acopio 17">Acopio 17</option>
+                                    <option value="Acopio 18">Acopio 18</option>
+                                    <option value="Acopio 19">Acopio 19</option>
+                                    <option value="Acopio 20">Acopio 20</option>
+                                    <option value="Acopio 21">Acopio 21</option>
+                                    <option value="Acopio 22">Acopio 22</option>
+                                    <option value="Acopio 23">Acopio 23</option>
+                                    <option value="Acopio 24">Acopio 24</option>
+                                    <option value="Acopio 25">Acopio 25</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="meta-block">
+                            <span class="meta-block-title" style="display:block;margin-bottom:8px;">Trazabilidad</span>
+                            <div class="meta-row-3">
+                                <select class="meta-inp" id="visual-traz-etapa" name="trazEtapa" aria-label="Etapa">
+                                    <option value="">Etapa</option>
+                                </select>
+                                <select class="meta-inp" id="visual-traz-campo" name="trazCampo" aria-label="Campo">
+                                    <option value="">Campo</option>
+                                </select>
+                                <input class="meta-inp" id="visual-traz-turno" name="trazTurno" type="text" placeholder="Turno" autocomplete="off">
+                            </div>
+                            <input type="hidden" id="visual-trazabilidad" name="trazabilidad" value="">
+                        </div>
+
+                        <div class="meta-block">
+                            <label class="meta-block-title" for="visual-meta-variedad" style="margin-bottom: 8px;">Variedad</label>
+                            <select class="meta-inp" id="visual-meta-variedad" name="variedad" aria-describedby="visual-meta-variedad-hint">
+                                <option value="">Seleccionar</option>
+                            </select>
+                            <details class="meta-variedades-ref" id="visual-variedades-referencia">
+                                <summary>OTRAS VARIEDADES <span class="meta-variedades-ref-count" id="visual-variedades-ref-count">(0)</span></summary>
+                                <ul class="meta-variedades-ref-list" id="visual-variedades-referencia-list"></ul>
+                            </details>
+                            <span id="visual-meta-variedad-hint" class="meta-hint">Select arriba o elige en «Otras variedades» si no está en la parcela.</span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <details class="llenado-jarras-wrapper" open>
+            <summary class="llenado-jarras-wrapper-summary">
+                <div class="control-equitativo-label">
+                    <b>Tiempo de llenado de jarras (hora)</b>
+                    <span>Tabla por ensayo: jarra, tipo (cosecha/trasvasado), inicio, término y total</span>
+                </div>
+                <span class="llenado-jarras-toggle-icon" aria-hidden="true"></span>
+            </summary>
+            <div class="llenado-jarras-panel" id="llenado-jarras-panel-body"></div>
+        </details>
+
+        <div class="control-equitativo-bar">
+            <div class="control-equitativo-label">
+                <b>Control equitativo</b>
+                <span>Temperatura y humedad para todos los clamshell</span>
+            </div>
+            <div class="control-equitativo-actions">
+                <button type="button" class="control-equitativo-btn" onclick="abrirModalControlGlobal('temperatura')" title="Temperatura global">
+                    <i data-lucide="thermometer"></i>
+                </button>
+                <button type="button" class="control-equitativo-btn" onclick="abrirModalControlGlobal('humedad')" title="Humedad global">
+                    <i data-lucide="droplets"></i>
+                </button>
+            </div>
+        </div>
+        <div id="cards-container"></div>
+
+        <details class="logistica-acopio-block logistica-formato-block" aria-label="Comentarios de formato">
+            <summary class="logistica-acopio-head">
+                <div class="control-equitativo-btn logistica-acopio-icon-slot logistica-formato-icon-wrap" title="Formato" aria-hidden="true">
+                    <i data-lucide="file-text"></i>
+                </div>
+                <div class="control-equitativo-label logistica-acopio-label">
+                    <b>Comentarios de formato</b>
+                    <span>Observación general para el pie OBSERVACIONES del formato</span>
+                </div>
+                <span class="logistica-acopio-chev" aria-hidden="true"></span>
+            </summary>
+            <div class="logistica-acopio-body">
+                <div class="logistica-acopio-field">
+                    <label class="meta-block-title" for="visual-observacion-formato">Observación formato</label>
+                    <textarea class="meta-inp logistica-formato-ta" id="visual-observacion-formato" name="observacionFormato" rows="3" placeholder="Opcional: comentario general del formato" autocomplete="off"></textarea>
+                </div>
+            </div>
+        </details>
+
+        <details class="logistica-acopio-block logistica-despacho-block" aria-label="Despacho acopio: guía y placa">
+            <summary class="logistica-acopio-head">
+                <div class="control-equitativo-btn logistica-acopio-icon-slot logistica-acopio-truck-wrap" title="Transporte" aria-hidden="true">
+                    <i data-lucide="truck"></i>
+                </div>
+                <div class="control-equitativo-label logistica-acopio-label">
+                    <b>Despacho acopio · campo</b>
+                    <span>Guía de remisión de acopio campo y placa del vehículo</span>
+                </div>
+                <span class="logistica-acopio-chev" aria-hidden="true"></span>
+            </summary>
+            <div class="logistica-acopio-body">
+                <div class="logistica-acopio-grid">
+                    <div class="logistica-acopio-field">
+                        <label class="meta-block-title" for="visual-guia-acopio">Guía de remisión de acopio campo</label>
+                        <input class="meta-inp" id="visual-guia-acopio" name="guiaRemisionAcopio" type="text" placeholder="Ej. 208353" autocomplete="off">
+                    </div>
+                    <div class="logistica-acopio-field">
+                        <label class="meta-block-title" for="visual-placa-vehiculo">Placa del vehículo</label>
+                        <input class="meta-inp" id="visual-placa-vehiculo" name="placaVehiculoAcopio" type="text" placeholder="Ej. 9967-OK" autocomplete="off">
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <div class="campo-envio-bar" id="campo-envio-bar" role="region" aria-label="Enviar registro al servidor">
+            <button type="button" class="btn-save btn-save-campo" id="btn-guardar-enviar-campo" onclick="guardarRegistroYEnviarDesdePantalla()">
+                Enviar registro
+            </button>
+        </div>
+    </div>
+
+    <div class="fab-menu" id="fab-menu">
+        <div class="fab-menu-actions">
+            <button class="fab-mini fab-mini--sync" type="button" onclick="actualizarAppCompletoDesdeFab()" aria-label="Actualizar app y planilla" title="Descarga la versión nueva de la app y sincroniza la planilla si hay internet. No borra borradores ni pendientes.">
+                <i data-lucide="refresh-cw"></i>
+            </button>
+            <button class="fab-mini fab-mini--danger" onclick="borrarTodoYCacheRapido()" aria-label="Eliminar todo y caché local" title="Forzar reinicio: borra todo lo local y recarga">
+                <i data-lucide="trash-2"></i>
+            </button>
+            <div class="fab-menu-duo">
+                <button type="button" class="fab-mini fab-mini--registro" id="fab-btn-iniciar-registro" onclick="fabIniciarRegistroDesdeFab()" aria-label="Cargar datos de prueba (simulación)" title="Rellena meta, 8 clamshell y jarras de ejemplo para probar y enviar">
+                    <i data-lucide="clipboard-list"></i>
+                </button>
+                <button type="button" class="fab-mini" onclick="abrirModalResumenGlobal()" aria-label="Resumen despacho acopio-campo">
+                    <i data-lucide="truck"></i>
+                </button>
+            </div>
+            <button type="button" class="fab" onclick="abrirModal('Nuevo Registro')" aria-label="Nuevo registro">
+                <svg class="fab-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14"></path>
+                </svg>
+            </button>
+        </div>
+        <button type="button" class="fab-pdf" id="fab-pdf-btn" aria-label="Generar PDF del registro">
+            <i data-lucide="file-text"></i>
+        </button>
+        <div class="fecha-ring-widget fecha-ring-widget--fab fecha-ring-widget--campo" id="visual-fecha-ring-widget" role="button" tabindex="0" aria-label="Fecha de hoy" title="">
+            <div class="fecha-ring-circle" id="campo-fecha-ring-circle" aria-hidden="true"></div>
+            <div class="fecha-ring-content">
+                <span class="fecha-ring-day" id="fecha-ring-day">--</span>
+                <span class="fecha-ring-month" id="fecha-ring-month">----</span>
+            </div>
+            <div class="fecha-ring-popover" id="campo-fecha-ring-popover" role="tooltip" hidden></div>
+        </div>
+        <button class="fab-options" id="fab-options-btn" type="button" aria-label="Opciones rápidas" aria-expanded="false">
+            <i data-lucide="ellipsis"></i>
+        </button>
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title-row" id="modal-title-row">
+                <h2 id="modal-title" style="margin-bottom: 0; color: var(--primary); margin-top: 8px;">Editar Datos</h2>
+                <div class="modal-jarra-box">
+                    <label for="visual-m-jarra">N° Jarra</label>
+                    <select id="visual-m-jarra" aria-label="Seleccionar N° de jarra"></select>
+                </div>
+            </div>
+            <div class="form-group acopio-peso-field"><label for="acopio-peso-1-termino-cosecha">PESO 1 - TÉRMINO DE COSECHA (g)</label><input type="number" id="acopio-peso-1-termino-cosecha" step="0.1" placeholder="00"></div>
+            <div class="form-group acopio-peso-field"><label for="acopio-peso-2-llegada">PESO 2 - LLEGADA ACOPIO (g)</label><input type="number" id="acopio-peso-2-llegada" step="0.1" placeholder="00"></div>
+            <div class="form-group acopio-peso-field"><label for="acopio-peso-3-calibrado">PESO 3 - ACOPIO CALIBRADO (g)</label><input type="number" id="acopio-peso-3-calibrado" step="0.1" placeholder="00"></div>
+            <div class="form-group acopio-peso-field"><label for="acopio-peso-4-clamshell-calibrado">PESO 4 CLAMSHELL CALIBRADO (g)</label><input type="number" id="acopio-peso-4-clamshell-calibrado" step="0.1" placeholder="00"></div>
+            <div class="form-group acopio-peso-field"><label for="acopio-peso-5-despacho-campo">PESO 5 DESPACHO ACOPIO - CAMPO (PESO CLAMSHELL) (g)</label><input type="number" id="acopio-peso-5-despacho-campo" step="0.1" placeholder="00"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="btn-cancel-tarjeta">Cancelar</button>
+                <button class="btn-save" id="btn-save-tarjeta" type="button" onclick="guardarModalTarjeta()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="metric-modal-overlay">
+        <div class="modal-content">
+            <h2 id="metric-modal-title" style="margin-bottom: 16px; color: var(--primary);">Detalle de medición</h2>
+            <div class="metric-modal-body" id="metric-modal-body"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" onclick="cerrarModalMetrica()">Cancelar</button>
+                <button class="btn-save" id="btn-save-metrica" type="button" onclick="guardarModalMetrica()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="observation-modal-overlay">
+        <div class="modal-content">
+            <h2 id="observation-modal-title" style="margin-bottom: 16px; color: var(--primary);">Observación</h2>
+            <div class="form-group">
+                <label>OBSERVACIÓN DEL CLAMSHELL</label>
+                <input type="text" id="visual-observation" placeholder="Opcional: incidencia, comentario, condición de campo">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" onclick="cerrarModalObservacion()">Cancelar</button>
+                <button class="btn-save" id="btn-save-observacion" type="button" onclick="guardarModalObservacion()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="essential-modal-overlay">
+        <div class="modal-content">
+            <h2 id="essential-modal-title" style="margin-bottom: 16px; color: var(--primary);">Resumen esencial</h2>
+            <div class="metric-modal-body" id="essential-modal-body"></div>
+            <div class="metric-modal-foot essential-modal-foot">
+                <button class="btn-secondary" type="button" onclick="cerrarModalResumen()">Cancelar</button>
+                <button class="btn-save pdf-action-btn pdf-action-btn--wsp essential-wsp-btn" id="btn-save-resumen-global" type="button" onclick="enviarModalResumenGlobalWhatsApp()">
+                    <i data-lucide="message-circle" aria-hidden="true"></i>
+                    <span class="essential-wsp-btn-label">Enviar WhatsApp</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="control-global-modal-overlay">
+        <div class="modal-content">
+            <h2 id="control-global-modal-title" style="margin-bottom: 16px; color: var(--primary);">Control equitativo</h2>
+            <div class="metric-modal-body" id="control-global-modal-body"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" onclick="cerrarModalControlGlobal()">Cancelar</button>
+                <button class="btn-save" id="btn-save-control-global" type="button" onclick="guardarModalControlGlobal()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="llenado-horas-modal-overlay">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Editar horas</h2>
+            <div class="form-group"><label>Inicio</label><input type="time" id="visual-lhm-inicio"></div>
+            <div class="form-group"><label>Final</label><input type="time" id="visual-lhm-termino"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" onclick="cerrarModalHorasLlenado()">Cancelar</button>
+                <button class="btn-save" id="btn-save-horas" type="button" onclick="guardarModalHorasLlenado()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="time-picker-modal-overlay">
+        <div class="time-picker-modal">
+            <div class="time-picker-head">
+                <div class="time-picker-title">Seleccionar hora</div>
+                <div class="time-picker-current" id="time-picker-current">--:--</div>
+            </div>
+            <div class="time-picker-wheel">
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-hour-up" aria-label="Subir hora">▲</button>
+                    <div class="time-picker-value" id="time-picker-hour">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-hour-down" aria-label="Bajar hora">▼</button>
+                </div>
+                <div class="time-picker-sep">:</div>
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-minute-up" aria-label="Subir minuto">▲</button>
+                    <div class="time-picker-value" id="time-picker-minute">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-minute-down" aria-label="Bajar minuto">▼</button>
+                </div>
+            </div>
+            <div class="time-picker-actions">
+                <button type="button" class="btn-secondary" id="time-picker-now">Tomar hora exacta</button>
+                <button type="button" class="btn-secondary" id="time-picker-cancel">Cancelar</button>
+                <button type="button" class="btn-save" id="time-picker-apply">Tomar hora</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
+        <div class="modal-content pdf-modal-content">
+            <div class="pdf-modal-head">
+                <h2 id="pdf-modal-title">Vista previa PDF</h2>
+                <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="pdf-preview-zoom-bar" id="pdf-preview-zoom-bar">
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-out" aria-label="Alejar">−</button>
+                <span class="pdf-zoom-label" id="pdf-zoom-label">100%</span>
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-in" aria-label="Acercar">+</button>
+                <button type="button" class="pdf-zoom-btn pdf-zoom-btn--reset" id="pdf-zoom-reset">Ajustar</button>
+                <span class="pdf-zoom-hint">Pellizca con dos dedos para zoom</span>
+            </div>
+            <div class="pdf-preview-stage" id="pdf-preview-stage">
+                <embed id="pdf-preview-embed" type="application/pdf" class="pdf-preview-embed" hidden title="Vista previa PDF">
+                <div class="pdf-preview-loading" id="pdf-preview-loading">
+                    <span class="pdf-preview-loading-spinner" aria-hidden="true"></span>
+                    <span>Cargando vista previa…</span>
+                </div>
+                <div class="pdf-preview-scaler" id="pdf-preview-scaler">
+                    <div class="pdf-preview-pages" id="pdf-preview-pages"></div>
+                </div>
+                <div class="pdf-preview-fallback" id="pdf-preview-fallback" hidden>
+                    <i data-lucide="file-text" class="pdf-preview-fallback-icon" aria-hidden="true"></i>
+                    <p class="pdf-preview-fallback-title">No se pudo mostrar la vista previa</p>
+                    <p class="pdf-preview-fallback-hint">El PDF sí se generó. Usa <strong>Descargar</strong>, <strong>WhatsApp</strong> o ábrelo en el visor del teléfono.</p>
+                    <button type="button" class="btn-save pdf-preview-open-btn" id="pdf-btn-abrir">Abrir PDF</button>
+                </div>
+            </div>
+            <div class="pdf-modal-actions">
+                <button type="button" class="btn-save pdf-action-btn" id="pdf-btn-descargar">
+                    <i data-lucide="download"></i>
+                    Descargar
+                </button>
+                <button type="button" class="btn-save pdf-action-btn pdf-action-btn--wsp" id="pdf-btn-wsp">
+                    <i data-lucide="message-circle"></i>
+                    WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <nav id="main-bottom-nav">
+        <a class="nav-btn nav-link active" id="nav-campo" data-nav-index="0" href="./" aria-label="Campo">
+            <i data-lucide="house"></i>
+            <span>Campo</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-packing" data-nav-index="1" href="../packing/" aria-label="Packing">
+            <i data-lucide="scan-line"></i>
+            <span>Packing</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-historial" data-nav-index="2" href="../historial/" aria-label="Historial">
+            <i data-lucide="clock-3"></i>
+            <span>Historial</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-recomendaciones" data-nav-index="3" href="../recomendaciones/" aria-label="Recomendaciones">
+            <i data-lucide="settings"></i>
+            <span>Recom.</span>
+        </a>
+    </nav>
+
+    <script>window.CAMPO_REGISTRO_MODO = 'acopio';</script>
+    <script src="../mapeo-parcelas-data.js"></script>
+    <script src="../catalogo-json.js"></script>
+    <script src="../librerias/lucide.min.js"></script>
+    <script src="../librerias/sweetalert2.all.min.js"></script>
+    <script src="./acopio-boot.js"></script>
+    <script src="../librerias/flatpickr.min.js"></script>
+    <script src="../librerias/flatpickr-l10n-es.js"></script>
+    <script src="../api-config.js"></script>
+    <script src="../app.js" charset="utf-8"></script>
+    <script src="../librerias/jspdf.umd.min.js"></script>
+    <script src="../librerias/pdf.min.js"></script>
+    <script src="../campo-pdf.js"></script>
+    <script src="../network.js"></script>
+    <script src="../script.js"></script>
+</body>
+</html>
+
+
+

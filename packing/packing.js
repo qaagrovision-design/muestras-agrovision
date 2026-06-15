@@ -4248,7 +4248,11 @@
         if (r && r.ok === true && Array.isArray(r.muestras)) {
             return r.muestras;
         }
-        const r2 = await callbackJsonp({ listado_registrados: '1' });
+        const r2 = await callbackJsonp({
+            listado_registrados: '1',
+            fecha_desde: fechaIso,
+            fecha_hasta: fechaIso
+        });
         if (r2 && r2.ok === true && Array.isArray(r2.registrados)) {
             return armarListaMuestrasDesdeRegistrados(r2.registrados, fechaIso);
         }
@@ -4478,6 +4482,21 @@
         }
     }
 
+    async function fetchDetallePackingJsonp_(fechaIso, ensayoNumero) {
+        const params = { fecha: fechaIso, ensayo_numero: ensayoNumero };
+        const intentos = [22000, 28000];
+        let ultimoErr = null;
+        for (let i = 0; i < intentos.length; i++) {
+            try {
+                return await callbackJsonp(params, intentos[i]);
+            } catch (err) {
+                ultimoErr = err;
+                if (i >= intentos.length - 1) break;
+            }
+        }
+        throw ultimoErr || new Error('La planilla tardó demasiado. Reintenta.');
+    }
+
     async function cargarDetalle(fechaIso, ensayoNumero, opts) {
         if (!fechaIso || !ensayoNumero) return;
         const sinOverlay = !!(opts && opts.sinOverlay);
@@ -4509,11 +4528,8 @@
             if (elStatus) elStatus.hidden = true;
         }
             const r = await (sinOverlay
-                ? callbackJsonp({ fecha: fechaIso, ensayo_numero: ensayoNumero })
-                : withMinLoader(() => callbackJsonp({
-                    fecha: fechaIso,
-                    ensayo_numero: ensayoNumero
-                })));
+                ? fetchDetallePackingJsonp_(fechaIso, ensayoNumero)
+                : withMinLoader(() => fetchDetallePackingJsonp_(fechaIso, ensayoNumero)));
             if (!r || r.ok !== true || !r.data) {
                 throw new Error(r?.error || 'Registro no encontrado');
             }

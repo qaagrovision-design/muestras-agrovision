@@ -47,6 +47,9 @@ const APP_SHELL = [
     './packing/',
     './packing/index.html',
     './packing/packing.js',
+    './acopio/',
+    './acopio/index.html',
+    './acopio/acopio-boot.js',
     './historial/',
     './historial/index.html',
     './recomendaciones/',
@@ -55,6 +58,7 @@ const APP_SHELL = [
 
 const SHELL_BY_SECTION = [
     { test: /\/packing(\/|$)/i, url: './packing/index.html' },
+    { test: /\/acopio(\/|$)/i, url: './acopio/index.html' },
     { test: /\/historial(\/|$)/i, url: './historial/index.html' },
     { test: /\/recomendaciones(\/|$)/i, url: './recomendaciones/index.html' },
     { test: /.*/, url: './index.html' }

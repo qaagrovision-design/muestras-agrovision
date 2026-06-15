@@ -22,10 +22,13 @@
     const MODULOS_PRECARGA = [
         './',
         'packing/',
+        'acopio/',
         'historial/',
         'recomendaciones/',
         'index.html',
         'packing/index.html',
+        'acopio/index.html',
+        'acopio/acopio-boot.js',
         'historial/index.html',
         'recomendaciones/index.html',
         'styles.css',
@@ -349,8 +352,21 @@
         void precalentarNavegacionModulos(rutas.root);
     }
 
+    function resolverHrefCampoNav() {
+        const links = document.querySelectorAll('#nav-campo[href]');
+        if (!links.length) return;
+        let modo = 'visual';
+        try {
+            modo = localStorage.getItem('tiempos-header-tipo-registro-v2') || 'visual';
+        } catch (_) { /* ignore */ }
+        const root = prefijoRaizApp();
+        const href = modo === 'acopio' ? root + 'acopio/' : root;
+        links.forEach((a) => { a.setAttribute('href', href); });
+    }
+
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', async () => {
+            resolverHrefCampoNav();
             limpiarParametroRefreshEnUrl();
             try {
                 await registrarPwaGlobal();
@@ -360,6 +376,7 @@
         });
     } else {
         window.addEventListener('load', () => {
+            resolverHrefCampoNav();
             limpiarParametroRefreshEnUrl();
             void precalentarNavegacionModulos();
         });
