@@ -8256,6 +8256,15 @@ const META_SAVE_IDS = [
 
         const MAX_CLAMSHELLS_PDF = 8;
 
+        /** Último índice (0-based) con datos; filas posteriores no llevan N° clamshell en PDF. */
+        function ultimoIndiceClamshellConDatosPdf_(items) {
+            let ultimo = -1;
+            (items || []).forEach((item, idx) => {
+                if (item && !esClamshellSinDatos_(item)) ultimo = idx;
+            });
+            return ultimo;
+        }
+
         function acopioSinPesos123EnItem_(item, nClam) {
             if (!item) return true;
             return pesoVacio(peso1EfectivoCampo(item, nClam))
@@ -8273,7 +8282,8 @@ const META_SAVE_IDS = [
             return strOrEmpty(item.jarra);
         }
 
-        function filaPdfDesdeItem(item, nClam, incluirTemperatura) {
+        function filaPdfDesdeItem(item, nClamVisible, incluirTemperatura, nClamIdx) {
+            const idx = Number(nClamIdx) || Number(nClamVisible) || 1;
             const m = item?.metric || metricaVacia();
             const t = m.tiempo || {};
             const temp = m.temperatura || {};
@@ -8294,9 +8304,9 @@ const META_SAVE_IDS = [
                 tempDespachoPul: strOrEmpty(temp.despachoPulpa)
             } : vacioTemp;
             return {
-                nClam,
-                jarra: jarraNumeroPdfDesdeItem_(item, nClam),
-                p1: item ? pesoStrOrEmpty(peso1EfectivoCampo(item, nClam)) : '',
+                nClam: item && nClamVisible !== '' && nClamVisible != null ? String(nClamVisible) : '',
+                jarra: jarraNumeroPdfDesdeItem_(item, idx),
+                p1: item ? pesoStrOrEmpty(peso1EfectivoCampo(item, idx)) : '',
                 p2: item ? pesoStrOrEmpty(item.p2) : '',
                 p3: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.acopio) : '',
                 p4: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.p4) : '',
@@ -8364,14 +8374,17 @@ const META_SAVE_IDS = [
             const tempL = ml.temperatura || {};
             const humL = ml.humedad || {};
             const jarrasPdf = listaJarrasParaPdfLlenado(clave, items);
+            const ultimoIdxDatos = ultimoIndiceClamshellConDatosPdf_(items);
             const maxRows = 12;
             const filas = [];
             const llenadoVacio = {
                 jarraLlenado: '', trasladoObs: '', jarraInicio: '', jarraTermino: '', jarraTiempo: ''
             };
             for (let r = 0; r < maxRows; r++) {
+                const item = r < items.length ? items[r] : null;
+                const nClamVisible = item && r <= ultimoIdxDatos ? (r + 1) : '';
                 const base = r < MAX_CLAMSHELLS_PDF
-                    ? filaPdfDesdeItem(items[r] || null, r + 1, r === 0)
+                    ? filaPdfDesdeItem(item, nClamVisible, r === 0, r + 1)
                     : filaPdfVaciaLlenadoJarras();
                 const parIdxJarra = Math.floor(r / 2);
                 const esCosechaJarra = r % 2 === 0;

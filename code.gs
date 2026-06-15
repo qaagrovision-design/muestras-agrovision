@@ -888,16 +888,33 @@ function doPost(e) {
       return isNaN(n) || n === 0;
     }
 
+    /** Hoja 2/4: solo filas con N° jarra válido (Acopio " - " = vacío, no se guarda). */
+    function jarraRegistroTieneValorGs_(v) {
+      if (v === null || v === undefined) return false;
+      var s = String(v).trim();
+      if (s === '') return false;
+      var n = parseInt(s, 10);
+      return !isNaN(n) && n >= 1;
+    }
+
     var minExpanded = REGISTRO_POST_EXPANDED_LEN;
     var nuevasFilas = [];
     var filasHoja2 = [];
+    /** Una fila en Hoja 2/4 por FECHA + ENSAYO + N° jarra (no por clamshell). */
+    var clavesHojaJarrasVistas = {};
     rows.forEach(function(row) {
       var fila = row.length >= minExpanded ? toRowRegistro(row) : (function() { while (row.length < NUM_COLS) row.push(""); return row.slice(0, NUM_COLS).map(celdaAString); })();
       aplicarPresionVaporDecimalEnFilaRegistro_(fila);
       var key = buildKey(fila);
       if (existingKeys[key]) return;
       existingKeys[key] = true;
-      filasHoja2.push(rowHoja2(fila, row.length >= minExpanded ? row : null));
+      if (jarraRegistroTieneValorGs_(fila[15])) {
+        var claveJarraHoja = normalizarParaClave(fila[0]) + '||' + normalizarParaClave(fila[13]) + '||' + normalizarParaClave(fila[15]);
+        if (!clavesHojaJarrasVistas[claveJarraHoja]) {
+          clavesHojaJarrasVistas[claveJarraHoja] = true;
+          filasHoja2.push(rowHoja2(fila, row.length >= minExpanded ? row : null));
+        }
+      }
       // Visual: PESO_1 + clamshell. Acopio: PESO_4 + PESO_5 + clamshell (P1–P3 opcionales).
       var filaInsertable = false;
       if (!esCero(fila[14])) {
