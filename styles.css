@@ -2126,6 +2126,33 @@
             font-weight: 700;
         }
 
+        /* Acopio: más aire entre Peso 1 y Peso 2 en tarjeta */
+        .campo-acopio-page .weights-grid {
+            column-gap: 0;
+            row-gap: 10px;
+            padding: 14px 14px;
+            min-height: 112px;
+        }
+
+        .campo-acopio-page .weights-grid > .weight-box:first-of-type {
+            padding-right: 12px;
+            border-right: none;
+        }
+
+        .campo-acopio-page .weights-grid > .weight-box:nth-of-type(2) {
+            padding-left: 12px;
+            border-left: 1px solid #E2E8F0;
+        }
+
+        .campo-acopio-page .weight-box label {
+            font-size: 11.5px;
+            line-height: 1.25;
+        }
+
+        .campo-acopio-page .weight-value {
+            font-size: 26px;
+        }
+
         .observation-box {
             grid-column: 1 / -1;
             margin-top: 6px;

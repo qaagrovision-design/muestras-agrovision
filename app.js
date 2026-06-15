@@ -742,7 +742,7 @@ const META_SAVE_IDS = [
             return String(v).trim();
         }
 
-        /** Errores de cadena opcional P1→P2→P3 (solo entre pesos con valor > 0). */
+        /** Errores de cadena P1→P2→P3 (solo entre pesos con valor; grupos independientes de P4–P5). */
         function validarCadenaPesosOpcionalAcopio_(p1, p2, p3, nroClamshell) {
             const n = Number(nroClamshell) || 1;
             const p1Eff = clamshellUsaPeso1DesdePeso2(n) && !pesoVacio(p2) ? Number(p2) : Number(p1);
@@ -752,23 +752,160 @@ const META_SAVE_IDS = [
             if (!pesoVacio(p3)) cadena.push({ k: 'Peso 3', v: Number(p3) });
             for (let i = 1; i < cadena.length; i++) {
                 if (cadena[i].v > cadena[i - 1].v) {
-                    return `${cadena[i].k} no puede ser mayor que ${cadena[i - 1].k}.`;
+                    return `${cadena[i].k} debe ser menor o igual a ${cadena[i - 1].k}.`;
                 }
             }
             return '';
+        }
+
+        /** Peso 5 ≤ Peso 4 (sin relación con Pesos 1–3). */
+        function validarPesos45Acopio_(p4, p5) {
+            if (pesoVacio(p4) || pesoVacio(p5)) return '';
+            if (Number(p5) > Number(p4)) {
+                return 'Peso 5 debe ser menor o igual a Peso 4.';
+            }
+            return '';
+        }
+
+        function recolectarFaltantesCadenaPeso_(cadena, prefijo) {
+            const faltantes = [];
+            let ultimoIdx = -1;
+            for (let i = cadena.length - 1; i >= 0; i--) {
+                if (!pesoVacio(cadena[i].valor)) {
+                    ultimoIdx = i;
+                    break;
+                }
+            }
+            if (ultimoIdx < 0) return faltantes;
+            for (let i = 0; i <= ultimoIdx; i++) {
+                if (pesoVacio(cadena[i].valor)) {
+                    faltantes.push(`${prefijo}: ${cadena[i].etiqueta}`);
+                }
+            }
+            return faltantes;
+        }
+
+        function cadenasPesoAcopioClamshell_(item, n) {
+            const lbl = etiquetasPesoUiCampo_();
+            return {
+                grupo123: [
+                    { etiqueta: lbl.cardP1, valor: peso1EfectivoCampo(item, n) },
+                    { etiqueta: lbl.cardP2, valor: item?.p2 },
+                    { etiqueta: lbl.cardP3, valor: item?.acopio }
+                ],
+                grupo45: [
+                    { etiqueta: lbl.cardP4, valor: item?.p4 },
+                    { etiqueta: lbl.cardP5, valor: item?.despacho }
+                ]
+            };
+        }
+
+        function cadenaPesoVisualClamshell_(item, n) {
+            const lbl = etiquetasPesoUiCampo_();
+            if (clamshellUsaPeso1DesdePeso2(n)) {
+                return [
+                    { etiqueta: lbl.cardP2, valor: item?.p2 },
+                    { etiqueta: lbl.cardAcopio, valor: item?.acopio },
+                    { etiqueta: lbl.cardDespacho, valor: item?.despacho }
+                ];
+            }
+            return [
+                { etiqueta: lbl.cardP1, valor: item?.p1 },
+                { etiqueta: lbl.cardP2, valor: item?.p2 },
+                { etiqueta: lbl.cardAcopio, valor: item?.acopio },
+                { etiqueta: lbl.cardDespacho, valor: item?.despacho }
+            ];
+        }
+
+        /** Sin huecos: si hay Peso 3 deben existir 1 y 2; si hay Peso 5 debe existir 4 (grupos separados). */
+        function validarSecuenciaCompletaPesosAcopio_(item, n) {
+            const prefijo = `Clamshell ${n}`;
+            const { grupo123, grupo45 } = cadenasPesoAcopioClamshell_(item, n);
+            return [
+                ...recolectarFaltantesCadenaPeso_(grupo123, prefijo),
+                ...recolectarFaltantesCadenaPeso_(grupo45, prefijo)
+            ];
+        }
+
+        function validarSecuenciaCompletaPesosVisual_(item, n) {
+            return recolectarFaltantesCadenaPeso_(cadenaPesoVisualClamshell_(item, n), `Clamshell ${n}`);
+        }
+
+        function erroresPesosAcopioModal_(p1, p2, p3, p4, p5, nro) {
+            const item = { p1, p2, acopio: p3, p4, despacho: p5 };
+            const completitud = validarSecuenciaCompletaPesosAcopio_(item, nro);
+            const orden = erroresOrdenPesosAcopio_(p1, p2, p3, p4, p5, nro);
+            const vistos = new Set();
+            return [...completitud, ...orden].filter((msg) => {
+                if (vistos.has(msg)) return false;
+                vistos.add(msg);
+                return true;
+            });
+        }
+
+        function erroresOrdenPesosAcopio_(p1, p2, p3, p4, p5, nroClamshell) {
+            const errs = [];
+            const msgCadena = validarCadenaPesosOpcionalAcopio_(p1, p2, p3, nroClamshell);
+            if (msgCadena) errs.push(msgCadena);
+            const msg45 = validarPesos45Acopio_(p4, p5);
+            if (msg45) errs.push(msg45);
+            return errs;
+        }
+
+        function leerPesosDesdeModalAcopio_() {
+            return {
+                p1: Number(elInputPesoModalCampo_('p1')?.value || 0),
+                p2: Number(elInputPesoModalCampo_('p2')?.value || 0),
+                p3: Number(elInputPesoModalCampo_('acopio')?.value || 0),
+                p4: Number(elInputPesoModalCampo_('p4')?.value || 0),
+                p5: Number(elInputPesoModalCampo_('despacho')?.value || 0)
+            };
+        }
+
+        function validarPesosAcopioModalEnVivo() {
+            if (!esModoRegistroAcopio_()) return [];
+            const itemEdit = editingCardId != null
+                ? data.find((entry) => entry.id === editingCardId)
+                : null;
+            const nroModal = nroClamshellModalActual_(itemEdit);
+            const pesos = leerPesosDesdeModalAcopio_();
+            const errores = erroresPesosAcopioModal_(
+                pesos.p1, pesos.p2, pesos.p3, pesos.p4, pesos.p5, nroModal
+            );
+            const alertEl = document.getElementById('acopio-peso-alert');
+            if (alertEl) {
+                if (errores.length) {
+                    alertEl.textContent = errores[0];
+                    alertEl.style.display = 'block';
+                } else {
+                    alertEl.textContent = '';
+                    alertEl.style.display = 'none';
+                }
+            }
+            return errores;
+        }
+
+        let validacionPesosAcopioModalInit_ = false;
+        function conectarValidacionPesosAcopioModal_() {
+            if (validacionPesosAcopioModalInit_) return;
+            validacionPesosAcopioModalInit_ = true;
+            ['p1', 'p2', 'acopio', 'p4', 'despacho'].forEach((campo) => {
+                const inp = elInputPesoModalCampo_(campo);
+                if (!inp) return;
+                inp.addEventListener('input', validarPesosAcopioModalEnVivo);
+                inp.addEventListener('change', validarPesosAcopioModalEnVivo);
+            });
         }
 
         /** Validación de pesos Acopio por clamshell (envío). */
         function validarPesosAcopioClamshell_(item, n) {
             const errs = [];
             const label = `Clamshell ${n}`;
+            validarSecuenciaCompletaPesosAcopio_(item, n).forEach((e) => errs.push(e));
             if (pesoVacio(item?.p4)) errs.push(`${label}: Peso 4 · Clamshell calibrado`);
             if (pesoVacio(item?.despacho)) errs.push(`${label}: Peso 5 · Despacho campo`);
-            const p4 = Number(item?.p4);
-            const p5 = Number(item?.despacho);
-            if (!pesoVacio(item?.p4) && !pesoVacio(item?.despacho) && p5 > p4) {
-                errs.push(`${label}: Peso 5 debe ser menor o igual a Peso 4`);
-            }
+            const msg45 = validarPesos45Acopio_(item?.p4, item?.despacho);
+            if (msg45) errs.push(`${label}: ${msg45}`);
             const msgCadena = validarCadenaPesosOpcionalAcopio_(
                 peso1EfectivoCampo(item, n),
                 item?.p2,
@@ -929,14 +1066,10 @@ const META_SAVE_IDS = [
                 if (esModoRegistroAcopio_()) {
                     validarPesosAcopioClamshell_(item, n).forEach((e) => faltantes.push(e));
                 } else {
-                    if (clamshellUsaPeso1DesdePeso2(n)) {
-                        if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
-                    } else {
-                        if (pesoVacio(item?.p1)) faltantes.push(`Clamshell ${n}: Peso inicial 1`);
-                        if (pesoVacio(item?.p2)) faltantes.push(`Clamshell ${n}: Peso inicial 2`);
-                    }
-                    if (pesoVacio(item?.acopio)) faltantes.push(`Clamshell ${n}: Llegada acopio-campo`);
-                    if (pesoVacio(item?.despacho)) faltantes.push(`Clamshell ${n}: Despacho acopio-campo`);
+                    validarSecuenciaCompletaPesosVisual_(item, n).forEach((e) => faltantes.push(e));
+                    cadenaPesoVisualClamshell_(item, n).forEach((c) => {
+                        if (pesoVacio(c.valor)) faltantes.push(`Clamshell ${n}: ${c.etiqueta}`);
+                    });
                 }
 
                 const t = item?.metric?.tiempo || {};
@@ -968,7 +1101,7 @@ const META_SAVE_IDS = [
             if (keysHum.some((k) => campoVacio(humGlobal[k]))) {
                 faltantes.push('Humedad global');
             }
-            return faltantes;
+            return [...new Set(faltantes)];
         }
 
         function numMuestraValidoParaEnvioEnsayo(ensayo) {
@@ -1232,6 +1365,7 @@ const META_SAVE_IDS = [
 
         let metaPorEnsayo = {};
         let metaActivoEnsayo = 'Ensayo 1';
+        const ensayoMeta = {};
         let ensayoActivo = 'Ensayo 1';
         /** Muestras que el operador usa en esta sesión (1 y 4 → N° base+0 y base+1, no 01 y 04). */
         let ensayosActivadosSesion = new Set();
@@ -2141,7 +2275,6 @@ const META_SAVE_IDS = [
             });
             siguienteIdFilaJarras = maxId > 0 ? maxId + 1 : 1;
         }());
-        const ensayoMeta = {};
         let editingCardId = null;
         let guardandoModalTarjeta_ = false;
         let abrirModalTarjetaTs_ = 0;
@@ -6860,6 +6993,8 @@ const META_SAVE_IDS = [
             if (inpP4) inpP4.value = itemTrabajo ? valorPesoInput(itemTrabajo.p4) : '';
             if (inpDespacho) inpDespacho.value = itemTrabajo ? valorPesoInput(itemTrabajo.despacho) : '';
             configurarModalPesosClamshell_(nroModal);
+            conectarValidacionPesosAcopioModal_();
+            if (esModoRegistroAcopio_()) validarPesosAcopioModalEnVivo();
             overlay.style.display = 'flex';
         }
 
@@ -6900,13 +7035,11 @@ const META_SAVE_IDS = [
                         mostrarAlertaRegla('Falta Peso 5', 'Registra Peso 5 · Despacho campo (obligatorio en Acopio).');
                         return;
                     }
-                    if (despachoVal > p4Val) {
-                        mostrarAlertaRegla('Pesos inválidos', 'Peso 5 debe ser menor o igual a Peso 4.');
-                        return;
-                    }
-                    const msgCadena = validarCadenaPesosOpcionalAcopio_(p1Val, p2Val, acopioVal, nroModal);
-                    if (msgCadena) {
-                        mostrarAlertaRegla('Cadena de pesos', msgCadena);
+                    const erroresPesos = erroresPesosAcopioModal_(
+                        p1Val, p2Val, acopioVal, p4Val, despachoVal, nroModal
+                    );
+                    if (erroresPesos.length) {
+                        mostrarAlertaRegla('Pesos incompletos', erroresPesos[0]);
                         return;
                     }
                     if (esAutoP1 && !pesoVacio(p2Val)) p1Val = p2Val;
@@ -6920,6 +7053,16 @@ const META_SAVE_IDS = [
                 } else if (!(Number.isFinite(p1Val) && p1Val > 0)) {
                     mostrarAlertaRegla('Falta Peso 1', 'Debes registrar al menos Peso 1 para guardar.');
                     return;
+                }
+                if (!esModoRegistroAcopio_()) {
+                    const faltantesVisualModal = validarSecuenciaCompletaPesosVisual_(
+                        { p1: p1Val, p2: p2Val, acopio: acopioVal, despacho: despachoVal },
+                        nroModal
+                    );
+                    if (faltantesVisualModal.length) {
+                        mostrarAlertaRegla('Pesos incompletos', faltantesVisualModal[0]);
+                        return;
+                    }
                 }
 
                 if (editingCardId === null) {
@@ -7998,14 +8141,9 @@ const META_SAVE_IDS = [
             return strOrEmpty(meta['visual-placa-vehiculo'] || em.placaVehiculo).toUpperCase();
         }
 
-        /** PDF Campo: guía + placa de logística acopio-campo (último paso antes de enviar). */
-        function ensayoLogisticaAcopioCompletaParaPdf_(ensayo) {
-            return !!guiaAcopioMetaEnsayo_(ensayo) && !!placaAcopioMetaEnsayo_(ensayo);
-        }
-
+        /** PDF Campo: guía y placa son opcionales (se muestran vacíos si faltan). */
         function ensayosListosPdfCampo_() {
-            return ensayosCandidatosConDatosCampo()
-                .filter((ensayo) => ensayoLogisticaAcopioCompletaParaPdf_(ensayo));
+            return ensayosCandidatosConDatosCampo();
         }
 
         function construirDatosPdfCampoEnsayo_(ensayo) {

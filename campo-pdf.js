@@ -962,8 +962,8 @@
         const lista = normalizarListaDatosPdfCampo_(datos);
         if (!lista.length) {
             throw new Error(
-                'Completa guía de remisión y placa del vehículo en logística acopio-campo '
-                + 'de al menos una muestra para generar el PDF.'
+                'No hay muestras en curso con datos para generar el PDF. '
+                + 'Registra al menos una muestra activa.'
             );
         }
         const logoUrl = await cargarLogoDataUrl();
