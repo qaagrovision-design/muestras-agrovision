@@ -290,7 +290,7 @@
             <h2 style="margin-bottom: 16px; color: var(--primary);">N° viaje</h2>
             <div class="form-group">
                 <label for="packing-n-viaje-inp">N° VIAJE</label>
-                <input type="text" id="packing-n-viaje-inp" name="n_viaje" placeholder="Ej. 208353" enterkeyhint="done" maxlength="48" autocomplete="off">
+                <input type="text" id="packing-n-viaje-inp" name="n_viaje" placeholder="Ej. 12" enterkeyhint="done" maxlength="2" autocomplete="off">
             </div>
             <div class="metric-modal-foot">
                 <button class="btn-secondary" type="button" id="btn_cancel_viaje_packing">Cancelar</button>
@@ -343,7 +343,7 @@
     <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
         <div class="modal-content pdf-modal-content">
             <div class="pdf-modal-head">
-                <h2 id="pdf-modal-title">Vista previa PDF</h2>
+                <div id="pdf-modal-title" class="pdf-modal-title-wrap" role="heading" aria-level="2">Vista previa PDF</div>
                 <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
                     <i data-lucide="x"></i>
                 </button>
@@ -392,6 +392,9 @@
     <script src="../librerias/pdf.min.js"></script>
     <script src="../api-config.js"></script>
     <script src="./packing.js"></script>
+    <script src="../pdf-nombre.js"></script>
     <script src="../packing-pdf.js"></script>
+    <script src="../hist-pdf-store.js"></script>
+    <script src="../hist-pdf-envio.js"></script>
 </body>
 </html>

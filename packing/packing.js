@@ -18,7 +18,7 @@
     /** Plantilla demo: solo rellena inputs visibles de la muestra activa (no atajos internos). */
     const PACKING_DEMO_PLANTILLA = {
         responsable: 'Demo packing',
-        nViaje: '208353',
+        nViaje: '20',
         temperaturaAmb: ['12.5', '11.8', '11.2', '10.5', '10.0'],
         temperaturaPulpa: ['11.0', '10.5', '10.0', '9.5', '9.0'],
         humedad: ['85.0', '84.0', '83.0', '82.0', '81.0'],
@@ -68,7 +68,18 @@
 
     function initHoraInicio(refrescar) {
         if (!elHoraInicio) return;
-        if (refrescar || !elHoraInicio.value) elHoraInicio.value = horaLocalAhora();
+        if (refrescar) elHoraInicio.value = horaLocalAhora();
+    }
+
+    function asegurarHoraInicioAlEnfocarPacking_() {
+        if (!elHoraInicio || elHoraInicio.dataset.pkHoraFocusBound === '1') return;
+        elHoraInicio.dataset.pkHoraFocusBound = '1';
+        elHoraInicio.addEventListener('focus', () => {
+            if (!String(elHoraInicio.value || '').trim()) {
+                elHoraInicio.value = horaLocalAhora();
+                programarGuardadoBorradorPacking();
+            }
+        });
     }
 
     function ensayoSeleccionado() {
@@ -156,6 +167,22 @@
 
     function pesosVaciosPacking() {
         return { recepcion: 0, ingresoGas: 0, salidaGas: 0, ingresoPre: 0, salidaPre: 0 };
+    }
+
+    const PESOS_BRUTO_PDF_PACKING_KEYS = ['recepcion', 'ingresoGas', 'salidaGas', 'ingresoPre', 'salidaPre'];
+
+    function hayPesoBrutoMuestraPacking(estado) {
+        if (!estado || typeof estado !== 'object') return false;
+        const cards = Array.isArray(estado.packingCards) ? estado.packingCards : [];
+        return cards.some((c) => {
+            const p = c?.pesos || {};
+            return PESOS_BRUTO_PDF_PACKING_KEYS.some((k) => pesoNumero(p[k]) > 0);
+        });
+    }
+
+    function mensajeSinPesoBrutoPdfPacking_(etiquetaMuestra) {
+        const pref = etiquetaMuestra ? `${etiquetaMuestra}: ` : '';
+        return pref + 'Captura al menos un peso en PESO BRUTO MUESTRA (GR) — Recepción, Gasificado o Prefrío — antes de generar el PDF.';
     }
 
     function pesoNumero(val) {
@@ -658,7 +685,7 @@
         packingDetalleMetaCache_[key] = {
             TRAZ_ETAPA: detalle.TRAZ_ETAPA,
             TRAZ_CAMPO: detalle.TRAZ_CAMPO,
-            TRAZ_LIBRE: detalle.TRAZ_LIBRE,
+            TRAZ_TURNO: detalle.TRAZ_TURNO ?? detalle.TRAZ_LIBRE,
             VARIEDAD: detalle.VARIEDAD,
             PLACA_VEHICULO: detalle.PLACA_VEHICULO,
             GUIA_REMISION: detalle.GUIA_REMISION,
@@ -721,6 +748,11 @@
         return obtenerOpcionesMuestraPackingSelect_().filter((raw) => muestraPackingEnUso_(raw));
     }
 
+    /** PDF manual (FAB): solo muestras con captura local pendiente; las ya enviadas van al Historial. */
+    function muestrasPendientesPdfPackingDelDia_() {
+        return muestrasEnUsoPackingDelDia_().filter((raw) => !muestraPackingYaCompletaEnServidor_(raw));
+    }
+
     function necesitaRefrescarQuotaServidorPacking_(enUso) {
         const fecha = normalizarFechaIso(elFecha?.value);
         const rawActivo = String(elMuestra?.value || '').trim();
@@ -774,12 +806,37 @@
         return Number(parts[1]) || 0;
     }
 
+    function numeroEnsayoItemPacking_(item) {
+        if (item == null) return 0;
+        if (typeof item === 'string') return numeroEnsayoPackingDesdeRaw(item);
+        const en = Number(item.ensayo_numero || item.ensayo || 0);
+        if (Number.isFinite(en) && en > 0) return en;
+        return numeroEnsayoPackingDesdeRaw(item.raw);
+    }
+
     function ordenarMuestrasPackingPorEnsayo_(lista) {
         return (lista || []).slice().sort((a, b) => {
-            const na = numeroEnsayoPackingDesdeRaw(a.raw);
-            const nb = numeroEnsayoPackingDesdeRaw(b.raw);
+            const na = numeroEnsayoItemPacking_(a);
+            const nb = numeroEnsayoItemPacking_(b);
             return na - nb;
         });
+    }
+
+    function deduplicarItemsMuestraPacking_(lista) {
+        const seen = new Set();
+        const out = [];
+        ordenarMuestrasPackingPorEnsayo_(lista).forEach((item) => {
+            const key = String(
+                (typeof item === 'string' ? item : (item?.raw || ''))
+                || ((item?.num_muestra && item?.ensayo_numero)
+                    ? (item.num_muestra + '|' + item.ensayo_numero)
+                    : '')
+            ).trim();
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            out.push(item);
+        });
+        return out;
     }
 
     function detectarHuecosSecuenciaPacking_(completas) {
@@ -1026,6 +1083,7 @@
         const fecha = normalizarFechaIso(elFecha?.value);
         const raw = String(rawMuestra || '').trim();
         if (!fecha || !raw) return null;
+        if (muestraPackingYaCompletaEnServidor_(raw)) return null;
         const parts = raw.split('|');
 
         if (raw === String(elMuestra?.value || '').trim()) {
@@ -2277,8 +2335,13 @@
         ocultarModalPacking(elViajeModalPacking);
     }
 
+    function normalizarNViajePackingInput_(raw) {
+        return String(raw || '').trim().slice(0, 2);
+    }
+
     function guardarModalViajePacking() {
-        packingNViaje = String(elViajeInputPacking?.value || '').trim();
+        packingNViaje = normalizarNViajePackingInput_(elViajeInputPacking?.value);
+        if (elViajeInputPacking) elViajeInputPacking.value = packingNViaje;
         if (lastDetallePacking && typeof lastDetallePacking === 'object') {
             lastDetallePacking.N_VIAJE = packingNViaje;
             lastDetallePacking.n_viaje = packingNViaje;
@@ -2290,18 +2353,46 @@
         programarGuardadoBorradorPacking();
     }
 
-    /** Limpia tiempos/control/hora al cambiar de muestra sin borrador (evita arrastrar demo de otra). */
+    /** Limpia tiempos/control/hora/responsable al cambiar de muestra sin borrador. */
     function limpiarUiCapturaMuestraPacking_() {
         packingBadgeWasComplete = false;
         packingNViaje = '';
+        actualizarBtnViajePackingTitulo_();
         resetControlGlobalPacking();
         TIEMPOS_MUESTRA_IDS.forEach((id) => {
             const inp = document.getElementById(id);
             if (inp) inp.value = '';
         });
         if (elHoraInicio) elHoraInicio.value = '';
+        if (elResponsable) elResponsable.value = '';
         actualizarContadoresTiempo();
         actualizarContadoresPresionPacking();
+    }
+
+    /** Vacía captura visible al cambiar de muestra (antes de cargar detalle del servidor). */
+    function prepararUiNuevaMuestraPacking_() {
+        limpiarUiCapturaMuestraPacking_();
+        packingCards = [];
+        packingActiveCardId = null;
+        renderizarCardsPacking();
+        limpiarPreviewChips();
+        setResumenVisible(true);
+        setChipsPanelCollapsed(false, false);
+        setPreviewLoading(true, 'Cargando datos…');
+    }
+
+    function purgarBorradoresFantasmaPacking_() {
+        const store = leerStoreBorradorPacking();
+        const porClave = store?.porClave;
+        if (!porClave || typeof porClave !== 'object') return;
+        let changed = false;
+        Object.keys(porClave).forEach((key) => {
+            if (!hayDatosTrabajoMuestraPacking(porClave[key])) {
+                delete porClave[key];
+                changed = true;
+            }
+        });
+        if (changed) escribirStoreBorradorPacking(store);
     }
 
     function leerStoreBorradorPacking() {
@@ -2414,9 +2505,8 @@
             if (hayTextoEnArregloPacking(cg.temperatura?.pulpa)) return true;
             if (hayTextoEnArregloPacking(cg.humedad)) return true;
         }
-        if (String(estado.horaInicio || '').trim()) return true;
-        if (String(estado.responsable || '').trim()) return true;
-        if (String(estado.nViaje || '').trim()) return true;
+        if (hayTextoEnArregloPacking(cg?.presionAmb)) return true;
+        if (hayTextoEnArregloPacking(cg?.presionFruta)) return true;
         return false;
     }
 
@@ -2494,7 +2584,7 @@
         if (elResponsable && String(estado.responsable || '').trim()) {
             elResponsable.value = String(estado.responsable).trim();
         }
-        packingNViaje = String(estado.nViaje || '').trim();
+        packingNViaje = normalizarNViajePackingInput_(estado.nViaje);
         if (!packingNViaje) {
             const det = leerDetalleMetaPacking_(elMuestra?.value);
             packingNViaje = textoMetaCampoPdfPacking_(det?.N_VIAJE ?? det?.n_viaje) || '';
@@ -2595,6 +2685,27 @@
         });
         actualizarContadoresTiempo();
         actualizarContadoresPresionPacking();
+    }
+
+    async function avanzarASiguienteMuestraPackingTrasEnvio_(rawEnviado) {
+        if (!elMuestra) return;
+        const fecha = normalizarFechaIso(elFecha?.value);
+        const raw = String(rawEnviado || '').trim();
+        const opts = [...elMuestra.options].filter((o) => String(o.value || '').trim());
+        const idx = opts.findIndex((o) => o.value === raw);
+        const next = idx >= 0 ? opts[idx + 1] : null;
+        if (next && next.value) {
+            packingMuestraAnterior = raw;
+            elMuestra.value = next.value;
+            elMuestra.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+        }
+        if (fecha && raw) {
+            const ensayoNumero = String(raw.split('|')[1] || '').trim();
+            if (ensayoNumero) {
+                await cargarDetalle(fecha, ensayoNumero, { sinOverlay: true });
+            }
+        }
     }
 
     function restaurarMuestraActivaDesdeBorrador() {
@@ -3365,20 +3476,55 @@
         }
     }
 
+    async function guardarPdfPackingHistorialTrasEnvio_(capturas, fechaIso) {
+        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarPacking !== 'function') return;
+        try {
+            await window.HistPdfEnvio.guardarPacking(capturas, fechaIso);
+        } catch (err) {
+            console.warn('[HistPDF] No se pudo guardar PDF packing:', err);
+        }
+    }
+
+    function armarCapturaPdfPacking_(fecha, rawMuestra, sel, cards) {
+        const key = claveBorradorMuestraPacking(fecha, rawMuestra);
+        const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
+        const estado = borrador && hayDatosTrabajoMuestraPacking(borrador)
+            ? borrador
+            : {
+                packingCards: Array.isArray(cards) ? cards : [],
+                tiempos: getTiemposMuestra(),
+                control: packingControlState,
+                responsable: getHoraPersonal(),
+                horaInicio: getHoraPersonal(),
+                previewMeta: lastDetallePacking || null,
+                nViaje: packingNViaje || ''
+            };
+        return {
+            num_muestra: String(sel?.num_muestra || '').trim(),
+            ensayo_numero: String(sel?.ensayo_numero || '').trim(),
+            raw: String(rawMuestra || '').trim(),
+            estado
+        };
+    }
+
     async function aplicarExitoEnvioPacking_(sel) {
-        mostrarToastPacking('success', 'Enviado', 'Registro packing enviado a la planilla.');
-        setStatus('');
-        if (elStatus) elStatus.hidden = true;
         const fecha = elFecha?.value || '';
         const rawMuestra = (sel.num_muestra && sel.ensayo_numero)
             ? (sel.num_muestra + '|' + sel.ensayo_numero)
             : (elMuestra?.value || '');
+        await guardarPdfPackingHistorialTrasEnvio_(
+            [armarCapturaPdfPacking_(fecha, rawMuestra, sel, packingCards)],
+            normalizarFechaIso(fecha)
+        );
+        mostrarToastPacking('success', 'Enviado', 'Registro packing enviado a la planilla.');
+        setStatus('');
+        if (elStatus) elStatus.hidden = true;
         limpiarBorradorTrasEnvioExitosoPacking(fecha, rawMuestra);
+        limpiarUiCapturaMuestraPacking_();
         packingCards = [];
+        packingActiveCardId = null;
         renderizarCardsPacking();
-        if (fecha && sel.ensayo_numero) {
-            await cargarDetalle(fecha, sel.ensayo_numero, { sinOverlay: true });
-        }
+        await avanzarASiguienteMuestraPackingTrasEnvio_(rawMuestra);
     }
 
     function logEnvioPackingConsola(body, cards) {
@@ -3408,7 +3554,9 @@
             const fecha = elFecha?.value || '';
             limpiarBorradorTrasEnvioExitosoPacking(fecha, rawMuestra);
             if (!opts.sinUi && String(elMuestra?.value || '').trim() === rawMuestra) {
+                limpiarUiCapturaMuestraPacking_();
                 packingCards = [];
+                packingActiveCardId = null;
                 renderizarCardsPacking();
                 actualizarFabRestanteBadge();
             }
@@ -3423,6 +3571,10 @@
                 return false;
             }
             if (encolado) {
+                await guardarPdfPackingHistorialTrasEnvio_(
+                    [armarCapturaPdfPacking_(elFecha?.value || '', rawMuestra, sel, cards)],
+                    normalizarFechaIso(elFecha?.value)
+                );
                 limpiarTrasEnvioLocal_();
                 if (!opts.sinUi) {
                     setStatus('');
@@ -3468,6 +3620,10 @@
             }
             const encolado = encolarPackingPendiente(body);
             if (encolado && !encolado.duplicado) {
+                await guardarPdfPackingHistorialTrasEnvio_(
+                    [armarCapturaPdfPacking_(elFecha?.value || '', rawMuestra, sel, cards)],
+                    normalizarFechaIso(elFecha?.value)
+                );
                 limpiarTrasEnvioLocal_();
             }
             if (!opts.sinToast) {
@@ -3485,6 +3641,10 @@
         } catch (err) {
             const encolado = encolarPackingPendiente(body);
             if (encolado && !encolado.duplicado) {
+                await guardarPdfPackingHistorialTrasEnvio_(
+                    [armarCapturaPdfPacking_(elFecha?.value || '', rawMuestra, sel, cards)],
+                    normalizarFechaIso(elFecha?.value)
+                );
                 limpiarTrasEnvioLocal_();
                 if (!opts.sinToast) {
                     mostrarToastPacking(
@@ -3686,6 +3846,16 @@
         }
 
         if (enviados > 0) {
+            const fechaLote = normalizarFechaIso(elFecha?.value);
+            await guardarPdfPackingHistorialTrasEnvio_(
+                capturas.map(({ item, cap }) => ({
+                    num_muestra: cap.num_muestra,
+                    ensayo_numero: cap.ensayo_numero,
+                    raw: item.raw,
+                    estado: cap.estado
+                })),
+                fechaLote
+            );
             await refrescarMuestraPackingActivaTrasLote_(rawActivo, ordenadasAsc);
             const totalFilas = capturas.reduce(
                 (n, c) => n + (Array.isArray(c.cap.estado?.packingCards) ? c.cap.estado.packingCards.length : 0),
@@ -3886,7 +4056,7 @@
                 + 'Se borrará todo lo guardado en packing: borradores, clamshells, tiempos, control, cola pendiente e historial local.'
                 + '</p>'
                 + '<p style="margin:0;font-size:13px;color:#64748b;line-height:1.4;">'
-                + 'La app se recargará. Al elegir una muestra, trazabilidad y responsable pueden volver desde la planilla.'
+                + 'La app se recargará. Los chips de trazabilidad pueden volver desde la planilla; responsable y hora de packing quedan vacíos para capturar de nuevo.'
                 + '</p>',
             showCancelButton: true,
             confirmButtonText: 'Sí, borrar',
@@ -3903,6 +4073,11 @@
         try { localStorage.removeItem(SYNC_QUEUE_KEY); } catch (_) { /* ignore */ }
         try { localStorage.removeItem(SYNC_HISTORY_KEY); } catch (_) { /* ignore */ }
         try { localStorage.removeItem(PACKING_CHIPS_COLLAPSED_KEY); } catch (_) { /* ignore */ }
+        try {
+            if (window.HistPdfStore && typeof window.HistPdfStore.borrarTodo === 'function') {
+                await window.HistPdfStore.borrarTodo();
+            }
+        } catch (_) { /* ignore */ }
 
         packingCards = [];
         packingActiveCardId = null;
@@ -4048,7 +4223,7 @@
         if (elResponsable) {
             elResponsable.value = String(p.responsable || 'Demo packing');
         }
-        packingNViaje = String(p.nViaje || '').trim();
+        packingNViaje = normalizarNViajePackingInput_(p.nViaje);
         actualizarBtnViajePackingTitulo_();
 
         llenarTiemposDemoPacking(p);
@@ -4436,7 +4611,7 @@
         setResumenVisible(false);
         lastDetallePacking = null;
         setPackingCardHabilitada(false);
-        resetControlGlobalPacking();
+        limpiarUiCapturaMuestraPacking_();
         resetCardsPacking();
         limpiarPreviewChips();
         if (elResponsable) elResponsable.value = '';
@@ -4449,17 +4624,12 @@
         }
         const etapa = String(d.TRAZ_ETAPA ?? '').trim();
         const campo = String(d.TRAZ_CAMPO ?? '').trim();
-        const turno = String(d.TRAZ_LIBRE ?? '').trim();
+        const turno = String(d.TRAZ_TURNO ?? d.TRAZ_LIBRE ?? '').trim();
         const traz = [etapa, campo, turno].filter(Boolean).join('-');
 
         setChip(previewIds.traz, traz, !traz, 'packing-chip-value--traz');
         setChip(previewIds.variedad, d.VARIEDAD, !String(d.VARIEDAD ?? '').trim());
         setChip(previewIds.placa, d.PLACA_VEHICULO, !String(d.PLACA_VEHICULO ?? '').trim());
-
-        if (elResponsable) {
-            const resp = String(d.RESPONSABLE ?? '').trim();
-            if (resp) elResponsable.value = resp;
-        }
 
         aplicarCuotaDesdeDetalle(d);
         registrarQuotaServidorMuestraPacking_(elFecha?.value, elMuestra?.value, d);
@@ -4477,7 +4647,9 @@
             aplicarEstadoMuestraPacking(borrador, { skipPreview: true });
         } else {
             limpiarUiCapturaMuestraPacking_();
-            packingNViaje = textoMetaCampoPdfPacking_(d.N_VIAJE ?? d.n_viaje) || '';
+            packingNViaje = normalizarNViajePackingInput_(
+                textoMetaCampoPdfPacking_(d.N_VIAJE ?? d.n_viaje)
+            );
             actualizarBtnViajePackingTitulo_();
             reiniciarCardsPacking();
         }
@@ -4665,7 +4837,6 @@
         } finally {
             packingOmitirAutoguardado = false;
             if (!sinOverlay) setPreviewLoading(false);
-            guardarBorradorMuestraActivaInmediato_();
         }
     }
 
@@ -4843,11 +5014,20 @@
     elResponsable?.addEventListener('change', programarGuardadoBorradorPacking);
     elResponsable?.addEventListener('input', programarGuardadoBorradorPacking);
 
+    elViajeInputPacking?.addEventListener('input', () => {
+        if (!elViajeInputPacking) return;
+        const v = normalizarNViajePackingInput_(elViajeInputPacking.value);
+        if (elViajeInputPacking.value !== v) elViajeInputPacking.value = v;
+    });
+
     elMuestra?.addEventListener('focus', () => {
         packingMuestraAnterior = elMuestra?.value || '';
     });
 
     elMuestra?.addEventListener('change', () => {
+        if (window.Swal && typeof window.Swal.close === 'function') {
+            window.Swal.close();
+        }
         packingBadgeWasComplete = false;
         const fecha = elFecha?.value || '';
         const raw = elMuestra?.value || '';
@@ -4872,6 +5052,7 @@
             limpiarPreview();
             return;
         }
+        prepararUiNuevaMuestraPacking_();
         const store = leerStoreBorradorPacking();
         store.activa = claveBorradorMuestraPacking(fecha, raw);
         escribirStoreBorradorPacking(store);
@@ -4973,6 +5154,10 @@
     }
 
     function rotuloMuestraPdfPacking_(ensayoNumero, ensayoNombre) {
+        const numEnsayo = Number(String(ensayoNumero ?? '').trim());
+        if (Number.isFinite(numEnsayo) && numEnsayo > 0) {
+            return 'Ensayo ' + numEnsayo;
+        }
         const nombre = String(ensayoNombre || '').trim();
         if (nombre && !/^\d+$/.test(nombre)) return nombre;
         const n = String(ensayoNumero || nombre || '').trim();
@@ -4985,14 +5170,34 @@
         return 'Ensayo ' + n;
     }
 
+    function ordenarMuestrasPdfPackingPorEnsayo_(muestras) {
+        return (muestras || []).slice().sort((a, b) => {
+            const na = Number(a?.ensayo) || 0;
+            const nb = Number(b?.ensayo) || 0;
+            return na - nb;
+        });
+    }
+
+    function deduplicarMuestrasPdfPackingPorEnsayo_(muestras) {
+        const seen = new Set();
+        const out = [];
+        ordenarMuestrasPdfPackingPorEnsayo_(muestras).forEach((m) => {
+            const key = String(m?.ensayo || '').trim();
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            out.push(m);
+        });
+        return out;
+    }
+
     function metaTrazDesdeDetallePdfPacking_(detalle, previewMeta, nViajeEstado) {
         const d = detalle && typeof detalle === 'object' ? detalle : {};
         const meta = previewMeta && typeof previewMeta === 'object' ? previewMeta : {};
         const viaje = viajePdfDesdeFuentesPacking_(nViajeEstado, meta, d);
-        if (d.TRAZ_ETAPA != null || d.TRAZ_CAMPO != null || d.TRAZ_LIBRE != null) {
+        if (d.TRAZ_ETAPA != null || d.TRAZ_CAMPO != null || d.TRAZ_TURNO != null || d.TRAZ_LIBRE != null) {
             const etapa = String(d.TRAZ_ETAPA ?? '').trim();
             const campo = String(d.TRAZ_CAMPO ?? '').trim();
-            const turno = String(d.TRAZ_LIBRE ?? '').trim();
+            const turno = String(d.TRAZ_TURNO ?? d.TRAZ_LIBRE ?? '').trim();
             return {
                 etapa,
                 campo,
@@ -5068,6 +5273,7 @@
                 fecha: fechaPdf,
                 trazabilidad: trazMeta.traz,
                 trazabilidadArchivo: trazMeta.traz,
+                rotulo: metaBase.rotulo,
                 responsable,
                 numMuestra: String(numMuestra || '').trim()
             },
@@ -5168,48 +5374,123 @@
 
     /** Sin red: asegura meta Campo en caché local (muestra activa + borradores). */
     function asegurarDetalleMetaLocalParaPdf_() {
-        guardarBorradorMuestraActivaInmediato_();
-        const fecha = normalizarFechaIso(elFecha?.value);
         const rawActivo = String(elMuestra?.value || '').trim();
+        if (rawActivo && !muestraPackingYaCompletaEnServidor_(rawActivo)) {
+            guardarBorradorMuestraActivaInmediato_();
+        }
+        const fecha = normalizarFechaIso(elFecha?.value);
         if (rawActivo && lastDetallePacking) {
             registrarDetalleMetaPacking_(fecha, rawActivo, lastDetallePacking);
         }
     }
 
+    window.obtenerDatosPdfPackingParaCapturas = function obtenerDatosPdfPackingParaCapturas(capturas) {
+        const lista = (Array.isArray(capturas) ? capturas : []).filter((c) => c && c.estado);
+        const muestras = [];
+        lista.forEach((c) => {
+            if (!hayPesoBrutoMuestraPacking(c.estado)) {
+                throw new Error(mensajeSinPesoBrutoPdfPacking_(
+                    textoSelectMuestra(c.num_muestra, c.ensayo_numero)
+                ));
+            }
+            const detalle = leerDetalleMetaPacking_(c.raw || ((c.num_muestra && c.ensayo_numero)
+                ? (c.num_muestra + '|' + c.ensayo_numero)
+                : ''));
+            muestras.push(construirDatosPdfPackingDesdeEstado_(
+                c.num_muestra,
+                c.ensayo_numero,
+                c.estado,
+                detalle
+            ));
+        });
+        if (!muestras.length) {
+            throw new Error(mensajeSinPesoBrutoPdfPacking_());
+        }
+        const muestrasUnicas = deduplicarMuestrasPdfPackingPorEnsayo_(muestras);
+        return {
+            muestras: agruparMuestrasEnHojasPdfPacking_(muestrasUnicas),
+            muestrasTitulo: muestrasUnicas.slice()
+        };
+    };
+
     window.obtenerDatosPdfPacking = function obtenerDatosPdfPacking() {
         asegurarDetalleMetaLocalParaPdf_();
         const rawActivo = String(elMuestra?.value || '').trim();
-        const items = ordenarMuestrasPackingPorEnsayo_(
-            muestrasEnUsoPackingDelDia_().map((raw) => {
-                const parts = String(raw || '').split('|');
-                return {
-                    raw,
-                    num_muestra: parts[0] || '',
-                    ensayo_numero: parts[1] || ''
-                };
-            }).filter((item) => item.num_muestra && item.ensayo_numero)
+        const activoYaEnPlanilla = rawActivo && muestraPackingYaCompletaEnServidor_(rawActivo);
+        const items = deduplicarItemsMuestraPacking_(
+            ordenarMuestrasPackingPorEnsayo_(
+                muestrasPendientesPdfPackingDelDia_().map((raw) => {
+                    const parts = String(raw || '').split('|');
+                    return {
+                        raw,
+                        num_muestra: parts[0] || '',
+                        ensayo_numero: parts[1] || ''
+                    };
+                }).filter((item) => item.num_muestra && item.ensayo_numero)
+            )
         );
-        if (!items.length) {
-            throw new Error('Selecciona una muestra y captura datos antes de generar el PDF.');
+        if (rawActivo && !activoYaEnPlanilla && !items.some((item) => item.raw === rawActivo)) {
+            const parts = rawActivo.split('|');
+            items.push({
+                raw: rawActivo,
+                num_muestra: parts[0] || '',
+                ensayo_numero: parts[1] || ''
+            });
         }
-        const muestras = items.map((item) => {
-            const cap = capturaEstadoMuestraParaEnvio_(item.raw);
-            if (!cap || !hayDatosTrabajoMuestraPacking(cap.estado)) {
+        if (!items.length) {
+            if (activoYaEnPlanilla) {
                 throw new Error(
-                    'Sin datos de packing en '
-                    + textoSelectMuestra(item.num_muestra, item.ensayo_numero)
-                    + '.'
+                    'La muestra seleccionada ya está en la planilla. '
+                    + 'Su PDF se guardó al enviar; ábrelo desde Historial. '
+                    + 'Selecciona la siguiente muestra y captura datos para un PDF nuevo.'
                 );
             }
+            throw new Error('Selecciona una muestra y captura datos antes de generar el PDF.');
+        }
+        const muestras = [];
+        let activoSinPeso = false;
+        let activoSinDatos = false;
+        items.forEach((item) => {
+            const esActivo = item.raw === rawActivo;
+            const cap = capturaEstadoMuestraParaEnvio_(item.raw);
+            if (!cap || !hayDatosTrabajoMuestraPacking(cap.estado)) {
+                if (esActivo) activoSinDatos = true;
+                return;
+            }
+            if (!hayPesoBrutoMuestraPacking(cap.estado)) {
+                if (esActivo) activoSinPeso = true;
+                return;
+            }
             const detalle = leerDetalleMetaPacking_(item.raw);
-            return construirDatosPdfPackingDesdeEstado_(
+            muestras.push(construirDatosPdfPackingDesdeEstado_(
                 item.num_muestra,
                 item.ensayo_numero,
                 cap.estado,
                 detalle
-            );
+            ));
         });
-        return { muestras: agruparMuestrasEnHojasPdfPacking_(muestras) };
+        if (!muestras.length) {
+            if (activoSinPeso && rawActivo) {
+                const parts = rawActivo.split('|');
+                throw new Error(mensajeSinPesoBrutoPdfPacking_(
+                    textoSelectMuestra(parts[0] || '', parts[1] || '')
+                ));
+            }
+            if (activoSinDatos && rawActivo) {
+                const parts = rawActivo.split('|');
+                throw new Error(
+                    'Sin datos de packing en '
+                    + textoSelectMuestra(parts[0] || '', parts[1] || '')
+                    + '.'
+                );
+            }
+            throw new Error(mensajeSinPesoBrutoPdfPacking_());
+        }
+        const muestrasUnicas = deduplicarMuestrasPdfPackingPorEnsayo_(muestras);
+        return {
+            muestras: agruparMuestrasEnHojasPdfPacking_(muestrasUnicas),
+            muestrasTitulo: muestrasUnicas.slice()
+        };
     };
 
     window.PackingContext = {
@@ -5264,7 +5545,8 @@
         window.CustomTimePicker.init(document.getElementById('packing-main') || document);
     }
 
-    initHoraInicio();
+    asegurarHoraInicioAlEnfocarPacking_();
+    purgarBorradoresFantasmaPacking_();
     actualizarHeaderConexion();
     actualizarHeaderPendientes();
     initFechaInput();
@@ -5272,7 +5554,6 @@
     limpiarPreview();
     syncPackingFoldBtnAnchor();
 
-    if (elFecha?.value) void cargarMuestrasPorFecha(elFecha.value);
     void acotarFechaDesdePlanilla().then(() => {
         if (elFecha?.value) void cargarMuestrasPorFecha(elFecha.value);
     });

@@ -91,6 +91,10 @@
                                         <option value="Ensayo 4">Muestra 4</option>
                                         <option value="Ensayo 5">Muestra 5</option>
                                         <option value="Ensayo 6">Muestra 6</option>
+                                        <option value="Ensayo 7">Muestra 7</option>
+                                        <option value="Ensayo 8">Muestra 8</option>
+                                        <option value="Ensayo 9">Muestra 9</option>
+                                        <option value="Ensayo 10">Muestra 10</option>
                                     </select>
                                 </div>
                                 <div>
@@ -421,7 +425,7 @@
     <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
         <div class="modal-content pdf-modal-content">
             <div class="pdf-modal-head">
-                <h2 id="pdf-modal-title">Vista previa PDF</h2>
+                <div id="pdf-modal-title" class="pdf-modal-title-wrap" role="heading" aria-level="2">Vista previa PDF</div>
                 <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
                     <i data-lucide="x"></i>
                 </button>
@@ -493,7 +497,10 @@
     <script src="../app.js" charset="utf-8"></script>
     <script src="../librerias/jspdf.umd.min.js"></script>
     <script src="../librerias/pdf.min.js"></script>
+    <script src="../pdf-nombre.js"></script>
     <script src="../campo-pdf.js"></script>
+    <script src="../hist-pdf-store.js"></script>
+    <script src="../hist-pdf-envio.js"></script>
     <script src="../network.js"></script>
     <script src="../script.js"></script>
 </body>

@@ -354,22 +354,27 @@
         return [];
     }
 
-    function nombreArchivoPdf(datos) {
-        const lista = normalizarListaDatosPdfPacking_(datos);
-        const primero = lista[0] || datos || {};
-        const f = txt(primero?.fecha || primero?.meta?.fecha || '').replace(/\//g, '-').replace(/\./g, '-');
-        const parteFecha = f || 'sin-fecha';
-        if (lista.length > 1) {
-            const nums = lista
-                .map((d) => txt(d?.meta?.numMuestra || d?.ensayo || '').trim())
-                .filter(Boolean)
-                .join('-');
-            return `${parteFecha}_packing-${nums || lista.length + '-muestras'}.pdf`;
+    function normalizarListaTituloPdfPacking_(datos) {
+        if (Array.isArray(datos?.muestrasTitulo) && datos.muestrasTitulo.length) {
+            return datos.muestrasTitulo;
         }
-        const trazRaw = txt(primero?.meta?.trazabilidadArchivo || primero?.meta?.trazabilidad || '').split(' / ')[0].trim();
-        const traz = trazRaw.replace(/\s+/g, '').replace(/[\\/:*?"<>|]+/g, '-');
-        const parteTraz = traz || 'sin-traz';
-        return `${parteFecha}_${parteTraz}.pdf`;
+        return normalizarListaDatosPdfPacking_(datos);
+    }
+
+    function sufijoNombrePdfPacking_(nombreBase) {
+        const s = String(nombreBase || 'muestra.pdf').trim();
+        if (/ \(PACKING\)\.pdf$/i.test(s)) return s;
+        if (/\.pdf$/i.test(s)) return s.replace(/\.pdf$/i, ' (PACKING).pdf');
+        return s + ' (PACKING).pdf';
+    }
+
+    function nombreArchivoPdf(datos) {
+        const lista = normalizarListaTituloPdfPacking_(datos);
+        let base = 'muestra.pdf';
+        if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function') {
+            base = window.nombreArchivoPdfDesdeListaMuestras(lista);
+        }
+        return sufijoNombrePdfPacking_(base);
     }
 
     function pesosColumnas(weights, totalW) {
@@ -1169,9 +1174,22 @@
         window.open(pdfUrlActual, '_blank', 'noopener,noreferrer');
     }
 
-    async function abrirModalPdf(blob, nombre) {
+    function actualizarTituloModalPdf_(nombre, datosPdf) {
+        if (typeof window.actualizarTituloModalPdf === 'function') {
+            window.actualizarTituloModalPdf(nombre, datosPdf);
+            return;
+        }
+        const titleEl = document.getElementById('pdf-modal-title');
+        if (!titleEl) return;
+        const nom = String(nombre || 'muestra.pdf').trim();
+        titleEl.textContent = nom.replace(/\.pdf$/i, '');
+        titleEl.title = titleEl.textContent;
+    }
+
+    async function abrirModalPdf(blob, nombre, datosPdf) {
         pdfBlobActual = blob;
         pdfNombreActual = nombre || 'medicion-recepcion-arandano.pdf';
+        actualizarTituloModalPdf_(pdfNombreActual, datosPdf);
         const ov = document.getElementById('pdf-modal-overlay');
         if (!ov) return;
         revocarPdfUrlActual();
@@ -1228,11 +1246,16 @@
             }
             const datos = window.obtenerDatosPdfPacking();
             const blob = await generarPdfPackingBlob(datos);
-            abrirModalPdf(blob, nombreArchivoPdf(datos));
+            abrirModalPdf(blob, nombreArchivoPdf(datos), datos);
         } catch (e) {
             const msg = e && e.message ? e.message : 'No se pudo generar el PDF.';
+            const sinPeso = /PESO BRUTO MUESTRA/i.test(msg);
             if (window.Swal) {
-                window.Swal.fire({ icon: 'error', title: 'Error al generar PDF', text: msg });
+                window.Swal.fire({
+                    icon: sinPeso ? 'warning' : 'error',
+                    title: sinPeso ? 'Sin pesos en la muestra' : 'Error al generar PDF',
+                    text: msg
+                });
             } else {
                 window.alert(msg);
             }
@@ -1267,4 +1290,6 @@
     }
 
     window.generarYMostrarPdfPacking = generarYMostrarPdfPacking;
+    window.generarPdfPackingBlob = generarPdfPackingBlob;
+    window.nombreArchivoPdfPacking = nombreArchivoPdf;
 })();

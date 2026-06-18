@@ -7,6 +7,8 @@
         if (String(window.CAMPO_REGISTRO_MODO || '').trim() === 'acopio') return '../';
         const path = String(window.location.pathname || '').replace(/\\/g, '/');
         if (/\/acopio(\/|$)/i.test(path)) return '../';
+        if (/\/historial(\/|$)/i.test(path)) return '../';
+        if (/\/packing(\/|$)/i.test(path)) return '../';
         return './';
     }
 
@@ -48,6 +50,7 @@
     let pdfUrlActual = null;
     let pdfjsLibInited = false;
     let pdfPreviewSession = null;
+    let pdfVisorModalInited = false;
     const pdfZoomState = { scale: 1, min: 0.6, max: 4, step: 0.35 };
     const PDF_PREVIEW_DPR = () => Math.min(window.devicePixelRatio || 1, 3);
 
@@ -201,26 +204,10 @@
 
     function nombreArchivoPdf(datos) {
         const lista = normalizarListaDatosPdfCampo_(datos);
-        const primero = lista[0] || datos || {};
-        const f = txt(primero?.fecha || primero?.meta?.fecha || datos?.fecha || '')
-            .replace(/\//g, '-')
-            .replace(/\./g, '-');
-        const parteFecha = f || 'sin-fecha';
-        if (lista.length > 1) {
-            const nums = lista
-                .map((d) => txt(d?.meta?.numMuestra || '').trim())
-                .filter(Boolean)
-                .join('-');
-            return `${parteFecha}_campo-${nums || `${lista.length}-muestras`}.pdf`;
+        if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function') {
+            return window.nombreArchivoPdfDesdeListaMuestras(lista);
         }
-        const trazRaw = txt(primero?.meta?.trazabilidadArchivo || primero?.meta?.trazabilidad || '')
-            .split(' / ')[0]
-            .trim();
-        const traz = trazRaw
-            .replace(/\s+/g, '')
-            .replace(/[\\/:*?"<>|]+/g, '-');
-        const parteTraz = traz || 'sin-traz';
-        return `${parteFecha}_${parteTraz}.pdf`;
+        return 'muestra.pdf';
     }
 
     function pesosColumnas(weights, totalW) {
@@ -956,15 +943,23 @@
         doc.text('Supervisor de Calidad-Packing', m + W - 42, ySigLine + 8.5, { align: 'center' });
     }
 
+    function mensajePdfCampoSinDatos_() {
+        const acopio = String(window.CAMPO_REGISTRO_MODO || '').trim() === 'acopio'
+            || /\/acopio(\/|$)/i.test(String(window.location.pathname || ''));
+        if (acopio) {
+            return 'Para generar el PDF, agrega al menos un peso en un clamshell (Peso 4 y Peso 5) '
+                + 'o completa datos importantes como temperatura y humedad en la muestra activa.';
+        }
+        return 'Para generar el PDF, agrega al menos un peso en un clamshell (Peso 1 u otro) '
+            + 'o completa datos importantes como temperatura y humedad en la muestra activa.';
+    }
+
     async function generarPdfCampoBlob(datos) {
         const JsPDF = obtenerJsPDF();
         if (!JsPDF) throw new Error('jsPDF no está cargado');
         const lista = normalizarListaDatosPdfCampo_(datos);
         if (!lista.length) {
-            throw new Error(
-                'No hay muestras en curso con datos para generar el PDF. '
-                + 'Registra al menos una muestra activa.'
-            );
+            throw new Error(mensajePdfCampoSinDatos_());
         }
         const logoUrl = await cargarLogoDataUrl();
         const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -982,10 +977,21 @@
     const GRIS_AVANCE = { r: 241, g: 245, b: 249 };
 
     function nombreArchivoPdfAvance(datos) {
-        const f = txt(datos?.fecha || '').replace(/\//g, '-');
-        const num = txt(datos?.muestras?.[0]?.meta?.numMuestra || '').replace(/\s+/g, '');
-        const ensayo = txt(datos?.muestras?.[0]?.meta?.muestraLabel || '').replace(/\s+/g, '-');
-        return `avance-packing_${f || 'fecha'}_${num || ensayo || 'muestra'}.pdf`;
+        const lista = Array.isArray(datos?.muestras) ? datos.muestras : [];
+        if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function' && lista.length) {
+            return window.nombreArchivoPdfDesdeListaMuestras(lista.map((bloque) => ({
+                ensayo: bloque.ensayo,
+                muestraLabel: bloque.meta?.muestraLabel,
+                fecha: datos?.fecha,
+                meta: {
+                    ...(bloque.meta || {}),
+                    rotulo: bloque.meta?.muestraLabel || bloque.meta?.rotulo,
+                    trazabilidadArchivo: bloque.meta?.trazabilidadArchivo || bloque.meta?.trazabilidad,
+                    fecha: datos?.fecha || bloque.meta?.fecha
+                }
+            })));
+        }
+        return 'muestra.pdf';
     }
 
     function textoResumenWhatsAppAvance(datos) {
@@ -1263,9 +1269,7 @@
         const nombre = nombreArchivoPdfAvance(datos);
         const mensaje = textoResumenWhatsAppAvance(datos);
         pdfMensajeWhatsAppActual = mensaje;
-        const titleEl = document.getElementById('pdf-modal-title');
-        if (titleEl) titleEl.textContent = 'Avance para Packing';
-        const modalPromise = abrirModalPdf(blob, nombre);
+        const modalPromise = abrirModalPdf(blob, nombre, datos);
         const wspPromise = compartirPdfPorWhatsApp(blob, nombre, mensaje);
         await Promise.all([modalPromise, wspPromise]);
         return true;
@@ -1540,9 +1544,22 @@
         window.open(pdfUrlActual, '_blank', 'noopener,noreferrer');
     }
 
-    async function abrirModalPdf(blob, nombre) {
+    function actualizarTituloModalPdf_(nombre, datosPdf) {
+        if (typeof window.actualizarTituloModalPdf === 'function') {
+            window.actualizarTituloModalPdf(nombre, datosPdf);
+            return;
+        }
+        const titleEl = document.getElementById('pdf-modal-title');
+        if (!titleEl) return;
+        const nom = String(nombre || 'muestra.pdf').trim();
+        titleEl.textContent = nom.replace(/\.pdf$/i, '');
+        titleEl.title = titleEl.textContent;
+    }
+
+    async function abrirModalPdf(blob, nombre, datosPdf) {
         pdfBlobActual = blob;
         pdfNombreActual = nombre || 'medicion-arandano.pdf';
+        actualizarTituloModalPdf_(pdfNombreActual, datosPdf);
         const ov = document.getElementById('pdf-modal-overlay');
         if (!ov) return;
         revocarPdfUrlActual();
@@ -1585,11 +1602,9 @@
                 throw new Error('Biblioteca PDF no cargada. Conéctate una vez a internet para precargar.');
             }
             pdfMensajeWhatsAppActual = '';
-            const titleEl = document.getElementById('pdf-modal-title');
-            if (titleEl) titleEl.textContent = 'Vista previa PDF';
             const datos = window.obtenerDatosPdfCampo();
             const blob = await generarPdfCampoBlob(datos);
-            abrirModalPdf(blob, nombreArchivoPdf(datos));
+            abrirModalPdf(blob, nombreArchivoPdf(datos), datos);
         } catch (e) {
             const msg = e && e.message ? e.message : 'No se pudo generar el PDF.';
             if (window.Swal) {
@@ -1602,12 +1617,10 @@
         }
     }
 
-    function initCampoPdf() {
-        precalentarPdfAvancePacking();
+    function initPdfVisorModalCampo_() {
+        if (pdfVisorModalInited) return;
+        pdfVisorModalInited = true;
         enlazarZoomVistaPreviaPdf();
-        document.getElementById('fab-pdf-btn')?.addEventListener('click', () => {
-            void generarYMostrarPdfCampo();
-        });
         document.getElementById('pdf-btn-cerrar')?.addEventListener('click', cerrarModalPdf);
         document.getElementById('pdf-btn-descargar')?.addEventListener('click', descargarPdfActual);
         document.getElementById('pdf-btn-abrir')?.addEventListener('click', abrirPdfEnVisorExterno);
@@ -1622,6 +1635,14 @@
         });
     }
 
+    function initCampoPdf() {
+        precalentarPdfAvancePacking();
+        initPdfVisorModalCampo_();
+        document.getElementById('fab-pdf-btn')?.addEventListener('click', () => {
+            void generarYMostrarPdfCampo();
+        });
+    }
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initCampoPdf);
     } else {
@@ -1632,4 +1653,9 @@
     window.generarYEnviarPdfAvancePacking = generarYEnviarPdfAvancePacking;
     window.generarPdfAvancePackingBlob = generarPdfAvancePackingBlob;
     window.precalentarPdfAvancePacking = precalentarPdfAvancePacking;
+    window.generarPdfCampoBlob = generarPdfCampoBlob;
+    window.nombreArchivoPdfCampo = nombreArchivoPdf;
+    window.abrirModalPdfCampo = abrirModalPdf;
+    window.cerrarModalPdfCampo = cerrarModalPdf;
+    window.initPdfVisorModalCampo = initPdfVisorModalCampo_;
 })();

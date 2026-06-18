@@ -1,9 +1,9 @@
 /**
  * Google Apps Script - MTTP Arándano
  * Recibe datos del formulario y los escribe en la hoja activa.
- * Hoja 1 (Visual): 50 cols registro (5 pesos + 6 tiempos) + packing desde col 51.
- * Hoja 3 (Acopio): misma estructura; encabezados de peso/tiempo acopio. Hoja 2 / Hoja 4 = jarras.
- * NUM_MUESTRA: secuencia global única (max Hoja 1 + Hoja 3 + watermark).
+ * VISUAL (índice 0): 50 cols registro (5 pesos + 6 tiempos) + packing desde col 51.
+ * ACOPIO (índice 2): misma estructura; encabezados de peso/tiempo acopio. TIEMPOS V. / TIEMPOS A. = jarras.
+ * NUM_MUESTRA: secuencia global única (max VISUAL + ACOPIO + watermark).
  *
  * ANTI-DUPLICADOS: UID + clave de fila normalizada.
  *
@@ -28,16 +28,24 @@ var IDX_COL_PESO_DESPACHO = 20;
 /** Máximo NUM_MUESTRA “consumido” en el tiempo; solo sube (borrar filas en hoja no retrocede la secuencia). */
 var NUM_MUESTRA_WATERMARK_KEY = 'mtpp_num_muestra_watermark_v1';
 
-/** Visual: Hoja 1 (índice 0) + Hoja 2 (1). Acopio: Hoja 3 (2) + Hoja 4 (3). */
+/** Visual: VISUAL (0) + TIEMPOS V. (1). Acopio: ACOPIO (2) + TIEMPOS A. (3). */
 var SHEET_IDX_VISUAL_REGISTRO = 0;
 var SHEET_IDX_VISUAL_JARRAS = 1;
 var SHEET_IDX_ACOPIO_REGISTRO = 2;
 var SHEET_IDX_ACOPIO_JARRAS = 3;
 
+/** Nombres de pestañas en la planilla (orden = índice de hoja). */
+var SHEET_NOMBRES = ['VISUAL', 'TIEMPOS V.', 'ACOPIO', 'TIEMPOS A.'];
+
+function nombreHojaPorIndice_(idx) {
+  if (idx >= 0 && idx < SHEET_NOMBRES.length) return SHEET_NOMBRES[idx];
+  return 'Hoja ' + (idx + 1);
+}
+
 function getRegistroHeadersHoja1_() {
   return [
     "FECHA", "ENSAYO_NOMBRE", "NUM_MUESTRA", "RESPONSABLE", "DIAS_PRECOSECHA", "HORA_INICIO_GENERAL", "FUNDO",
-    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_LIBRE", "VARIEDAD", "GUIA_REMISION", "PLACA_VEHICULO",     "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
+    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_TURNO", "VARIEDAD", "GUIA_REMISION", "PLACA_VEHICULO",     "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
     "PESO_1", "PESO_2", "LLEGADA_ACOPIO", "PESO_RESERVA", "DESPACHO_ACOPIO",
     "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
     "TEMP_MUE_LLEGADA_AMB", "TEMP_MUE_LLEGADA_PUL", "TEMP_MUE_DESPACHO_AMB", "TEMP_MUE_DESPACHO_PUL",
@@ -50,12 +58,12 @@ function getRegistroHeadersHoja1_() {
 }
 
 /**
- * Hoja 3 (Acopio): 50 columnas — 5 pesos + 6 tiempos (modal Acopio / PDF PE-F-QPH-305).
+ * Hoja ACOPIO: 50 columnas — 5 pesos + 6 tiempos (modal Acopio / PDF PE-F-QPH-305).
  */
 function getRegistroHeadersHoja3Acopio_() {
   return [
     "FECHA", "ENSAYO_NOMBRE", "NUM_MUESTRA", "RESPONSABLE", "DIAS_PRECOSECHA", "HORA_INICIO_GENERAL", "FUNDO",
-    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_LIBRE", "VARIEDAD", "GUIA_REMISION_ACOPIO_CAMPO", "PLACA_VEHICULO",
+    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_TURNO", "VARIEDAD", "GUIA_REMISION_ACOPIO_CAMPO", "PLACA_VEHICULO",
     "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
     "PESO_1_TERMINO_COSECHA", "PESO_2_LLEGADA_ACOPIO", "PESO_3_ACOPIO_CALIBRADO", "PESO_4_CLAMSHELL_CALIBRADO", "PESO_5_DESPACHO_CAMPO",
     "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
@@ -69,7 +77,7 @@ function getRegistroHeadersHoja3Acopio_() {
   ];
 }
 
-/** Hoja 2 (Visual) y Hoja 4 (Acopio): tiempos de llenado de jarras — mismos encabezados. */
+/** TIEMPOS V. (Visual) y TIEMPOS A. (Acopio): tiempos de llenado de jarras — mismos encabezados. */
 function getRegistroHeadersHojaJarras_() {
   return [
     "FECHA", "ENSAYO_NUMERO", "N_JARRA",
@@ -95,13 +103,11 @@ function indiceHojaRegistroJarras_(esAcopio) {
 function obtenerHojaPorIndice_(ss, idx) {
   var sheets = ss.getSheets();
   while (sheets.length <= idx) {
-    ss.insertSheet('Hoja ' + (sheets.length + 1));
+    ss.insertSheet(nombreHojaPorIndice_(sheets.length));
     sheets = ss.getSheets();
   }
   var sh = sheets[idx];
-  var nombreEsperado = '';
-  if (idx === SHEET_IDX_ACOPIO_REGISTRO) nombreEsperado = 'Hoja 3';
-  else if (idx === SHEET_IDX_ACOPIO_JARRAS) nombreEsperado = 'Hoja 4';
+  var nombreEsperado = nombreHojaPorIndice_(idx);
   if (nombreEsperado && sh.getName() !== nombreEsperado) {
     try {
       sh.setName(nombreEsperado);
@@ -110,7 +116,14 @@ function obtenerHojaPorIndice_(ss, idx) {
   return sh;
 }
 
-/** Hojas con columna NUM_MUESTRA (Visual H1 + Acopio H3). */
+/** Renombra las 4 pestañas principales si aún tienen nombres genéricos (Hoja 1…4). */
+function asegurarNombresHojasPlanilla_(ss) {
+  for (var i = 0; i < SHEET_NOMBRES.length; i++) {
+    obtenerHojaPorIndice_(ss, i);
+  }
+}
+
+/** Hojas con columna NUM_MUESTRA (VISUAL + ACOPIO). */
 function hojasRegistroNumMuestra_(ss) {
   var sheets = ss.getSheets();
   var out = [];
@@ -140,7 +153,7 @@ function ultimoNumMuestraCeldaGlobal_(ss) {
 }
 
 /**
- * Próximo NUM_MUESTRA global (Hoja 1 + Hoja 3 + watermark al guardar).
+ * Próximo NUM_MUESTRA global (VISUAL + ACOPIO + watermark al guardar).
  * @param {boolean} soloDesdeHoja Si true: solo datos en hojas (consultas app). Si false: incluye watermark.
  */
 function resolverProximoNumMuestraJsonGlobal_(ss, soloDesdeHoja) {
@@ -214,6 +227,13 @@ function migrarRegistro48a50Cols_(sheet) {
   }
 }
 
+/** Renombra encabezado legacy TRAZ_LIBRE → TRAZ_TURNO (col 10). */
+function migrarTrazLibreATrazTurno_(sheet) {
+  if (!sheet || sheet.getLastRow() === 0) return;
+  var h = String(sheet.getRange(1, 10).getValue() || '').trim().toUpperCase();
+  if (h === 'TRAZ_LIBRE') sheet.getRange(1, 10).setValue('TRAZ_TURNO');
+}
+
 function asegurarEncabezadoHoja3Acopio_(sheet) {
   migrarRegistro48a50Cols_(sheet);
   var h = getRegistroHeadersHoja3Acopio_();
@@ -234,6 +254,7 @@ function asegurarEncabezadoHoja3Acopio_(sheet) {
   var p4 = String(sheet.getRange(1, 20).getValue() || "").trim().toUpperCase();
   var tCal = String(sheet.getRange(1, 34).getValue() || "").trim().toUpperCase();
   if (p4 === "PESO_4_CLAMSHELL_CALIBRADO" && tCal === "TIEMPO_TERMINO_CALIBRADO") {
+    migrarTrazLibreATrazTurno_(sheet);
     asegurarEncabezadosPackingEnHoja_(sheet);
     return;
   }
@@ -298,6 +319,7 @@ function asegurarEncabezadoHoja1Registro_(sheet) {
   // Esquema 50 cols: ENSAYO_NOMBRE + GUIA_REMISION + OBSERVACION_FORMATO / HORA_REGISTRO.
   if (b1 === "ENSAYO_NOMBRE" && l1 === "GUIA_REMISION" && h46 === "OBSERVACION" && h47 === "OBSERVACION_FORMATO" && h48 === "HORA_REGISTRO"
       && (pReserva === "PESO_RESERVA" || pReserva === "")) {
+    migrarTrazLibreATrazTurno_(sheet);
     return;
   }
   var viejoB = b1 === "RESPONSABLE" || b1 === "GUIA_REMISION";
@@ -787,7 +809,9 @@ function doPost(e) {
       });
     }
 
-    var sheetVisual = ss.getSheets()[SHEET_IDX_VISUAL_REGISTRO];
+    asegurarNombresHojasPlanilla_(ss);
+
+    var sheetVisual = obtenerHojaPorIndice_(ss, SHEET_IDX_VISUAL_REGISTRO);
     if (data.mode === 'packing') {
       var sheetPack = resolverHojaRegistroPacking_(ss, data);
       var packingResult = doPostPacking(sheetPack, data);
@@ -888,7 +912,7 @@ function doPost(e) {
       return isNaN(n) || n === 0;
     }
 
-    /** Hoja 2/4: solo filas con N° jarra válido (Acopio " - " = vacío, no se guarda). */
+    /** TIEMPOS V. / TIEMPOS A.: solo filas con N° jarra válido (Acopio " - " = vacío, no se guarda). */
     function jarraRegistroTieneValorGs_(v) {
       if (v === null || v === undefined) return false;
       var s = String(v).trim();
@@ -900,11 +924,11 @@ function doPost(e) {
     var minExpanded = REGISTRO_POST_EXPANDED_LEN;
     var nuevasFilas = [];
     var filasHoja2 = [];
-    /** Una fila en Hoja 2/4 por FECHA + ENSAYO + N° jarra (no por clamshell). */
+    /** Una fila en TIEMPOS V. / TIEMPOS A. por FECHA + ENSAYO + N° jarra (no por clamshell). */
     var clavesHojaJarrasVistas = {};
     rows.forEach(function(row) {
       var fila = row.length >= minExpanded ? toRowRegistro(row) : (function() { while (row.length < NUM_COLS) row.push(""); return row.slice(0, NUM_COLS).map(celdaAString); })();
-      aplicarPresionVaporDecimalEnFilaRegistro_(fila);
+      aplicarDecimalesMedicionEnFilaRegistro_(fila);
       var key = buildKey(fila);
       if (existingKeys[key]) return;
       existingKeys[key] = true;
@@ -951,6 +975,9 @@ function doPost(e) {
       // NUM_MUESTRA (col 3) debe mantenerse como texto para conservar ceros a la izquierda (ej: 0001, C260001).
       sheet.getRange(startRow, 3, numRows, 1).setNumberFormat('@');
       sheet.getRange(startRow, 1, numRows, NUM_COLS).setValues(nuevasFilas);
+      sheet.getRange(startRow, 17, numRows, 5).setNumberFormat('0.0');
+      sheet.getRange(startRow, 22, numRows, 8).setNumberFormat('0.0');
+      sheet.getRange(startRow, 36, numRows, 4).setNumberFormat('0.0');
       sheet.getRange(startRow, 40, numRows, 8).setNumberFormat('0.000');
       for (var wmi = 0; wmi < nuevasFilas.length; wmi++) {
         fusionarWatermarkNumMuestra_(parseNumMuestraDigitosGs_(nuevasFilas[wmi][2]));
@@ -1052,26 +1079,49 @@ function formatHoraRegistro_(val) {
 }
 
 /**
- * Presión vapor (Kpa): valor numérico real (ej. 3.453), no texto "3.453".
- * En locale es_* un string con punto se interpreta como miles (3453); por eso se guarda como Number.
+ * Decimal medición (temp, humedad, peso): valor numérico real.
+ * Un string "21.8" en locale es_* puede interpretarse como fecha (21-ago); Number evita eso.
  */
-function normalizarPresionVaporCelda_(v) {
+function normalizarDecimalMedicionCelda_(v, casasDecimales) {
   if (v === null || v === undefined) return "";
   var s = String(v).trim().replace(',', '.');
   if (s === '') return '';
   if (s.charAt(0) === '.') s = '0' + s;
   var n = parseFloat(s);
   if (isNaN(n)) return '';
-  return Math.round(n * 1000) / 1000;
+  var f = casasDecimales === 3 ? 1000 : 10;
+  return Math.round(n * f) / f;
 }
 
-/** Cols presión registro Campo: índices 39–46 (0-based). */
-function aplicarPresionVaporDecimalEnFilaRegistro_(fila) {
+/**
+ * Presión vapor (Kpa): valor numérico real (ej. 3.453), no texto "3.453".
+ * En locale es_* un string con punto se interpreta como miles (3453); por eso se guarda como Number.
+ */
+function normalizarPresionVaporCelda_(v) {
+  return normalizarDecimalMedicionCelda_(v, 3);
+}
+
+/** Pesos, temp, humedad y presión del registro Campo/Acopio (50 cols, índices 0-based). */
+function aplicarDecimalesMedicionEnFilaRegistro_(fila) {
   var i;
+  for (i = 16; i <= 20; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 21; i <= 28; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 35; i <= 38; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
   for (i = 39; i <= 46; i++) {
-    if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 3);
   }
   return fila;
+}
+
+/** @deprecated usar aplicarDecimalesMedicionEnFilaRegistro_ */
+function aplicarPresionVaporDecimalEnFilaRegistro_(fila) {
+  return aplicarDecimalesMedicionEnFilaRegistro_(fila);
 }
 
 /** Temp, humedad y presión packing (fila plana 37): índices 10–34. */
@@ -1362,7 +1412,7 @@ function contarFilasFechaEnsayoEnHoja_(sheet, fecha, ensayoNumero) {
   return n;
 }
 
-/** Fila 1: columnas Packing + Thermo King + C5 (mismas que Hoja 1). */
+/** Fila 1: columnas Packing + Thermo King + C5 (mismas que VISUAL). */
 function asegurarEncabezadosPackingEnHoja_(sheet) {
   if (!sheet) return;
   migrarRegistro48a50Cols_(sheet);
@@ -1394,11 +1444,11 @@ function prepararHojaRegistroCampo_(sheet, esAcopio) {
   }
 }
 
-/** Packing y detalle: Hoja 3 (Acopio) o Hoja 1 (Visual); auto-detecta por fecha+ensayo. */
+/** Packing y detalle: ACOPIO o VISUAL; auto-detecta por fecha+ensayo. */
 function resolverHojaRegistroPacking_(ss, params) {
   var fecha = String((params && params.fecha) || '').trim();
   var ensayo = String((params && params.ensayo_numero) || '').trim();
-  var s1 = ss.getSheets()[SHEET_IDX_VISUAL_REGISTRO];
+  var s1 = obtenerHojaPorIndice_(ss, SHEET_IDX_VISUAL_REGISTRO);
   if (esModoRegistroAcopioPost_(params)) {
     var sAc = obtenerHojaPorIndice_(ss, SHEET_IDX_ACOPIO_REGISTRO);
     prepararHojaRegistroCampo_(sAc, true);
@@ -1421,7 +1471,7 @@ function hojasRegistroConDatos_(ss) {
   return hojasRegistroNumMuestra_(ss);
 }
 
-/** Packing: muestras del día — Hoja 1 (Visual) + Hoja 3 (Acopio), sin duplicar num|ensayo. */
+/** Packing: muestras del día — VISUAL + ACOPIO, sin duplicar num|ensayo. */
 function listadoMuestrasPorFechaGlobal_(ss, fechaRaw) {
   var fechaLm = formatFechaPacking(fechaRaw) || String(fechaRaw || '').trim();
   if (!fechaLm) {
@@ -1464,7 +1514,7 @@ function listadoMuestrasPorFechaGlobal_(ss, fechaRaw) {
   return { ok: true, fecha: fechaLm, muestras: muestrasLm };
 }
 
-/** Solo lectura: Hoja 1 o Hoja 3 donde exista fecha+ensayo (sin migrar ni escribir encabezados). */
+/** Solo lectura: VISUAL o ACOPIO donde exista fecha+ensayo (sin migrar ni escribir encabezados). */
 function encontrarHojaRegistroFechaEnsayo_(ss, fechaNorm, ensayoNorm) {
   var hojas = hojasRegistroNumMuestra_(ss);
   for (var i = 0; i < hojas.length; i++) {
@@ -1577,7 +1627,7 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw) {
       ENSAYO_NUMERO: row[13],
       TRAZ_ETAPA: row[7],
       TRAZ_CAMPO: row[8],
-      TRAZ_LIBRE: row[9],
+      TRAZ_TURNO: row[9],
       VARIEDAD: row[10],
       PLACA_VEHICULO: row[12],
       FUNDO: row[6],
@@ -2018,7 +2068,7 @@ function doGet(e) {
       ENSAYO_NUMERO: row[13],
       TRAZ_ETAPA: row[7],
       TRAZ_CAMPO: row[8],
-      TRAZ_LIBRE: row[9],
+      TRAZ_TURNO: row[9],
       VARIEDAD: row[10],
       PLACA_VEHICULO: row[12],
       FUNDO: row[6],
