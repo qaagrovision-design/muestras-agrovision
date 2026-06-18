@@ -43,14 +43,69 @@ const META_SAVE_IDS = [
                 }
             });
         }
-        const META_STORAGE_KEY = 'tiempos-operativo-meta-v4';
+        const META_STORAGE_KEY_LEGACY = 'tiempos-operativo-meta-v4';
+        const DRAFT_STORAGE_KEY_LEGACY = 'tiempos-draft-full-v1';
         /** Una sola vez por navegador: rellena meta de ejemplo para probar envío (solo campos vacíos). */
         const DEMO_META_CAMPO_SEED_KEY = 'tiempos-demo-meta-campo-seed-v1';
         const SYNC_QUEUE_KEY = 'tiempos-sync-queue-v1';
         const SYNC_HISTORY_KEY = 'tiempos-sync-history-v1';
-        const DRAFT_STORAGE_KEY = 'tiempos-draft-full-v1';
+        const SYNC_ENVIADOS_KEY = 'tiempos-sync-enviados-v1';
+        const DRAFT_STORAGE_KEY = DRAFT_STORAGE_KEY_LEGACY;
+
+        function claveModoCampoActual_() {
+            return esModoRegistroAcopio_() ? 'acopio' : 'visual';
+        }
+
+        function draftStorageKeyCampo_() {
+            return 'tiempos-draft-full-' + claveModoCampoActual_() + '-v1';
+        }
+
+        function metaStorageKeyCampo_() {
+            return 'tiempos-operativo-meta-' + claveModoCampoActual_() + '-v4';
+        }
+
+        function todasClavesDraftCampo_() {
+            return [
+                'tiempos-draft-full-visual-v1',
+                'tiempos-draft-full-acopio-v1',
+                DRAFT_STORAGE_KEY_LEGACY
+            ];
+        }
+
+        function todasClavesMetaCampo_() {
+            return [
+                'tiempos-operativo-meta-visual-v4',
+                'tiempos-operativo-meta-acopio-v4',
+                META_STORAGE_KEY_LEGACY
+            ];
+        }
+
+        function leerDraftRawCampo_() {
+            const key = draftStorageKeyCampo_();
+            try {
+                let raw = localStorage.getItem(key);
+                if (!raw && claveModoCampoActual_() === 'visual') {
+                    raw = localStorage.getItem(DRAFT_STORAGE_KEY_LEGACY);
+                    if (raw) {
+                        localStorage.setItem(key, raw);
+                        localStorage.removeItem(DRAFT_STORAGE_KEY_LEGACY);
+                    }
+                }
+                return raw;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function borradorCampoCoincideModoActual_(d) {
+            if (!d || typeof d !== 'object') return false;
+            const guardado = String(d.modoRegistro || '').trim().toLowerCase();
+            if (!guardado) return true;
+            return guardado === modoRegistroPostBody_();
+        }
         const CLEAN_START_DONE_KEY = 'tiempos-clean-start-done-v2';
         const SYNC_MAX_HISTORY = 80;
+        const SYNC_MAX_ENVIADOS = 48;
         const NUM_MUESTRA_MAX_LEN = 8;
         const REGISTRADOS_HOY_CACHE_KEY = 'tiempos-registrados-hoy-cache-v1';
         const CAMPO_LLENADO_COMPLETO_AVISO_KEY = 'tiempos-campo-llenado-completo-aviso-v1';
@@ -276,11 +331,13 @@ const META_SAVE_IDS = [
             try {
                 const ya = localStorage.getItem(CLEAN_START_DONE_KEY);
                 if (ya === '1') return;
-                localStorage.removeItem(META_STORAGE_KEY);
+                localStorage.removeItem(META_STORAGE_KEY_LEGACY);
+                todasClavesMetaCampo_().forEach((k) => {
+                    try { localStorage.removeItem(k); } catch (_) { /* ignore */ }
+                });
                 localStorage.removeItem(DEMO_META_CAMPO_SEED_KEY);
                 localStorage.removeItem(SYNC_QUEUE_KEY);
                 localStorage.removeItem(SYNC_HISTORY_KEY);
-                localStorage.removeItem(DRAFT_STORAGE_KEY);
                 NUM_MUESTRA_LS_KEYS_A_PURGAR.forEach((k) => localStorage.removeItem(k));
                 localStorage.setItem(CLEAN_START_DONE_KEY, '1');
             } catch (_) { /* ignore */ }
@@ -941,6 +998,71 @@ const META_SAVE_IDS = [
             return recolectarFaltantesCadenaPeso_(cadenaPesoVisualClamshell_(item, n), `Clamshell ${n}`);
         }
 
+        /** Visual: cada peso capturado debe ser ≤ al anterior en la cadena (P1→P2→Llegada→Despacho). */
+        function validarOrdenCadenaPesosVisual_(item, n) {
+            const cadena = cadenaPesoVisualClamshell_(item, n);
+            const vals = [];
+            cadena.forEach((c) => {
+                if (!pesoVacio(c.valor)) vals.push({ k: c.etiqueta, v: Number(c.valor) });
+            });
+            for (let i = 1; i < vals.length; i++) {
+                if (vals[i].v > vals[i - 1].v) {
+                    return `${vals[i].k} debe ser menor o igual a ${vals[i - 1].k}.`;
+                }
+            }
+            return '';
+        }
+
+        function erroresPesosVisualModal_(p1, p2, acopio, despacho, nro) {
+            const item = { p1, p2, acopio, despacho };
+            const completitud = validarSecuenciaCompletaPesosVisual_(item, nro);
+            const msgOrden = validarOrdenCadenaPesosVisual_(item, nro);
+            const orden = msgOrden ? [msgOrden] : [];
+            const vistos = new Set();
+            return [...completitud, ...orden].filter((msg) => {
+                if (vistos.has(msg)) return false;
+                vistos.add(msg);
+                return true;
+            });
+        }
+
+        function validarPesosVisualClamshell_(item, n) {
+            const errs = [];
+            if (!item || esClamshellSinDatos_(item)) return errs;
+            const label = `Clamshell ${n}`;
+            validarSecuenciaCompletaPesosVisual_(item, n).forEach((e) => errs.push(e));
+            const msgOrden = validarOrdenCadenaPesosVisual_(item, n);
+            if (msgOrden) errs.push(`${label}: ${msgOrden}`);
+            cadenaPesoVisualClamshell_(item, n).forEach((c) => {
+                if (pesoVacio(c.valor)) errs.push(`${label}: ${c.etiqueta}`);
+            });
+            return errs;
+        }
+
+        function validarPesosVisualModalEnVivo() {
+            if (esModoRegistroAcopio_()) return [];
+            const itemEdit = editingCardId != null
+                ? data.find((entry) => entry.id === editingCardId)
+                : null;
+            const nroModal = nroClamshellModalActual_(itemEdit);
+            const p1 = Number(elInputPesoModalCampo_('p1')?.value || 0);
+            const p2 = Number(elInputPesoModalCampo_('p2')?.value || 0);
+            const acopio = Number(elInputPesoModalCampo_('acopio')?.value || 0);
+            const despacho = Number(elInputPesoModalCampo_('despacho')?.value || 0);
+            const errores = erroresPesosVisualModal_(p1, p2, acopio, despacho, nroModal);
+            const alertEl = document.getElementById('visual-peso-alert');
+            if (alertEl) {
+                if (errores.length) {
+                    alertEl.textContent = errores[0];
+                    alertEl.style.display = 'block';
+                } else {
+                    alertEl.textContent = '';
+                    alertEl.style.display = 'none';
+                }
+            }
+            return errores;
+        }
+
         function erroresPesosAcopioModal_(p1, p2, p3, p4, p5, nro) {
             const item = { p1, p2, acopio: p3, p4, despacho: p5 };
             const completitud = validarSecuenciaCompletaPesosAcopio_(item, nro);
@@ -995,15 +1117,20 @@ const META_SAVE_IDS = [
             return errores;
         }
 
-        let validacionPesosAcopioModalInit_ = false;
-        function conectarValidacionPesosAcopioModal_() {
-            if (validacionPesosAcopioModalInit_) return;
-            validacionPesosAcopioModalInit_ = true;
+        let validacionPesosModalCampoInit_ = false;
+        function validarPesosModalCampoEnVivo() {
+            if (esModoRegistroAcopio_()) return validarPesosAcopioModalEnVivo();
+            return validarPesosVisualModalEnVivo();
+        }
+
+        function conectarValidacionPesosModalCampo_() {
+            if (validacionPesosModalCampoInit_) return;
+            validacionPesosModalCampoInit_ = true;
             ['p1', 'p2', 'acopio', 'p4', 'despacho'].forEach((campo) => {
                 const inp = elInputPesoModalCampo_(campo);
                 if (!inp) return;
-                inp.addEventListener('input', validarPesosAcopioModalEnVivo);
-                inp.addEventListener('change', validarPesosAcopioModalEnVivo);
+                inp.addEventListener('input', validarPesosModalCampoEnVivo);
+                inp.addEventListener('change', validarPesosModalCampoEnVivo);
             });
             const selJarra = document.getElementById('visual-m-jarra');
             if (selJarra) {
@@ -1235,10 +1362,7 @@ const META_SAVE_IDS = [
                 if (esModoRegistroAcopio_()) {
                     validarPesosAcopioClamshell_(item, n).forEach((e) => faltantes.push(e));
                 } else {
-                    validarSecuenciaCompletaPesosVisual_(item, n).forEach((e) => faltantes.push(e));
-                    cadenaPesoVisualClamshell_(item, n).forEach((c) => {
-                        if (pesoVacio(c.valor)) faltantes.push(`Clamshell ${n}: ${c.etiqueta}`);
-                    });
+                    validarPesosVisualClamshell_(item, n).forEach((e) => faltantes.push(e));
                 }
 
                 const t = item?.metric?.tiempo || {};
@@ -1287,7 +1411,9 @@ const META_SAVE_IDS = [
                 const e = String(it?.ensayo || 'Ensayo 1').trim();
                 if (e) set.add(e);
             });
-            listarEnsayosEnCursoOrdenados().forEach((e) => set.add(e));
+            listarEnsayosEnCursoOrdenados().forEach((e) => {
+                if (ensayoTieneCapturaOCompletoCampo_(e)) set.add(e);
+            });
             Object.keys(metaPorEnsayo || {}).forEach((e) => {
                 if (
                     metaEnsayoCompletaParaOrden(e)
@@ -1953,6 +2079,7 @@ const META_SAVE_IDS = [
             const ids = [
                 'visual-responsable', 'visual-guia-precosecha', 'visual-hora',
                 'visual-meta-fundo', 'visual-meta-variedad', 'visual-traz-etapa', 'visual-traz-campo',
+                'visual-traz-turno', 'visual-traz-acopio',
                 'visual-guia-acopio', 'visual-placa-vehiculo', 'visual-observacion-formato'
             ];
             return ids.some((id) => String(meta[id] || '').trim() !== '');
@@ -2004,7 +2131,10 @@ const META_SAVE_IDS = [
         function cargarMetaDesdeAlmacenamiento() {
             let raw = null;
             try {
-                raw = localStorage.getItem(META_STORAGE_KEY);
+                raw = localStorage.getItem(metaStorageKeyCampo_());
+                if (!raw && claveModoCampoActual_() === 'visual') {
+                    raw = localStorage.getItem(META_STORAGE_KEY_LEGACY);
+                }
             } catch (e) { /* ignore */ }
             if (!raw) return false;
             try {
@@ -2044,7 +2174,7 @@ const META_SAVE_IDS = [
                 porEnsayo: clonarMetaPorEnsayoSinNumeros(metaPorEnsayo)
             };
             try {
-                localStorage.setItem(META_STORAGE_KEY, JSON.stringify(o));
+                localStorage.setItem(metaStorageKeyCampo_(), JSON.stringify(o));
             } catch (e) { /* ignore */ }
             programarGuardadoDraftCompleto();
         }
@@ -3431,7 +3561,14 @@ const META_SAVE_IDS = [
         }
 
         function actualizarBloqueoControlesPorPeso1() {
-            const habilitado = true;
+            let habilitado = true;
+            if (!esModoRegistroAcopio_()) {
+                const lista = clamshellsEnsayoOrdenados(obtenerEnsayoActivo());
+                habilitado = lista.some((it) => {
+                    const n = numeroClamshellPorEnsayo(it);
+                    return !pesoVacio(peso1EfectivoCampo(it, n));
+                });
+            }
             const controlBar = document.querySelector('.control-equitativo-bar');
             if (controlBar) {
                 controlBar.classList.toggle('is-locked', !habilitado);
@@ -3691,21 +3828,79 @@ const META_SAVE_IDS = [
             });
         }
 
+        function filaLlenadoJarraTieneDatosPdf_(fila) {
+            if (!fila) return false;
+            return ['inicio', 'termino', 'jarra', 'traslado', 'obs', 'tipo']
+                .some((k) => String(fila[k] ?? '').trim() !== '');
+        }
+
+        function ensayoTieneFilasLlenadoJarrasConDatos_(ensayo) {
+            const clave = String(ensayo || '').trim();
+            if (!clave) return false;
+            return obtenerFilasLlenadoJarras(clave).some((f) => filaLlenadoJarraTieneDatosPdf_(f));
+        }
+
+        function contarCamposControlMuestraMetrica_(metric) {
+            if (!metric) return 0;
+            const temp = metric.temperatura || {};
+            const hum = metric.humedad || {};
+            let n = 0;
+            ['inicioAmbiente', 'terminoAmbiente', 'llegadaAmbiente', 'despachoAmbiente',
+                'inicioPulpa', 'terminoPulpa', 'llegadaPulpa', 'despachoPulpa']
+                .forEach((k) => { if (String(temp[k] || '').trim() !== '') n++; });
+            ['inicio', 'termino', 'llegada', 'despacho']
+                .forEach((k) => { if (String(hum[k] || '').trim() !== '') n++; });
+            return n;
+        }
+
+        function ensayoTieneCapturaOCompletoCampo_(ensayo) {
+            const clave = String(ensayo || '').trim();
+            if (!clave || ensayoEstaRegistradoHoy(clave)) return false;
+            if (ensayoAportaDatosPdfCampo_(clave)) return true;
+            return metaEnsayoCompletaParaOrden(clave);
+        }
+
         function ensayoAportaDatosPdfCampo_(ensayo) {
             const clave = String(ensayo || '').trim();
             if (!clave) return false;
             const items = data.filter((it) => String(it.ensayo || 'Ensayo 1') === clave);
             if (items.some((it) => !esClamshellSinDatos_(it))) return true;
-            const lider = items[0];
-            if (!lider?.metric) return false;
-            const temp = lider.metric.temperatura || {};
-            const hum = lider.metric.humedad || {};
-            const hayTemp = ['inicioAmbiente', 'terminoAmbiente', 'llegadaAmbiente', 'despachoAmbiente',
-                'inicioPulpa', 'terminoPulpa', 'llegadaPulpa', 'despachoPulpa']
-                .some((k) => String(temp[k] || '').trim() !== '');
-            const hayHum = ['inicio', 'termino', 'llegada', 'despacho']
-                .some((k) => String(hum[k] || '').trim() !== '');
-            return hayTemp || hayHum;
+            if (ensayoTieneFilasLlenadoJarrasConDatos_(clave)) return true;
+            const camposControl = items.reduce((acc, it) => acc + contarCamposControlMuestraMetrica_(it?.metric), 0);
+            if (camposControl < 1) return false;
+            const soloMetaVisita = items.every((it) => esClamshellSinDatos_(it))
+                && !ensayoTieneFilasLlenadoJarrasConDatos_(clave)
+                && ensayoMetaTieneDatosTrabajo(clave)
+                && !metaEnsayoCompletaParaOrden(clave);
+            if (soloMetaVisita && camposControl < 2) return false;
+            return true;
+        }
+
+        function muestraPdfCampoTieneContenido_(bloque) {
+            if (!bloque) return false;
+            const filas = Array.isArray(bloque.filas) ? bloque.filas : [];
+            const hayFila = filas.some((f) => {
+                const pesos = ['p1', 'p2', 'p3', 'p4', 'p5', 'llegada', 'despacho'];
+                if (pesos.some((k) => {
+                    const v = String(f?.[k] ?? '').trim();
+                    return v !== '' && v !== '0';
+                })) return true;
+                const tiempos = ['tInicioCosecha', 'tPerdida', 'tTermino', 'tLlegada', 'tAcopioCalibrado', 'tTerminoCalibrado', 'tDespacho'];
+                if (tiempos.some((k) => String(f?.[k] ?? '').trim() !== '')) return true;
+                const llenado = ['jarraLlenado', 'jarraInicio', 'jarraTermino', 'jarraTiempo', 'trasladoObs'];
+                if (llenado.some((k) => String(f?.[k] ?? '').trim() !== '')) return true;
+                if (String(f?.observacion ?? '').trim() !== '') return true;
+                return false;
+            });
+            if (hayFila) return true;
+            const p2 = bloque.pagina2 || {};
+            const tieneArr = (arr) => Array.isArray(arr) && arr.some((v) => String(v || '').trim() !== '');
+            if (tieneArr(p2.humedad) || tieneArr(p2.tempAmbiente) || tieneArr(p2.presionAmb) || tieneArr(p2.presionFruta)) {
+                return true;
+            }
+            if (String(p2.observaciones || '').trim() !== '') return true;
+            if (String(bloque.observacionesFormato || '').trim() !== '') return true;
+            return false;
         }
 
         function copiarPresionesVaporDesde(primer, destino) {
@@ -3793,7 +3988,7 @@ const META_SAVE_IDS = [
             ensayos.forEach((ensayo) => recalcularPresionesParaEnsayo(ensayo));
         }
 
-        function aplicarControlGlobalDesdeFormulario(cerrarAlFinal = false) {
+        function aplicarControlGlobalDesdeFormulario(cerrarAlFinal = false, opts = {}) {
             const ensayo = String(obtenerEnsayoActivo() || 'Ensayo 1');
             const itemsEnsayo = data.filter((item) => String(item.ensayo || 'Ensayo 1') === ensayo);
             if (controlGlobalState.tipo === 'temperatura') {
@@ -3833,7 +4028,10 @@ const META_SAVE_IDS = [
             }
 
             recalcularPresionesParaEnsayo(ensayo);
-            renderizarTarjetas();
+            if (!opts.silencioso) {
+                renderizarTarjetas();
+                programarGuardadoDraftCompleto();
+            }
             if (cerrarAlFinal) cerrarModalControlGlobal();
         }
 
@@ -4961,26 +5159,151 @@ const META_SAVE_IDS = [
             });
         }
 
+        function modalCampoEstaAbierto_(overlayId) {
+            const el = document.getElementById(overlayId);
+            if (!el) return false;
+            const disp = String(el.style.display || '').toLowerCase();
+            return disp === 'flex' || disp === 'block';
+        }
+
+        function persistirModalMetricaAbiertaCampo_() {
+            if (!metricModalState.itemId || !metricModalState.kind) return;
+            const item = data.find((entry) => entry.id === metricModalState.itemId);
+            if (!item) return;
+            if (metricModalState.kind === 'tiempo' && metricModalState.tiempoEditable === false) return;
+            document.querySelectorAll('#metric-modal-body [data-metric]').forEach((input) => {
+                if (input.disabled) return;
+                if (!item.metric) item.metric = metricaVacia();
+                const kind = metricModalState.kind;
+                if (!item.metric[kind]) item.metric[kind] = metricaVacia()[kind] || {};
+                item.metric[kind][input.getAttribute('data-metric')] = input.value;
+            });
+            if (metricModalState.kind === 'tiempo') {
+                const llegada = String(item.metric?.tiempo?.llegadaAcopio || '').trim();
+                const despacho = String(item.metric?.tiempo?.despachoAcopio || '').trim();
+                const acopioCalibrado = String(item.metric?.tiempo?.acopioCalibrado || '').trim();
+                const terminoCalibrado = String(item.metric?.tiempo?.terminoCalibrado || '').trim();
+                if (llegada || despacho || acopioCalibrado || terminoCalibrado) {
+                    const clave = String(item.ensayo || 'Ensayo 1');
+                    data.forEach((it) => {
+                        if (String(it.ensayo || 'Ensayo 1') !== clave) return;
+                        it.metric = it.metric || metricaVacia();
+                        it.metric.tiempo = it.metric.tiempo || {};
+                        if (llegada) it.metric.tiempo.llegadaAcopio = llegada;
+                        if (despacho) it.metric.tiempo.despachoAcopio = despacho;
+                        if (acopioCalibrado) it.metric.tiempo.acopioCalibrado = acopioCalibrado;
+                        if (terminoCalibrado) it.metric.tiempo.terminoCalibrado = terminoCalibrado;
+                    });
+                }
+                sincronizarTiempoPorJarra(item.ensayo || 'Ensayo 1');
+            }
+            if (metricModalState.kind === 'temperatura' || metricModalState.kind === 'humedad') {
+                recalcularPresionesParaTodos();
+            }
+        }
+
+        function persistirModalTarjetaAbiertaCampo_() {
+            if (!modalCampoEstaAbierto_('modal-overlay')) return;
+            const jarraSel = Number(document.getElementById('visual-m-jarra')?.value) || 1;
+            let p1Val = Number(elInputPesoModalCampo_('p1')?.value || 0);
+            let p2Val = Number(elInputPesoModalCampo_('p2')?.value || 0);
+            let acopioVal = Number(elInputPesoModalCampo_('acopio')?.value || 0);
+            const p4Val = Number(elInputPesoModalCampo_('p4')?.value || 0);
+            const despachoVal = Number(elInputPesoModalCampo_('despacho')?.value || 0);
+            const nroModal = nroClamshellModalActual_(editingCardId != null
+                ? data.find((entry) => entry.id === editingCardId)
+                : null);
+            if (clamshellUsaPeso1DesdePeso2(nroModal) && p2Val > 0) p1Val = p2Val;
+            if (editingCardId == null) return;
+            const item = data.find((entry) => entry.id === editingCardId);
+            if (!item) return;
+            aplicarDatosModalAClamshell_(item, jarraSel, p1Val, p2Val, acopioVal, p4Val, despachoVal);
+        }
+
+        function persistirModalesAbiertasCampo_() {
+            if (modalCampoEstaAbierto_('control-global-modal-overlay') && controlGlobalState.tipo) {
+                aplicarControlGlobalDesdeFormulario(false, { silencioso: true });
+            }
+            if (modalCampoEstaAbierto_('metric-modal-overlay')) {
+                persistirModalMetricaAbiertaCampo_();
+            }
+            if (modalCampoEstaAbierto_('modal-overlay')) {
+                persistirModalTarjetaAbiertaCampo_();
+            }
+            if (modalCampoEstaAbierto_('observation-modal-overlay') && observationModalState.itemId) {
+                const item = data.find((entry) => entry.id === observationModalState.itemId);
+                const inp = document.getElementById('visual-observation');
+                if (item && inp) item.observacion = inp.value;
+            }
+        }
+
+        function capturarNumMuestraBorradorPorEnsayo_() {
+            const out = { ...numerosMuestraFijadosSesion };
+            const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+            const val = normalizarNumMuestraInput(document.getElementById('visual-num-muestra')?.value || '');
+            if (activo && val) out[activo] = val;
+            return out;
+        }
+
         function capturarDraftCompleto() {
             return {
-                version: 1,
+                version: 2,
                 ts: Date.now(),
+                modoRegistro: modoRegistroPostBody_(),
                 data: data,
                 ensayoMeta: ensayoMeta,
                 llenadoJarrasState: llenadoJarrasState,
                 siguienteIdFilaJarras: siguienteIdFilaJarras,
                 ensayoActivo: ensayoActivo,
+                metaActivoEnsayo: metaActivoEnsayo,
                 metaPorEnsayo: clonarMetaPorEnsayoSinNumeros(metaPorEnsayo),
-                inputsCriticos: leerInputsCriticosActuales()
+                inputsCriticos: leerInputsCriticosActuales(),
+                numMuestraPorEnsayo: capturarNumMuestraBorradorPorEnsayo_()
             };
         }
 
         function guardarDraftCompleto() {
             try {
-                snapshotMetaEnsayoActual();
+                persistirModalesAbiertasCampo_();
+                const ensayo = metaActivoEnsayo || ensayoDesdeFormulario() || 'Ensayo 1';
+                fusionarParcelaCriticosEnMeta(ensayo, leerMetaFormulario());
+                fusionarParcelaCriticosEnMeta(ensayo, leerInputsCriticosActuales());
+                snapshotMetaEnsayoActual(ensayo);
                 sincronizarTrazabilidadCompuesta();
-                localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(capturarDraftCompleto()));
+                const payload = capturarDraftCompleto();
+                ultimoPayloadDraftCampo_ = payload;
+                localStorage.setItem(draftStorageKeyCampo_(), JSON.stringify(payload));
+                if (typeof window.guardarBorradorCampoIdb === 'function') {
+                    void window.guardarBorradorCampoIdb(payload);
+                }
             } catch (_) { /* ignore */ }
+        }
+
+        function guardarDraftCompletoInmediato() {
+            clearTimeout(draftSaveTimer);
+            draftSaveTimer = null;
+            clearTimeout(metaSaveTimer);
+            metaSaveTimer = null;
+            guardarDraftCompleto();
+        }
+
+        /** Solo dispositivo (localStorage). Nunca POST, nunca cola de envío ni planilla. */
+        function persistirSoloLocalCampo_() {
+            guardarDraftCompletoInmediato();
+            try {
+                if (metaGuardadoSuspendido > 0) return;
+                snapshotMetaEnsayoActual();
+                const activo = metaActivoEnsayo || ensayoDesdeFormulario();
+                if (activo && ensayoMetaTieneDatosTrabajo(activo)) marcarEnsayoEnUsoSesion(activo);
+                localStorage.setItem(metaStorageKeyCampo_(), JSON.stringify({
+                    activo: metaActivoEnsayo || ensayoDesdeFormulario() || 'Ensayo 1',
+                    porEnsayo: clonarMetaPorEnsayoSinNumeros(metaPorEnsayo)
+                }));
+            } catch (_) { /* ignore */ }
+        }
+
+        function debePreservarBorradorCampoEnSync_() {
+            return hayDatosEnTrabajo();
         }
 
         function fusionarParcelaCriticosEnMeta(ensayo, inputs) {
@@ -4991,13 +5314,51 @@ const META_SAVE_IDS = [
             const meta = metaPorEnsayo[k];
             const ids = [
                 'visual-meta-fundo', 'visual-traz-etapa', 'visual-traz-campo',
-                'visual-traz-turno', 'visual-traz-acopio', 'visual-meta-variedad', 'visual-trazabilidad'
+                'visual-traz-turno', 'visual-traz-acopio', 'visual-meta-variedad', 'visual-trazabilidad',
+                'visual-responsable', 'visual-guia-precosecha', 'visual-hora'
             ];
             ids.forEach((id) => {
                 const vCrit = String(inputs[id] ?? '').trim();
-                const vMeta = String(meta[id] ?? '').trim();
-                if (vCrit && !vMeta) meta[id] = vCrit;
+                if (vCrit) meta[id] = vCrit;
             });
+        }
+
+        function reaplicarMetaFormularioCampo_(ensayo) {
+            const e = String(ensayo || metaActivoEnsayo || ensayoDesdeFormulario() || 'Ensayo 1').trim() || 'Ensayo 1';
+            const meta = { ...(metaPorEnsayo[e] || {}) };
+            if (!Object.keys(meta).length) return;
+            migrarClavesMetaObjeto(meta);
+            metaPorEnsayo[e] = meta;
+            pausarValidacionMetaCampo(true);
+            suspenderGuardadoMeta_();
+            if (typeof window.pausarRefVariedadesCampo === 'function') {
+                window.pausarRefVariedadesCampo(true);
+            }
+            if (typeof window.filtroParcelaSilencioso === 'function') {
+                window.filtroParcelaSilencioso(true);
+            }
+            try {
+                if (typeof window.aplicarParcelaCampoDesdeMeta === 'function') {
+                    window.aplicarParcelaCampoDesdeMeta(meta);
+                }
+                escribirMetaFormulario(meta, e);
+                const turnoEl = document.getElementById('visual-traz-turno');
+                if (turnoEl && meta['visual-traz-turno']) {
+                    turnoEl.value = String(meta['visual-traz-turno']);
+                }
+                asegurarOpcionesSelectAcopio(meta['visual-traz-acopio']);
+                actualizarBloqueoTrazabilidadPorFundo();
+                sincronizarTrazabilidadCompuesta();
+            } finally {
+                if (typeof window.filtroParcelaSilencioso === 'function') {
+                    window.filtroParcelaSilencioso(false);
+                }
+                if (typeof window.pausarRefVariedadesCampo === 'function') {
+                    window.pausarRefVariedadesCampo(false);
+                }
+                reanudarGuardadoMeta_();
+                pausarValidacionMetaCampo(false);
+            }
         }
 
         function sincronizarUiMetaCampoLigera_(opts) {
@@ -5075,31 +5436,35 @@ const META_SAVE_IDS = [
             setTimeout(correr, 0);
         }
 
-        function arranqueCatalogoYMetaCampo_() {
+        function arranqueCatalogoYMetaCampo_(opts) {
             const ensayo = ensayoActivo || metaActivoEnsayo || obtenerEnsayoActivo() || 'Ensayo 1';
             pausarValidacionMetaCampo(true);
             if (typeof window.pausarRefVariedadesCampo === 'function') {
                 window.pausarRefVariedadesCampo(true);
             }
+            const meta = metaPorEnsayo[ensayo];
+            const tieneBorrador = opts?.desdeBorrador || ensayoMetaTieneDatosTrabajo(ensayo) || ensayoMetaTieneBorradorGuardado_(ensayo);
             const pasos = [
                 () => {
                     if (typeof window.initCatalogoSelectsCampo === 'function') {
                         window.initCatalogoSelectsCampo({ pausarRef: true, sinAplicarFiltros: true });
                     }
-                },
-                () => snapshotMetaEnsayoActual(ensayo)
+                }
             ];
-            const meta = metaPorEnsayo[ensayo];
-            if (meta && ensayoMetaTieneDatosTrabajo(ensayo)) {
+            if (tieneBorrador && meta) {
                 if (typeof window.pasosAplicarParcelaCampoDesdeMeta === 'function') {
                     pasos.push(...window.pasosAplicarParcelaCampoDesdeMeta(meta));
                 } else {
                     pasos.push(() => reaplicarParcelaDesdeMetaGuardada_(ensayo));
                 }
+                pasos.push(() => reaplicarMetaFormularioCampo_(ensayo));
             }
             pasos.push(
                 () => sincronizarUiMetaCampoLigera_({ sinValidacion: true }),
                 () => asegurarOpcionesSelectAcopio(metaPorEnsayo[ensayo]?.['visual-traz-acopio']),
+                () => {
+                    if (opts?.desdeBorrador) reaplicarMetaFormularioCampo_(ensayo);
+                },
                 () => {
                     if (typeof window.actualizarBloqueOtrasVariedadesReferencia === 'function') {
                         window.actualizarBloqueOtrasVariedadesReferencia();
@@ -5124,70 +5489,250 @@ const META_SAVE_IDS = [
             });
         }
 
+        function clamshellTieneDatosTrabajo_(item) {
+            if (!item) return false;
+            if (!esClamshellSinDatos_(item)) return true;
+            const m = item.metric;
+            if (!m || typeof m !== 'object') return false;
+            return ['tiempo', 'temperatura', 'humedad'].some((kind) => hayTextoNoVacioEnObjeto(m[kind]));
+        }
+
         function hayDatosEnTrabajo() {
             const hayPendientes = cargarColaSync().some((q) => String(q?.estado || '') === 'pendiente');
             if (hayPendientes) return true;
-            if (Array.isArray(data) && data.length > 0) return true;
+            if (Array.isArray(data) && data.some(clamshellTieneDatosTrabajo_)) return true;
+            if (hayTextoNoVacioEnObjeto(llenadoJarrasState?.porEnsayo)) return true;
             if (hayTextoNoVacioEnObjeto(metaPorEnsayo)) return true;
             const criticos = leerInputsCriticosActuales();
             if (hayTextoNoVacioEnObjeto(criticos)) return true;
             return false;
         }
 
-        function restaurarDraftCompleto() {
+        function parseDraftRawCampo_(raw) {
+            if (!raw) return null;
             try {
-                const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-                if (!raw) return false;
-                const d = JSON.parse(raw);
-                if (!d || typeof d !== 'object') return false;
+                const d = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                return d && typeof d === 'object' ? d : null;
+            } catch (_) {
+                return null;
+            }
+        }
 
-                if (Array.isArray(d.data)) {
-                    data.splice(0, data.length, ...d.data);
+        function borradorCampoTieneDatos_(d) {
+            if (!d || typeof d !== 'object') return false;
+            if (Array.isArray(d.data) && d.data.length > 0) {
+                if (d.data.some(clamshellTieneDatosTrabajo_)) return true;
+            }
+            if (hayTextoNoVacioEnObjeto(d.metaPorEnsayo)) return true;
+            if (hayTextoNoVacioEnObjeto(d.llenadoJarrasState?.porEnsayo)) return true;
+            if (hayTextoNoVacioEnObjeto(d.inputsCriticos)) return true;
+            return false;
+        }
+
+        function tsBorradorCampo_(d, fallbackTs) {
+            const t = Number(d?.ts);
+            if (Number.isFinite(t) && t > 0) return t;
+            return Number(fallbackTs) || 0;
+        }
+
+        function solicitarAlmacenamientoPersistenteCampo_() {
+            try {
+                if (navigator.storage && typeof navigator.storage.persist === 'function') {
+                    void navigator.storage.persist();
                 }
-                if (d.ensayoMeta && typeof d.ensayoMeta === 'object') {
-                    Object.keys(ensayoMeta).forEach((k) => delete ensayoMeta[k]);
-                    Object.assign(ensayoMeta, d.ensayoMeta);
+            } catch (_) { /* ignore */ }
+        }
+
+        async function leerCandidatosBorradorCampo_() {
+            const candidatos = [];
+            const rawLs = leerDraftRawCampo_();
+            const dLs = parseDraftRawCampo_(rawLs);
+            if (dLs && borradorCampoCoincideModoActual_(dLs)) {
+                candidatos.push({
+                    d: dLs,
+                    raw: rawLs,
+                    fuente: 'ls',
+                    ts: tsBorradorCampo_(dLs, 0)
+                });
+            }
+            if (typeof window.leerBorradorCampoIdbRegistro === 'function') {
+                try {
+                    const rec = await window.leerBorradorCampoIdbRegistro();
+                    const dIdb = parseDraftRawCampo_(rec?.json);
+                    if (dIdb && borradorCampoCoincideModoActual_(dIdb)) {
+                        candidatos.push({
+                            d: dIdb,
+                            raw: rec.json,
+                            fuente: 'idb',
+                            ts: tsBorradorCampo_(dIdb, rec?.ts)
+                        });
+                    }
+                } catch (_) { /* ignore */ }
+            }
+            return candidatos;
+        }
+
+        async function elegirMejorBorradorCampo_() {
+            const candidatos = await leerCandidatosBorradorCampo_();
+            const conDatos = candidatos.filter((c) => borradorCampoTieneDatos_(c.d));
+            if (!conDatos.length) return null;
+            conDatos.sort((a, b) => b.ts - a.ts);
+            return conDatos[0];
+        }
+
+        async function existeBorradorConDatosEnAlmacenCampo_() {
+            const mejor = await elegirMejorBorradorCampo_();
+            return !!(mejor && borradorCampoTieneDatos_(mejor.d));
+        }
+
+        function repintarUiTrasBorradorCampo_() {
+            renderizarTarjetas();
+            renderizarPanelLlenadoJarras();
+            sincronizarLogisticaAcopioDesdeEnsayo();
+            sincronizarChipsDesdeAlmacenamiento();
+            actualizarVistaCompacta();
+            actualizarProgresoMeta();
+            arranqueCatalogoYMetaCampo_({ desdeBorrador: true });
+        }
+
+        async function cargarMejorBorradorCampoAsync_(opts = {}) {
+            const { silencioso = false, repintar = false, soloSiMasNuevo = false } = opts;
+            const mejor = await elegirMejorBorradorCampo_();
+            if (!mejor || !borradorCampoTieneDatos_(mejor.d)) {
+                return { aplicado: false, desdeIdb: false };
+            }
+            if (soloSiMasNuevo && hayDatosEnTrabajo()) {
+                const tsMemoria = tsBorradorCampo_(capturarDraftCompleto(), 0);
+                if (tsMemoria >= mejor.ts) {
+                    return { aplicado: false, desdeIdb: false };
                 }
-                if (d.llenadoJarrasState && typeof d.llenadoJarrasState === 'object') {
-                    if (!llenadoJarrasState.porEnsayo) llenadoJarrasState.porEnsayo = {};
-                    llenadoJarrasState.porEnsayo = d.llenadoJarrasState.porEnsayo || {};
+            }
+            try {
+                localStorage.setItem(
+                    draftStorageKeyCampo_(),
+                    mejor.raw || JSON.stringify(mejor.d)
+                );
+            } catch (_) { /* ignore */ }
+            const ok = aplicarDraftDesdeObjeto_(mejor.d);
+            if (!ok) return { aplicado: false, desdeIdb: false };
+            reconstruirEnsayosEnUsoSesionDesdeEstado();
+            ensayoActivo = obtenerEnsayoActivo();
+            recalcularPresionesParaTodos();
+            asegurarClamshellInicialVacio(obtenerEnsayoActivo());
+            if (repintar) repintarUiTrasBorradorCampo_();
+            if (!silencioso && mejor.fuente === 'idb') {
+                mostrarToast('info', 'Datos recuperados', 'Se restauró el borrador desde respaldo local (IndexedDB).');
+            }
+            return { aplicado: true, desdeIdb: mejor.fuente === 'idb' };
+        }
+
+        let ultimoPayloadDraftCampo_ = null;
+
+        async function flushDraftCampoAIdb_() {
+            if (typeof window.guardarBorradorCampoIdb !== 'function') return;
+            try {
+                let payload = ultimoPayloadDraftCampo_;
+                if (!payload) payload = parseDraftRawCampo_(leerDraftRawCampo_());
+                if (payload && borradorCampoTieneDatos_(payload)) {
+                    await window.guardarBorradorCampoIdb(payload);
                 }
-                if (Number.isFinite(Number(d.siguienteIdFilaJarras))) {
-                    siguienteIdFilaJarras = Number(d.siguienteIdFilaJarras);
-                }
+            } catch (_) { /* ignore */ }
+        }
+
+        function ensayoMetaTieneBorradorGuardado_(ensayo) {
+            const meta = metaPorEnsayo[String(ensayo || '').trim()];
+            if (!meta || typeof meta !== 'object') return false;
+            return META_SAVE_IDS.some((id) => {
+                if (id === 'visual-meta-muestra' || id === 'visual-rotulo' || id === 'visual-trazabilidad') return false;
+                return String(meta[id] ?? '').trim() !== '';
+            });
+        }
+
+        function aplicarDraftDesdeObjeto_(d) {
+            if (!d || typeof d !== 'object') return false;
+            if (!borradorCampoCoincideModoActual_(d)) return false;
+
+            if (Array.isArray(d.data)) {
+                data.splice(0, data.length, ...d.data);
+            }
+            if (d.ensayoMeta && typeof d.ensayoMeta === 'object') {
+                Object.keys(ensayoMeta).forEach((k) => delete ensayoMeta[k]);
+                Object.assign(ensayoMeta, d.ensayoMeta);
+            }
+            if (d.llenadoJarrasState && typeof d.llenadoJarrasState === 'object') {
+                if (!llenadoJarrasState.porEnsayo) llenadoJarrasState.porEnsayo = {};
+                llenadoJarrasState.porEnsayo = d.llenadoJarrasState.porEnsayo || {};
+            }
+            if (Number.isFinite(Number(d.siguienteIdFilaJarras))) {
+                siguienteIdFilaJarras = Number(d.siguienteIdFilaJarras);
+            }
                 if (d.metaPorEnsayo && typeof d.metaPorEnsayo === 'object') {
                     metaPorEnsayo = d.metaPorEnsayo;
+                    Object.keys(metaPorEnsayo).forEach((k) => migrarClavesMetaObjeto(metaPorEnsayo[k]));
                     purgarTodosNumerosMuestraEnMeta();
                 }
-                if (d.ensayoActivo) {
-                    ensayoActivo = String(d.ensayoActivo);
-                }
-                if (d.inputsCriticos && typeof d.inputsCriticos === 'object') {
-                    delete d.inputsCriticos['visual-num-muestra'];
-                    delete d.inputsCriticos.numMuestra;
-                }
-                const ensayoDraft = String(d.ensayoActivo || ensayoActivo || metaActivoEnsayo || 'Ensayo 1').trim() || 'Ensayo 1';
-                fusionarParcelaCriticosEnMeta(ensayoDraft, d.inputsCriticos);
-                aplicarInputsCriticosGuardados(d.inputsCriticos);
-                metaActivoEnsayo = ensayoDraft;
-                snapshotMetaEnsayoActual(ensayoDraft);
-                if (typeof window.aplicarParcelaCampoDesdeMeta === 'function') {
-                    window.aplicarParcelaCampoDesdeMeta(metaPorEnsayo[ensayoDraft] || {});
-                }
-                asegurarOpcionesSelectAcopio(
-                    d.inputsCriticos?.['visual-traz-acopio']
-                    || metaPorEnsayo[ensayoDraft]?.['visual-traz-acopio']
-                );
-                sincronizarTrazabilidadCompuesta();
-                return true;
+            if (d.ensayoActivo) {
+                ensayoActivo = String(d.ensayoActivo);
+            }
+            if (d.metaActivoEnsayo) {
+                metaActivoEnsayo = String(d.metaActivoEnsayo).trim() || metaActivoEnsayo;
+            }
+            if (d.numMuestraPorEnsayo && typeof d.numMuestraPorEnsayo === 'object') {
+                Object.keys(d.numMuestraPorEnsayo).forEach((k) => {
+                    const num = normalizarNumMuestraInput(d.numMuestraPorEnsayo[k]);
+                    if (num) numerosMuestraFijadosSesion[k] = num;
+                });
+            }
+            if (d.inputsCriticos && typeof d.inputsCriticos === 'object') {
+                delete d.inputsCriticos['visual-num-muestra'];
+                delete d.inputsCriticos.numMuestra;
+            }
+            const ensayoDraft = String(d.metaActivoEnsayo || d.ensayoActivo || ensayoActivo || metaActivoEnsayo || 'Ensayo 1').trim() || 'Ensayo 1';
+            fusionarParcelaCriticosEnMeta(ensayoDraft, d.inputsCriticos);
+            aplicarInputsCriticosGuardados(d.inputsCriticos);
+            metaActivoEnsayo = ensayoDraft;
+            reaplicarMetaFormularioCampo_(ensayoDraft);
+            asegurarOpcionesSelectAcopio(
+                d.inputsCriticos?.['visual-traz-acopio']
+                || metaPorEnsayo[ensayoDraft]?.['visual-traz-acopio']
+            );
+            const numBorrador = numerosMuestraFijadosSesion[ensayoDraft];
+            if (numBorrador) {
+                aplicarNumMuestraEnsayo(ensayoDraft, numBorrador, false, 'restaurarDraft');
+            }
+            sincronizarTrazabilidadCompuesta();
+            return true;
+        }
+
+        function restaurarDraftCompleto() {
+            try {
+                const d = parseDraftRawCampo_(leerDraftRawCampo_());
+                if (!d) return false;
+                return aplicarDraftDesdeObjeto_(d);
             } catch (_) { /* ignore */ }
             return false;
         }
 
+        async function recuperarBorradorCampoDesdeIdbSiFalta_() {
+            const res = await cargarMejorBorradorCampoAsync_({ silencioso: false, repintar: true });
+            return res.aplicado;
+        }
+
         let draftSaveTimer = null;
+        const DRAFT_AUTOSAVE_MS = 3000;
+        let draftAutosaveInterval = null;
         function programarGuardadoDraftCompleto() {
             clearTimeout(draftSaveTimer);
             draftSaveTimer = setTimeout(guardarDraftCompleto, 220);
+        }
+
+        function iniciarAutosaveDraftCampo_() {
+            if (draftAutosaveInterval) return;
+            draftAutosaveInterval = setInterval(() => {
+                if (document.visibilityState === 'hidden') return;
+                if (!hayDatosEnTrabajo()) return;
+                persistirSoloLocalCampo_();
+            }, DRAFT_AUTOSAVE_MS);
         }
 
         function uidLocal() {
@@ -5235,11 +5780,79 @@ const META_SAVE_IDS = [
             } catch (_) { /* ignore */ }
         }
 
+        function ayerIsoLocalCampo_() {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            return d.getFullYear() + '-'
+                + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                + String(d.getDate()).padStart(2, '0');
+        }
+
+        function fechaVisibleHistorialLocal_(fecha) {
+            const f = String(fecha || '').trim();
+            if (!f) return false;
+            const hoy = hoyIsoLocal();
+            return f === hoy || f === ayerIsoLocalCampo_();
+        }
+
+        function claveArchivoEnvioLocal_(reg) {
+            return [
+                String(reg?.fecha || '').trim(),
+                String(reg?.ensayo_numero || '').trim(),
+                String(reg?.num_muestra || '').trim().toUpperCase(),
+                String(reg?.modo_registro || reg?.modo || '').trim().toLowerCase()
+            ].join('||');
+        }
+
+        function cargarEnviosLocalesArchivados() {
+            try {
+                const raw = localStorage.getItem(SYNC_ENVIADOS_KEY);
+                if (!raw) return [];
+                const arr = JSON.parse(raw);
+                return Array.isArray(arr) ? arr : [];
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function guardarEnviosLocalesArchivados(lista) {
+            try {
+                const arr = Array.isArray(lista) ? lista : [];
+                const visibles = arr.filter((r) => fechaVisibleHistorialLocal_(r?.fecha));
+                const out = visibles.slice(-SYNC_MAX_ENVIADOS);
+                localStorage.setItem(SYNC_ENVIADOS_KEY, JSON.stringify(out));
+            } catch (_) { /* ignore */ }
+        }
+
+        function archivarEnvioLocalExitoso_(reg) {
+            if (!reg) return;
+            const entrada = {
+                uid: String(reg.uid || uidLocal()),
+                fecha: String(reg.fecha || hoyIsoLocal()).trim(),
+                ensayo_numero: String(reg.ensayo_numero || '').trim(),
+                num_muestra: String(reg.num_muestra || '').trim().toUpperCase(),
+                ensayo: String(reg.ensayo || '').trim(),
+                modo_registro: String(reg.modo_registro || reg.modo || modoRegistroPostBody_()).trim(),
+                estado: 'subido',
+                creado_en: Number(reg.creado_en) || Date.now(),
+                actualizado_en: Date.now(),
+                intentos: Number(reg.intentos) || 0,
+                error: ''
+            };
+            if (!entrada.fecha || !entrada.ensayo_numero) return;
+            const clave = claveArchivoEnvioLocal_(entrada);
+            const lista = cargarEnviosLocalesArchivados().filter((x) => claveArchivoEnvioLocal_(x) !== clave);
+            lista.push(entrada);
+            guardarEnviosLocalesArchivados(lista);
+        }
+        window.archivarEnvioLocalExitoso_ = archivarEnvioLocalExitoso_;
+
         function limpiarPersistenciaLocalPostSync() {
             try { localStorage.removeItem(SYNC_QUEUE_KEY); } catch (_) { /* ignore */ }
             try { localStorage.removeItem(SYNC_HISTORY_KEY); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(META_STORAGE_KEY); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(SYNC_ENVIADOS_KEY); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(draftStorageKeyCampo_()); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(metaStorageKeyCampo_()); } catch (_) { /* ignore */ }
             try { localStorage.removeItem(DEMO_META_CAMPO_SEED_KEY); } catch (_) { /* ignore */ }
         }
 
@@ -5282,6 +5895,9 @@ const META_SAVE_IDS = [
                     await window.HistPdfStore.borrarTodo();
                 }
             } catch (_) { /* ignore */ }
+            if (typeof window.borrarBorradorCampoIdb === 'function') {
+                try { await window.borrarBorradorCampoIdb(); } catch (_) { /* ignore */ }
+            }
             try { localStorage.clear(); } catch (_) { /* ignore */ }
             try { sessionStorage.clear(); } catch (_) { /* ignore */ }
             try {
@@ -5301,9 +5917,12 @@ const META_SAVE_IDS = [
         // Limpieza inmediata del estado visual/local tras pulsar Enviar.
         // NO toca la cola pendiente para no perder sincronización.
         function limpiarPersistenciaLocalTrasEnvio() {
-            try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(META_STORAGE_KEY); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(draftStorageKeyCampo_()); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(metaStorageKeyCampo_()); } catch (_) { /* ignore */ }
             try { localStorage.removeItem(DEMO_META_CAMPO_SEED_KEY); } catch (_) { /* ignore */ }
+            if (typeof window.borrarBorradorCampoIdb === 'function') {
+                void window.borrarBorradorCampoIdb();
+            }
         }
 
         function resetearPantallaEnCeroPostSync() {
@@ -5715,12 +6334,18 @@ const META_SAVE_IDS = [
                 uid: reg.uid,
                 fecha: reg.fecha,
                 ensayo_numero: reg.ensayo_numero,
+                num_muestra: reg.num_muestra || '',
+                ensayo: reg.ensayo || '',
+                modo: reg.modo_registro || reg.modo || '',
                 estado: reg.estado,
                 ts: Date.now(),
                 intentos: reg.intentos || 0,
                 error: reg.error || ''
             });
             guardarHistorialSync(historial);
+            if (String(reg?.estado || '') === 'subido') {
+                archivarEnvioLocalExitoso_(reg);
+            }
         }
 
         function callbackJsonp(urlBase, params, timeoutMs) {
@@ -5867,19 +6492,24 @@ const META_SAVE_IDS = [
 
             if (!cambioFirma && !maxCambio && !opts.forzarUi) return false;
 
-            if (opts.invalidarFijados || maxCambio || cambioFirma || opts.forzarUi) {
+            const preservarBorrador = debePreservarBorradorCampoEnSync_();
+
+            if (!preservarBorrador && (opts.invalidarFijados || maxCambio || cambioFirma || opts.forzarUi)) {
                 Object.keys(numerosMuestraFijadosSesion).forEach((k) => delete numerosMuestraFijadosSesion[k]);
             }
 
             const alinearInicio = necesitaReposicionarAPrimeraLibre();
-            if (opts.reposicionarPrimera !== false && (
+            if (!preservarBorrador && opts.reposicionarPrimera !== false && (
                 opts.forzarUi || opts.invalidarFijados || cambioFirma || maxCambio || alinearInicio
             )) {
                 reposicionarPantallaPrimeraMuestraLibre('propagarPlanilla');
             } else {
                 const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
                 if (activo && !ensayoEstaRegistradoHoy(activo)) {
-                    aplicarNumMuestraParaEnsayoActivo('syncPlanilla');
+                    const yaFijado = String(numerosMuestraFijadosSesion[activo] || '').trim();
+                    if (!preservarBorrador || !yaFijado) {
+                        aplicarNumMuestraParaEnsayoActivo('syncPlanilla');
+                    }
                 }
                 aplicarBloqueoMuestrasCacheLocal();
                 actualizarVistaCompacta();
@@ -6231,12 +6861,16 @@ const META_SAVE_IDS = [
                         guardarCacheRegistradosHoy(bloqueoMuestraCacheNums);
                     }
                     limpiarNumerosMuestraLocalesNoRegistrados();
+                    const preservarBorradorSync = debePreservarBorradorCampoEnSync_();
                     const reposicionarPrimera = opciones.reposicionarPrimera !== undefined
                         ? !!opciones.reposicionarPrimera
-                        : (force || necesitaReposicionarAPrimeraLibre());
+                        : (!preservarBorradorSync && (force || necesitaReposicionarAPrimeraLibre()));
+                    const invalidarFijados = opciones.invalidarFijados !== undefined
+                        ? !!opciones.invalidarFijados
+                        : (!preservarBorradorSync && force);
                     propagarCambiosPlanillaServidorALaPantalla(r, {
                         avisar: opciones.avisar !== undefined ? opciones.avisar : !force,
-                        invalidarFijados: opciones.invalidarFijados !== undefined ? opciones.invalidarFijados : force,
+                        invalidarFijados,
                         reposicionarPrimera
                     });
                     return true;
@@ -6765,6 +7399,14 @@ const META_SAVE_IDS = [
                     ensayo_numero: payload.ensayo_numero,
                     estado: 'registrado'
                 });
+                archivarEnvioLocalExitoso_({
+                    uid: payload.uid,
+                    fecha: payload.fecha,
+                    ensayo_numero: payload.ensayo_numero,
+                    num_muestra: payload.num_muestra,
+                    ensayo: ensayoPdf,
+                    modo_registro: payload.modo_registro
+                });
                 return { ok: true, estado: 'confirmado', payload, confirmacion, pdfOk };
             }
             if (confirmacion?.estado === 'duplicado_codigo') {
@@ -7010,6 +7652,14 @@ const META_SAVE_IDS = [
                         fusionarMaxNumMuestraCampo(num);
                     }
                     marcarEnsayoRegistradoHoyLocal(numeroDesdeEnsayoTexto(ensayo));
+                    archivarEnvioLocalExitoso_({
+                        uid: payload.uid + '::' + ensayo,
+                        fecha: payload.fecha,
+                        ensayo_numero: numeroDesdeEnsayoTexto(ensayo),
+                        num_muestra: num,
+                        ensayo,
+                        modo_registro: payload.modo_registro
+                    });
                 });
                 return { ok: true, estado: 'confirmado', payload, confirmacion, enviados: lista.length, pdfOk };
             }
@@ -7167,6 +7817,10 @@ const META_SAVE_IDS = [
         let syncEnCurso = false;
         async function sincronizarPendientes() {
             if (syncEnCurso) return;
+            if (document.visibilityState === 'hidden') {
+                actualizarBarraHeaderEstado();
+                return resumenEstadosSync();
+            }
             if (!navigator.onLine) {
                 actualizarBarraHeaderEstado();
                 return resumenEstadosSync();
@@ -7605,8 +8259,8 @@ const META_SAVE_IDS = [
             if (inpP4) inpP4.value = itemTrabajo ? valorPesoInput(itemTrabajo.p4) : '';
             if (inpDespacho) inpDespacho.value = itemTrabajo ? valorPesoInput(itemTrabajo.despacho) : '';
             configurarModalPesosClamshell_(nroModal);
-            conectarValidacionPesosAcopioModal_();
-            if (esModoRegistroAcopio_()) validarPesosAcopioModalEnVivo();
+            conectarValidacionPesosModalCampo_();
+            validarPesosModalCampoEnVivo();
             overlay.style.display = 'flex';
         }
 
@@ -7686,12 +8340,11 @@ const META_SAVE_IDS = [
                 return;
             }
                 if (!esModoRegistroAcopio_()) {
-                    const faltantesVisualModal = validarSecuenciaCompletaPesosVisual_(
-                        { p1: p1Val, p2: p2Val, acopio: acopioVal, despacho: despachoVal },
-                        nroModal
+                    const erroresPesosVisual = erroresPesosVisualModal_(
+                        p1Val, p2Val, acopioVal, despachoVal, nroModal
                     );
-                    if (faltantesVisualModal.length) {
-                        mostrarAlertaRegla('Pesos incompletos', faltantesVisualModal[0]);
+                    if (erroresPesosVisual.length) {
+                        mostrarAlertaRegla('Pesos inválidos', erroresPesosVisual[0]);
                         return;
                     }
                 }
@@ -7776,7 +8429,40 @@ const META_SAVE_IDS = [
             const inpP2 = elInputPesoModalCampo_('p2');
             if (inpP2 && !inpP2.dataset.peso1AutoBound) {
                 inpP2.dataset.peso1AutoBound = '1';
-                inpP2.addEventListener('input', sincronizarPeso1DesdePeso2EnModal_);
+                inpP2.addEventListener('input', () => {
+                    sincronizarPeso1DesdePeso2EnModal_();
+                    validarPesosModalCampoEnVivo();
+                });
+            }
+            ['p1', 'p2', 'acopio', 'p4', 'despacho'].forEach((campo) => {
+                const inp = elInputPesoModalCampo_(campo);
+                if (!inp || inp.dataset.draftPersistBound === '1') return;
+                inp.dataset.draftPersistBound = '1';
+                const persist = () => {
+                    persistirModalTarjetaAbiertaCampo_();
+                    programarGuardadoDraftCompleto();
+                };
+                inp.addEventListener('input', persist);
+                inp.addEventListener('change', persist);
+            });
+            const jarraSel = document.getElementById('visual-m-jarra');
+            if (jarraSel && jarraSel.dataset.draftPersistBound !== '1') {
+                jarraSel.dataset.draftPersistBound = '1';
+                jarraSel.addEventListener('change', () => {
+                    persistirModalTarjetaAbiertaCampo_();
+                    programarGuardadoDraftCompleto();
+                });
+            }
+            const obsInp = document.getElementById('visual-observation');
+            if (obsInp && obsInp.dataset.draftPersistBound !== '1') {
+                obsInp.dataset.draftPersistBound = '1';
+                const persistObs = () => {
+                    const item = data.find((entry) => entry.id === observationModalState.itemId);
+                    if (item) item.observacion = obsInp.value;
+                    programarGuardadoDraftCompleto();
+                };
+                obsInp.addEventListener('input', persistObs);
+                obsInp.addEventListener('change', persistObs);
             }
             bindCerrarModalAlClickFueraCampo(document.getElementById('modal-overlay'), cerrarModal);
             bindCerrarModalAlClickFueraCampo(document.getElementById('metric-modal-overlay'), cerrarModalMetrica);
@@ -7910,6 +8596,7 @@ const META_SAVE_IDS = [
                 muestraLabel: mostrarMuestra(clave),
                 numMuestra: valorCampoMetaEnsayo_(clave, 'visual-num-muestra'),
                 trazabilidad: trazabilidadTextoMostrar(metaSnap),
+                trazabilidadArchivo: trazabilidadBaseDesdeMeta(metaSnap),
                 responsable: valorCampoMetaEnsayo_(clave, 'visual-responsable'),
                 fundo: valorCampoMetaEnsayo_(clave, 'visual-meta-fundo'),
                 variedad: valorCampoMetaEnsayo_(clave, 'visual-meta-variedad'),
@@ -8427,6 +9114,14 @@ const META_SAVE_IDS = [
                 `;
             }
             asegurarIdsInputsDinamicos(body, `metric-${kind}-${item.id}`);
+            body.querySelectorAll('input[data-metric]').forEach((inp) => {
+                const persist = () => {
+                    persistirModalMetricaAbiertaCampo_();
+                    programarGuardadoDraftCompleto();
+                };
+                inp.addEventListener('input', persist);
+                inp.addEventListener('change', persist);
+            });
 
             document.getElementById('metric-modal-overlay').style.display = 'flex';
             inicializarFlatpickrInputs(document.getElementById('metric-modal-overlay'));
@@ -8510,10 +9205,11 @@ const META_SAVE_IDS = [
             purgarCacheNumMuestraLocalStorage();
             void refrescarEstadoServidorOperativo(true).then((ok) => {
                 if (ok && ultimaRespuestaEstadoServidor) {
+                    const preservar = debePreservarBorradorCampoEnSync_();
                     propagarCambiosPlanillaServidorALaPantalla(ultimaRespuestaEstadoServidor, {
                         forzarUi: true,
-                        invalidarFijados: true,
-                        reposicionarPrimera: true,
+                        invalidarFijados: !preservar,
+                        reposicionarPrimera: !preservar,
                         avisar: true
                     });
                 }
@@ -8529,122 +9225,199 @@ const META_SAVE_IDS = [
             mostrarAlertaModoOffline();
         });
 
-        const draftRestaurado = restaurarDraftCompleto();
-        purgarTodosNumerosMuestraEnMeta();
-        arranqueCatalogoYMetaCampo_();
-        reconstruirEnsayosEnUsoSesionDesdeEstado();
-        ensayoActivo = obtenerEnsayoActivo();
-        recalcularPresionesParaTodos();
-        actualizarIconos();
-        iniciarAutoActualizacionFechaRing();
-        asegurarClamshellInicialVacio(obtenerEnsayoActivo());
-        renderizarTarjetas();
-        renderizarPanelLlenadoJarras();
-        sincronizarLogisticaAcopioDesdeEnsayo();
-        inicializarFlatpickrInputs(document);
-        prepararCustomTimePickers(document);
-        configurarTimePickerEntradaTeclado_();
-        document.getElementById('time-picker-hour-up')?.addEventListener('click', () => {
-            timePickerState.hour = (timePickerState.hour + 1) % 24;
-            timePickerActualizarVista_();
-        });
-        document.getElementById('time-picker-hour-down')?.addEventListener('click', () => {
-            timePickerState.hour = (timePickerState.hour + 23) % 24;
-            timePickerActualizarVista_();
-        });
-        document.getElementById('time-picker-minute-up')?.addEventListener('click', () => {
-            timePickerState.minute = (timePickerState.minute + 1) % 60;
-            timePickerActualizarVista_();
-        });
-        document.getElementById('time-picker-minute-down')?.addEventListener('click', () => {
-            timePickerState.minute = (timePickerState.minute + 59) % 60;
-            timePickerActualizarVista_();
-        });
-        document.getElementById('time-picker-now')?.addEventListener('click', () => {
-            const now = new Date();
-            timePickerState.hour = now.getHours();
-            timePickerState.minute = now.getMinutes();
-            timePickerActualizarVista_();
-        });
-        document.getElementById('time-picker-cancel')?.addEventListener('click', cerrarTimePickerPersonalizado);
-        document.getElementById('time-picker-apply')?.addEventListener('click', aplicarTimePickerPersonalizado);
-        // En producción no sembrar datos demo automáticamente.
-        const numMuestraInput = document.getElementById('visual-num-muestra');
-        if (numMuestraInput) {
-            numMuestraInput.setAttribute('maxlength', String(NUM_MUESTRA_MAX_LEN));
-            numMuestraInput.addEventListener('input', () => {
-                const limpio = normalizarNumMuestraInput(numMuestraInput.value);
-                if (numMuestraInput.value !== limpio) numMuestraInput.value = limpio;
+        solicitarAlmacenamientoPersistenteCampo_();
+        void (async function arranqueInicialCampo_() {
+            let draftRestaurado = false;
+            let draftDesdeIdb = false;
+            try {
+                const mejor = await elegirMejorBorradorCampo_();
+                if (mejor && borradorCampoTieneDatos_(mejor.d)) {
+                    try {
+                        localStorage.setItem(
+                            draftStorageKeyCampo_(),
+                            mejor.raw || JSON.stringify(mejor.d)
+                        );
+                    } catch (_) { /* ignore */ }
+                    draftRestaurado = aplicarDraftDesdeObjeto_(mejor.d);
+                    draftDesdeIdb = mejor.fuente === 'idb';
+                }
+            } catch (_) { /* ignore */ }
+
+            purgarTodosNumerosMuestraEnMeta();
+            arranqueCatalogoYMetaCampo_({ desdeBorrador: draftRestaurado });
+            reconstruirEnsayosEnUsoSesionDesdeEstado();
+            ensayoActivo = obtenerEnsayoActivo();
+            recalcularPresionesParaTodos();
+            actualizarIconos();
+            iniciarAutoActualizacionFechaRing();
+            asegurarClamshellInicialVacio(obtenerEnsayoActivo());
+            renderizarTarjetas();
+            renderizarPanelLlenadoJarras();
+            sincronizarLogisticaAcopioDesdeEnsayo();
+            inicializarFlatpickrInputs(document);
+            prepararCustomTimePickers(document);
+            configurarTimePickerEntradaTeclado_();
+            document.getElementById('time-picker-hour-up')?.addEventListener('click', () => {
+                timePickerState.hour = (timePickerState.hour + 1) % 24;
+                timePickerActualizarVista_();
             });
-        }
-        INPUT_IDS_CRITICOS.forEach((id) => {
-            const elId = esModoRegistroAcopio_()
-                ? ({
-                    'visual-p1': 'acopio-peso-1-termino-cosecha',
-                    'visual-p2': 'acopio-peso-2-llegada',
-                    'visual-acopio': 'acopio-peso-3-calibrado',
-                    'visual-despacho': 'acopio-peso-5-despacho-campo'
-                }[id] || id)
-                : id;
-            const el = document.getElementById(elId);
-            if (!el) return;
-            el.addEventListener('input', programarGuardadoDraftCompleto);
-            el.addEventListener('change', programarGuardadoDraftCompleto);
-        });
-        window.addEventListener('beforeunload', (e) => {
-            if (omitirConfirmacionSalida) return;
-            guardarDraftCompleto();
-            if (!hayDatosEnTrabajo()) return;
-            const msg = '¿Estas seguro? Puedes perder informacion no enviada.';
-            e.preventDefault();
-            e.returnValue = msg;
-            return msg;
-        });
-        document.querySelectorAll('#main-bottom-nav a[href]').forEach((a) => {
-            a.addEventListener('click', () => {
-                omitirConfirmacionSalida = true;
-                setTimeout(() => { omitirConfirmacionSalida = false; }, 1200);
+            document.getElementById('time-picker-hour-down')?.addEventListener('click', () => {
+                timePickerState.hour = (timePickerState.hour + 23) % 24;
+                timePickerActualizarVista_();
             });
-        });
-        actualizarBarraHeaderEstado();
-        reiniciarNumeracionParaConsultaServidor();
-        if (!navigator.onLine || !API_URL) {
-            refrescarEstadoOperativoLocal();
-            asegurarNumMuestraAsignadoSiVacio(metaActivoEnsayo || ensayoDesdeFormulario());
-            actualizarVistaCompacta();
-            actualizarProgresoMeta();
-        } else {
+            document.getElementById('time-picker-minute-up')?.addEventListener('click', () => {
+                timePickerState.minute = (timePickerState.minute + 1) % 60;
+                timePickerActualizarVista_();
+            });
+            document.getElementById('time-picker-minute-down')?.addEventListener('click', () => {
+                timePickerState.minute = (timePickerState.minute + 59) % 60;
+                timePickerActualizarVista_();
+            });
+            document.getElementById('time-picker-now')?.addEventListener('click', () => {
+                const now = new Date();
+                timePickerState.hour = now.getHours();
+                timePickerState.minute = now.getMinutes();
+                timePickerActualizarVista_();
+            });
+            document.getElementById('time-picker-cancel')?.addEventListener('click', cerrarTimePickerPersonalizado);
+            document.getElementById('time-picker-apply')?.addEventListener('click', aplicarTimePickerPersonalizado);
+            const numMuestraInput = document.getElementById('visual-num-muestra');
+            if (numMuestraInput) {
+                numMuestraInput.setAttribute('maxlength', String(NUM_MUESTRA_MAX_LEN));
+                numMuestraInput.addEventListener('input', () => {
+                    const limpio = normalizarNumMuestraInput(numMuestraInput.value);
+                    if (numMuestraInput.value !== limpio) numMuestraInput.value = limpio;
+                });
+            }
+            INPUT_IDS_CRITICOS.forEach((id) => {
+                const elId = esModoRegistroAcopio_()
+                    ? ({
+                        'visual-p1': 'acopio-peso-1-termino-cosecha',
+                        'visual-p2': 'acopio-peso-2-llegada',
+                        'visual-acopio': 'acopio-peso-3-calibrado',
+                        'visual-despacho': 'acopio-peso-5-despacho-campo'
+                    }[id] || id)
+                    : id;
+                const el = document.getElementById(elId);
+                if (!el) return;
+                el.addEventListener('input', programarGuardadoDraftCompleto);
+                el.addEventListener('change', programarGuardadoDraftCompleto);
+            });
+            window.addEventListener('beforeunload', (e) => {
+                if (omitirConfirmacionSalida) return;
+                persistirSoloLocalCampo_();
+                if (!hayDatosEnTrabajo()) return;
+                const msg = '¿Estas seguro? Puedes perder informacion no enviada.';
+                e.preventDefault();
+                e.returnValue = msg;
+                return msg;
+            });
+            document.querySelectorAll('#main-bottom-nav a[href]').forEach((a) => {
+                a.addEventListener('click', () => {
+                    persistirSoloLocalCampo_();
+                    void flushDraftCampoAIdb_();
+                    omitirConfirmacionSalida = true;
+                    setTimeout(() => { omitirConfirmacionSalida = false; }, 1200);
+                });
+            });
+            actualizarBarraHeaderEstado();
+            await arranqueServidorCampoTrasBorrador_(draftRestaurado);
+            iniciarAutosaveDraftCampo_();
+            if (!navigator.onLine) {
+                setTimeout(() => {
+                    if (!navigator.onLine) mostrarAlertaModoOffline();
+                }, 400);
+            }
+            sincronizarPendientes();
+            if (draftRestaurado) {
+                setTimeout(() => {
+                    const msg = draftDesdeIdb
+                        ? 'Tu borrador se recuperó del respaldo del teléfono (IndexedDB). Nada se envió al servidor hasta que pulses Enviar.'
+                        : 'Tu borrador local se restauró. Nada se envió al servidor hasta que pulses Enviar.';
+                    mostrarToast('info', 'Datos recuperados', msg);
+                }, 350);
+            }
+        })();
+
+        async function arranqueServidorCampoTrasBorrador_(borradorActivoInicial) {
+            let borradorActivo = !!borradorActivoInicial;
+            if (!borradorActivo) {
+                const res = await cargarMejorBorradorCampoAsync_({ silencioso: true, repintar: true });
+                borradorActivo = res.aplicado;
+            }
+            if (!borradorActivo) {
+                reiniciarNumeracionParaConsultaServidor();
+            }
+            if (!navigator.onLine || !API_URL) {
+                refrescarEstadoOperativoLocal();
+                asegurarNumMuestraAsignadoSiVacio(metaActivoEnsayo || ensayoDesdeFormulario());
+                actualizarVistaCompacta();
+                actualizarProgresoMeta();
+                return;
+            }
             setNumMuestraCargando(true);
-            void refrescarEstadoServidorOperativo(true).then(async () => {
-                if (ultimaRespuestaEstadoServidor && necesitaReposicionarAPrimeraLibre()) {
+            try {
+                await refrescarEstadoServidorOperativo(true);
+                const preservarBorrador = borradorActivo || debePreservarBorradorCampoEnSync_();
+                if (ultimaRespuestaEstadoServidor && necesitaReposicionarAPrimeraLibre() && !preservarBorrador) {
                     reposicionarPantallaPrimeraMuestraLibre('cargaInicial');
                 } else {
                     asegurarNumMuestraAsignadoSiVacio(metaActivoEnsayo || ensayoDesdeFormulario());
                 }
-                if (!draftRestaurado) {
+                const hayBorradorEnAlmacen = await existeBorradorConDatosEnAlmacenCampo_();
+                if (!borradorActivo && hayBorradorEnAlmacen) {
+                    const res = await cargarMejorBorradorCampoAsync_({ silencioso: true, repintar: true });
+                    borradorActivo = res.aplicado;
+                }
+                if (!borradorActivo && !hayBorradorEnAlmacen) {
                     await vaciarDatosIngresoPreservandoMuestraYNumeracion_(metaActivoEnsayo || ensayoDesdeFormulario());
                     establecerAcordeonMetaAbierto(false);
                     guardarMetaEnAlmacenamiento();
+                    if (typeof window.borrarBorradorCampoIdb === 'function') {
+                        void window.borrarBorradorCampoIdb();
+                    }
                     guardarDraftCompleto();
                 }
                 actualizarVistaCompacta();
                 actualizarProgresoMeta();
-            }).finally(() => {
+            } finally {
                 setNumMuestraCargando(false);
                 actualizarHintNumMuestraPantalla();
                 avisarFalloSincronizacionNumMuestra('cargaInicial');
+                if (borradorActivo) {
+                    reaplicarMetaFormularioCampo_(metaActivoEnsayo || ensayoDesdeFormulario());
+                }
+            }
+        }
+
+        async function reconciliarBorradorCampoAlVolverVisible_() {
+            try {
+                await cargarMejorBorradorCampoAsync_({
+                    silencioso: true,
+                    repintar: true,
+                    soloSiMasNuevo: true
+                });
+            } catch (_) { /* ignore */ }
+        }
+
+        async function alVolverVisibleCampo_() {
+            await reconciliarBorradorCampoAlVolverVisible_();
+            reaplicarMetaFormularioCampo_(metaActivoEnsayo || ensayoDesdeFormulario());
+            actualizarBarraHeaderEstado();
+            if (!navigator.onLine || !API_URL) {
+                refrescarEstadoOperativoLocal();
+                return;
+            }
+            void refrescarEstadoServidorOperativo(false, {
+                reposicionarPrimera: false,
+                invalidarFijados: false,
+                avisar: false
             });
         }
+
         function programarRefrescoCampoAlVolverVisible_() {
             clearTimeout(refrescoVisibleCampoTimer);
-            refrescoVisibleCampoTimer = setTimeout(() => {
-                actualizarBarraHeaderEstado();
-                if (!navigator.onLine || !API_URL) {
-                    refrescarEstadoOperativoLocal();
-                    return;
-                }
-                void refrescarEstadoServidorOperativo(true);
-            }, 400);
+            refrescoVisibleCampoTimer = setTimeout(alVolverVisibleCampo_, 400);
         }
 
         let servidorOperativoPollTimer = null;
@@ -8653,30 +9426,27 @@ const META_SAVE_IDS = [
             servidorOperativoPollTimer = setInterval(() => {
                 if (document.visibilityState === 'hidden') return;
                 if (!navigator.onLine) return;
-                void refrescarEstadoServidorOperativo(false);
+                void refrescarEstadoServidorOperativo(false, {
+                    reposicionarPrimera: false,
+                    invalidarFijados: false,
+                    avisar: false
+                });
             }, POLL_SERVIDOR_VISIBLE_MS);
         }
         iniciarPollServidorOperativo();
         window.addEventListener('focus', programarRefrescoCampoAlVolverVisible_);
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                guardarDraftCompleto();
-                guardarMetaEnAlmacenamiento();
+                persistirSoloLocalCampo_();
+                void flushDraftCampoAIdb_();
                 return;
             }
             programarRefrescoCampoAlVolverVisible_();
         });
-        if (!navigator.onLine) {
-            setTimeout(() => {
-                if (!navigator.onLine) mostrarAlertaModoOffline();
-            }, 400);
-        }
-        sincronizarPendientes();
-        if (draftRestaurado) {
-            setTimeout(() => {
-                mostrarToast('info', 'Recuperado de borrador', 'Se restauraron tus datos locales correctamente.');
-            }, 350);
-        }
+        window.addEventListener('pagehide', () => {
+            persistirSoloLocalCampo_();
+            void flushDraftCampoAIdb_();
+        });
         window.addEventListener('storage', (e) => {
             if (!e) return;
             if (e.key === SYNC_QUEUE_KEY || e.key === SYNC_HISTORY_KEY) actualizarBarraHeaderEstado();
@@ -8956,6 +9726,7 @@ const META_SAVE_IDS = [
                 tituloHoja2: 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN COSECHA ARÁNDANO - CS-C6-A9-LN',
                 meta: {
                     fecha: fechaDisplayDdMmYyyy(hoyIsoLocal()),
+                    fundo: strOrEmpty(meta['visual-meta-fundo'] || meta['meta-fundo']),
                     trazabilidad: trazabilidadTextoDesdeMeta(meta),
                     trazabilidadArchivo: trazabilidadBaseDesdeMeta(meta),
                     responsable: strOrEmpty(meta['visual-responsable']),
@@ -8977,8 +9748,11 @@ const META_SAVE_IDS = [
         function armarDatosPdfCampoEnsayos_(ensayosLista) {
             const ensayos = (Array.isArray(ensayosLista) ? ensayosLista : [])
                 .map((e) => String(e || '').trim())
-                .filter(Boolean);
-            const muestras = ensayos.map((ensayo) => construirDatosPdfCampoEnsayo_(ensayo));
+                .filter(Boolean)
+                .filter((e) => ensayoAportaDatosPdfCampo_(e));
+            const muestras = ensayos
+                .map((ensayo) => construirDatosPdfCampoEnsayo_(ensayo))
+                .filter((m) => muestraPdfCampoTieneContenido_(m));
             return {
                 fecha: fechaDisplayDdMmYyyy(hoyIsoLocal()),
                 empresa: 'AGROVISION',

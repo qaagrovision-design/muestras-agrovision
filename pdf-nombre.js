@@ -1,6 +1,6 @@
 /**
- * Nombre de archivo PDF: "Ensayo 4 - E4C9 - 16-06-2026.pdf"
- * Modal: solo nombres de ensayo (sin trazabilidad).
+ * Nombre PDF: "C6 - Ensayo 1 - E4C8T1 - Sekoya Pop - Campo.pdf"
+ * Varios (WhatsApp): líneas con guion inicial.
  */
 (function pdfNombreModule() {
     function txt(v) {
@@ -14,34 +14,40 @@
             .replace(/^-+|-+$/g, '');
     }
 
-    function normalizarFechaNombrePdf_(raw) {
-        const s = txt(raw);
-        if (!s) return '';
-        const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
-        return s.replace(/\//g, '-').replace(/\./g, '-');
+    function fundoNombrePdf_(meta, fila0) {
+        return sanitizarSegmentoNombrePdf_(
+            meta?.fundo
+            || meta?.['visual-meta-fundo']
+            || meta?.['meta-fundo']
+            || fila0?.fundo
+            || ''
+        );
     }
 
-    function codigoMuestraNombrePdf_(meta, fila0, ensayo) {
+    function variedadNombrePdf_(meta, fila0) {
+        return sanitizarSegmentoNombrePdf_(
+            meta?.variedad
+            || meta?.['visual-meta-variedad']
+            || meta?.['meta-variedad']
+            || fila0?.variedad
+            || ''
+        );
+    }
+
+    function trazabilidadNombrePdf_(meta, fila0) {
         const trazRaw = txt(meta?.trazabilidadArchivo || meta?.trazabilidad).split(' / ')[0];
         if (trazRaw) {
             return sanitizarSegmentoNombrePdf_(trazRaw.replace(/-/g, ''));
         }
-        const etapa = txt(fila0?.etapa);
-        const campo = txt(fila0?.campo);
-        const turno = txt(fila0?.turno);
+        const etapa = txt(fila0?.etapa || meta?.etapa);
+        const campo = txt(fila0?.campo || meta?.campo);
+        const turno = txt(fila0?.turno || meta?.turno);
         if (etapa || campo || turno) {
             return sanitizarSegmentoNombrePdf_([etapa, campo, turno].filter(Boolean).join(''));
         }
         const num = txt(meta?.numMuestra);
         if (num) return sanitizarSegmentoNombrePdf_(num);
-        return sanitizarSegmentoNombrePdf_(ensayo || 'muestra');
-    }
-
-    function rotuloMuestraNombrePdf_(meta, fila0, ensayo, muestraLabel) {
-        return sanitizarSegmentoNombrePdf_(
-            meta?.rotulo || fila0?.rotulo || muestraLabel || ensayo || 'Muestra'
-        );
+        return '';
     }
 
     function extraerNumeroEnsayoDesdeTexto_(texto) {
@@ -53,27 +59,18 @@
         return m ? Number(m[0]) : 0;
     }
 
+    function rotuloMuestraNombrePdf_(meta, fila0, ensayo, muestraLabel) {
+        return sanitizarSegmentoNombrePdf_(
+            meta?.rotulo || fila0?.rotulo || muestraLabel || ensayo || 'Muestra'
+        );
+    }
+
     function rotuloSoloMuestraPdf_(item) {
         const ensayoNum = numeroEnsayoDesdeItemPdf_(item);
         if (ensayoNum > 0) return 'Ensayo ' + ensayoNum;
         const meta = item?.meta || {};
         const f0 = (Array.isArray(item?.filas) && item.filas[0]) ? item.filas[0] : {};
         return rotuloMuestraNombrePdf_(meta, f0, item?.ensayo, item?.muestraLabel);
-    }
-
-    function lineaResumenMuestraPdf_(item) {
-        return `${rotuloSoloMuestraPdf_(item)} - ${codigoMuestraNombrePdf_(
-            item?.meta || {},
-            (Array.isArray(item?.filas) && item.filas[0]) ? item.filas[0] : {},
-            item?.ensayo
-        )}`;
-    }
-
-    function partesLineaResumen_(linea) {
-        const s = txt(linea);
-        const idx = s.lastIndexOf(' - ');
-        if (idx < 0) return { rotulo: s, codigo: '' };
-        return { rotulo: s.slice(0, idx), codigo: s.slice(idx + 3) };
     }
 
     function numeroEnsayoDesdeItemPdf_(item) {
@@ -85,6 +82,28 @@
         const f0 = (Array.isArray(item?.filas) && item.filas[0]) ? item.filas[0] : {};
         const rotulo = rotuloMuestraNombrePdf_(meta, f0, item?.ensayo, item?.muestraLabel);
         return extraerNumeroEnsayoDesdeTexto_(rotulo);
+    }
+
+    function sufijoModoNombrePdf_(item, opts) {
+        const fromOpts = txt(opts?.modo);
+        if (fromOpts) return fromOpts;
+        const mr = txt(item?.modoRegistro).toLowerCase();
+        if (mr === 'acopio') return 'Acopio';
+        if (mr === 'packing') return 'Packing';
+        return 'Campo';
+    }
+
+    function lineaNombrePdfMuestra_(item, opts) {
+        const meta = item?.meta || {};
+        const f0 = (Array.isArray(item?.filas) && item.filas[0]) ? item.filas[0] : {};
+        const partes = [
+            fundoNombrePdf_(meta, f0),
+            rotuloSoloMuestraPdf_(item),
+            trazabilidadNombrePdf_(meta, f0),
+            variedadNombrePdf_(meta, f0),
+            sufijoModoNombrePdf_(item, opts)
+        ].filter(Boolean);
+        return partes.join(' - ');
     }
 
     function ensayosUnicosOrdenadosParaTituloPdf_(items) {
@@ -108,12 +127,6 @@
         return 'Resumen: ' + lista.join(' - ');
     }
 
-    function nombreArchivoPdfDesdeItem_(item) {
-        const linea = lineaResumenMuestraPdf_(item);
-        const fecha = normalizarFechaNombrePdf_(item?.meta?.fecha || item?.fecha);
-        return `${linea} - ${fecha || 'sin-fecha'}.pdf`;
-    }
-
     function muestrasUnicasOrdenadasPdf_(lista) {
         const ordenados = (Array.isArray(lista) ? lista : []).slice().sort((a, b) => {
             return numeroEnsayoDesdeItemPdf_(a) - numeroEnsayoDesdeItemPdf_(b);
@@ -130,16 +143,32 @@
         return unicos;
     }
 
-    function nombreArchivoPdfDesdeListaMuestras_(lista) {
+    function nombreArchivoPdfDesdeItem_(item, opts) {
+        const linea = lineaNombrePdfMuestra_(item, opts);
+        return `${linea || 'muestra'}.pdf`;
+    }
+
+    function nombreArchivoPdfDesdeListaMuestras_(lista, opts) {
         const unicos = muestrasUnicasOrdenadasPdf_(lista);
         if (!unicos.length) return 'muestra.pdf';
-        if (unicos.length === 1) return nombreArchivoPdfDesdeItem_(unicos[0]);
+        if (unicos.length === 1) return nombreArchivoPdfDesdeItem_(unicos[0], opts);
+        const lineas = unicos.map((item) => lineaNombrePdfMuestra_(item, opts)).filter(Boolean);
+        return `${lineas.join(' · ') || 'muestra'}.pdf`;
+    }
 
-        const fecha = normalizarFechaNombrePdf_(
-            unicos[0]?.meta?.fecha || unicos[0]?.fecha
-        );
-        const lineas = unicos.map((item) => lineaResumenMuestraPdf_(item));
-        return `${lineas.join(' · ')} - ${fecha || 'sin-fecha'}.pdf`;
+    function textoNombresPdfParaCompartir_(lista, opts) {
+        const unicos = muestrasUnicasOrdenadasPdf_(lista);
+        if (!unicos.length) return 'muestra';
+        if (unicos.length === 1) {
+            return lineaNombrePdfMuestra_(unicos[0], opts) || 'muestra';
+        }
+        return unicos
+            .map((item) => {
+                const linea = lineaNombrePdfMuestra_(item, opts);
+                return linea ? '-' + linea : '';
+            })
+            .filter(Boolean)
+            .join('\n');
     }
 
     function tituloModalPdfDesdeListaMuestras_(lista) {
@@ -152,24 +181,21 @@
     function tituloModalPdfDesdeNombreArchivo_(nombre) {
         const nom = String(nombre || 'muestra.pdf').replace(/\.pdf$/i, '').trim();
         if (!nom) return { text: 'Resumen: muestra', resumen: false };
-
-        const fechaMatch = nom.match(/ - (\d{2}-\d{2}-\d{4})$/);
-        if (fechaMatch && nom.includes(' · ')) {
-            const cuerpo = nom.slice(0, nom.length - fechaMatch[0].length);
-            const rotulos = cuerpo.split(' · ')
-                .map((l) => partesLineaResumen_(txt(l)).rotulo)
+        if (nom.includes(' · ')) {
+            const rotulos = nom.split(' · ')
+                .map((l) => {
+                    const partes = txt(l).split(' - ');
+                    return partes.length > 1 ? partes[1] : partes[0];
+                })
                 .filter(Boolean);
             if (rotulos.length > 1) {
                 return { text: 'Resumen: ' + rotulos.join(' - '), resumen: true };
             }
         }
-
-        if (fechaMatch) {
-            const sinFecha = nom.slice(0, nom.length - fechaMatch[0].length);
-            const rotulo = partesLineaResumen_(sinFecha).rotulo || sinFecha;
-            return { text: rotulo, resumen: false };
+        const partes = nom.split(' - ');
+        if (partes.length > 1 && /^Ensayo\s+\d+$/i.test(partes[1])) {
+            return { text: partes[1], resumen: false };
         }
-
         return { text: nom, resumen: nom.startsWith('Resumen:') };
     }
 
@@ -193,5 +219,6 @@
     }
 
     window.nombreArchivoPdfDesdeListaMuestras = nombreArchivoPdfDesdeListaMuestras_;
+    window.textoNombresPdfParaCompartir = textoNombresPdfParaCompartir_;
     window.actualizarTituloModalPdf = actualizarTituloModalPdf_;
 })();

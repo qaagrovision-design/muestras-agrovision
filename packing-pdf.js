@@ -40,6 +40,7 @@
     let logoDataUrlCache = null;
     let pdfBlobActual = null;
     let pdfNombreActual = 'medicion-recepcion-arandano.pdf';
+    let pdfDatosActual = null;
     let pdfUrlActual = null;
     let pdfjsLibInited = false;
     let pdfPreviewSession = null;
@@ -361,20 +362,12 @@
         return normalizarListaDatosPdfPacking_(datos);
     }
 
-    function sufijoNombrePdfPacking_(nombreBase) {
-        const s = String(nombreBase || 'muestra.pdf').trim();
-        if (/ \(PACKING\)\.pdf$/i.test(s)) return s;
-        if (/\.pdf$/i.test(s)) return s.replace(/\.pdf$/i, ' (PACKING).pdf');
-        return s + ' (PACKING).pdf';
-    }
-
     function nombreArchivoPdf(datos) {
         const lista = normalizarListaTituloPdfPacking_(datos);
-        let base = 'muestra.pdf';
         if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function') {
-            base = window.nombreArchivoPdfDesdeListaMuestras(lista);
+            return window.nombreArchivoPdfDesdeListaMuestras(lista, { modo: 'Packing' });
         }
-        return sufijoNombrePdfPacking_(base);
+        return 'muestra.pdf';
     }
 
     function pesosColumnas(weights, totalW) {
@@ -1166,6 +1159,7 @@
         if (ov) ov.style.display = 'none';
         limpiarVistaPreviaPdf();
         revocarPdfUrlActual();
+        pdfDatosActual = null;
     }
 
     function abrirPdfEnVisorExterno() {
@@ -1188,6 +1182,7 @@
 
     async function abrirModalPdf(blob, nombre, datosPdf) {
         pdfBlobActual = blob;
+        pdfDatosActual = datosPdf || null;
         pdfNombreActual = nombre || 'medicion-recepcion-arandano.pdf';
         actualizarTituloModalPdf_(pdfNombreActual, datosPdf);
         const ov = document.getElementById('pdf-modal-overlay');
@@ -1211,10 +1206,18 @@
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
 
+    function tituloCompartirPdfPacking_() {
+        const lista = normalizarListaTituloPdfPacking_(pdfDatosActual);
+        if (lista.length && typeof window.textoNombresPdfParaCompartir === 'function') {
+            return window.textoNombresPdfParaCompartir(lista, { modo: 'Packing' });
+        }
+        return pdfNombreActual.replace(/\.pdf$/i, '');
+    }
+
     async function compartirWhatsAppPdf() {
         if (!pdfBlobActual) return;
         const file = new File([pdfBlobActual], pdfNombreActual, { type: 'application/pdf' });
-        const titulo = pdfNombreActual.replace('.pdf', '');
+        const titulo = tituloCompartirPdfPacking_();
         if (navigator.share) {
             try {
                 const payload = { title: titulo, files: [file] };

@@ -99,8 +99,8 @@
             <div class="hist-block-head">
                 <span class="hist-block-icon hist-block-icon--local" aria-hidden="true"><i data-lucide="smartphone"></i></span>
                 <div class="hist-block-titles">
-                    <h2 class="hist-block-title" id="hist-local-title">Cola en el teléfono</h2>
-                    <p class="hist-block-desc" id="hist-local-desc">Aún no subidos — esperan internet</p>
+                    <h2 class="hist-block-title" id="hist-local-title">En este teléfono</h2>
+                    <p class="hist-block-desc" id="hist-local-desc">Cola pendiente y envíos recientes con PDF</p>
                 </div>
             </div>
             <div id="local-list" class="hist-list"></div>
@@ -196,9 +196,10 @@
         const API_URL = String(window.APPS_SCRIPT_API_URL || '').trim();
         const SYNC_QUEUE_KEY = 'tiempos-sync-queue-v1';
         const SYNC_HISTORY_KEY = 'tiempos-sync-history-v1';
+        const SYNC_ENVIADOS_KEY = 'tiempos-sync-enviados-v1';
         const HIST_PER_PAGE = 8;
         const HIST_TEXTO_SERVIDOR = 'Confirmados en Google Sheets · hoy y ayer';
-        const HIST_TEXTO_LOCAL = 'Aún no subidos · hoy y ayer';
+        const HIST_TEXTO_LOCAL = 'Cola, subidos y PDF local · hoy y ayer';
 
         let histServerRows = [];
         let histLocalRows = [];
@@ -862,7 +863,7 @@
             if (!box) return;
             histLocalPage = acotarPaginaHistorial(histLocalPage, histLocalRows.length);
             if (!histLocalRows.length) {
-                box.innerHTML = '<div class="hist-empty"><i data-lucide="check-circle-2" aria-hidden="true"></i><span>Cola vacía para hoy y ayer — todo sincronizado.</span></div>';
+                box.innerHTML = '<div class="hist-empty"><i data-lucide="check-circle-2" aria-hidden="true"></i><span>Sin registros locales para hoy y ayer.</span></div>';
                 refrescarIconosHistorial();
                 actualizarDescBloqueHistorial('hist-local-desc', 0, 0, HIST_TEXTO_LOCAL);
                 actualizarPaginacionHistorial('local-pagination', 0, 0, () => {});
@@ -943,13 +944,19 @@
 
         function renderLocal() {
             const queue = readJsonLs(SYNC_QUEUE_KEY);
+            const archivados = readJsonLs(SYNC_ENVIADOS_KEY);
             const hist = readJsonLs(SYNC_HISTORY_KEY);
             const byUid = {};
             hist.forEach((h) => { if (h && h.uid) byUid[h.uid] = h; });
-            const rows = queue.map((q) => {
-                const events = hist.filter((h) => h && h.uid && q && q.uid && h.uid === q.uid);
-                const last = events.length ? events[events.length - 1] : (q && q.uid ? byUid[q.uid] : null);
-                const esPacking = String(q?.modo || q?.payload?.mode || '').toLowerCase() === 'packing';
+            const uidsEnCola = new Set(queue.map((q) => String(q?.uid || '')).filter(Boolean));
+            const clavesEnCola = new Set(queue.map((q) => clavePdfHistorial(
+                normalizarFechaHist(q?.fecha),
+                String(q?.ensayo_numero || '').trim() || numeroEnsayoDesdeTexto(q?.ensayo),
+                String(q?.num_muestra || '').trim(),
+                String(q?.modo_registro || q?.modo || 'campo').toLowerCase()
+            )));
+            const filaDesdeRegistro = (q, last) => {
+                const esPacking = String(q?.modo || q?.payload?.mode || q?.modo_registro || '').toLowerCase() === 'packing';
                 const tipoDato = esPacking ? 'packing' : 'campo';
                 const ts = Number(last?.ts || q?.actualizado_en || q?.creado_en || 0);
                 const horaRows = q?.rows;
@@ -970,6 +977,23 @@
                     hora_guardada: horaCampo || ts,
                     ts: ts
                 };
+            };
+            const rows = queue.map((q) => {
+                const events = hist.filter((h) => h && h.uid && q && q.uid && h.uid === q.uid);
+                const last = events.length ? events[events.length - 1] : (q && q.uid ? byUid[q.uid] : null);
+                return filaDesdeRegistro(q, last);
+            });
+            archivados.forEach((a) => {
+                if (!a || uidsEnCola.has(String(a.uid || ''))) return;
+                const fila = filaDesdeRegistro(a, a);
+                const clave = clavePdfHistorial(
+                    normalizarFechaHist(fila.fecha),
+                    String(fila.ensayo_numero || '').trim(),
+                    String(fila.num_muestra || '').trim(),
+                    String(a?.modo_registro || a?.modo || 'campo').toLowerCase()
+                );
+                if (clavesEnCola.has(clave)) return;
+                rows.push(fila);
             });
             const rowsRecientes = rows.filter((r) => esFechaHistorialVisible(r.fecha));
             const pendientes = rowsRecientes.filter((r) => r.estado === 'pendiente').length;

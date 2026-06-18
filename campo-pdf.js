@@ -46,6 +46,7 @@
     let logoDataUrlCache = null;
     let pdfBlobActual = null;
     let pdfNombreActual = 'medicion-arandano.pdf';
+    let pdfDatosActual = null;
     let pdfMensajeWhatsAppActual = '';
     let pdfUrlActual = null;
     let pdfjsLibInited = false;
@@ -202,10 +203,16 @@
         return [];
     }
 
+    function modoNombrePdfCampo_(datos) {
+        if (datos?.modoRegistro === 'acopio') return 'Acopio';
+        const mr = String(window.CAMPO_REGISTRO_MODO || '').trim().toLowerCase();
+        return mr === 'acopio' ? 'Acopio' : 'Campo';
+    }
+
     function nombreArchivoPdf(datos) {
         const lista = normalizarListaDatosPdfCampo_(datos);
         if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function') {
-            return window.nombreArchivoPdfDesdeListaMuestras(lista);
+            return window.nombreArchivoPdfDesdeListaMuestras(lista, { modo: modoNombrePdfCampo_(datos) });
         }
         return 'muestra.pdf';
     }
@@ -980,16 +987,17 @@
         const lista = Array.isArray(datos?.muestras) ? datos.muestras : [];
         if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function' && lista.length) {
             return window.nombreArchivoPdfDesdeListaMuestras(lista.map((bloque) => ({
-                ensayo: bloque.ensayo,
+                ensayo: bloque.meta?.ensayo || bloque.ensayo,
                 muestraLabel: bloque.meta?.muestraLabel,
-                fecha: datos?.fecha,
+                modoRegistro: datos?.modoRegistro,
                 meta: {
                     ...(bloque.meta || {}),
+                    fundo: bloque.meta?.fundo,
+                    variedad: bloque.meta?.variedad,
                     rotulo: bloque.meta?.muestraLabel || bloque.meta?.rotulo,
-                    trazabilidadArchivo: bloque.meta?.trazabilidadArchivo || bloque.meta?.trazabilidad,
-                    fecha: datos?.fecha || bloque.meta?.fecha
+                    trazabilidadArchivo: bloque.meta?.trazabilidadArchivo || bloque.meta?.trazabilidad
                 }
-            })));
+            })), { modo: modoNombrePdfCampo_(datos) });
         }
         return 'muestra.pdf';
     }
@@ -1536,6 +1544,7 @@
         if (ov) ov.style.display = 'none';
         limpiarVistaPreviaPdf();
         revocarPdfUrlActual();
+        pdfDatosActual = null;
     }
 
     function abrirPdfEnVisorExterno() {
@@ -1558,6 +1567,7 @@
 
     async function abrirModalPdf(blob, nombre, datosPdf) {
         pdfBlobActual = blob;
+        pdfDatosActual = datosPdf || null;
         pdfNombreActual = nombre || 'medicion-arandano.pdf';
         actualizarTituloModalPdf_(pdfNombreActual, datosPdf);
         const ov = document.getElementById('pdf-modal-overlay');
@@ -1581,9 +1591,17 @@
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
 
+    function tituloCompartirPdfCampo_() {
+        const lista = normalizarListaDatosPdfCampo_(pdfDatosActual);
+        if (lista.length && typeof window.textoNombresPdfParaCompartir === 'function') {
+            return window.textoNombresPdfParaCompartir(lista, { modo: modoNombrePdfCampo_(pdfDatosActual) });
+        }
+        return pdfNombreActual.replace(/\.pdf$/i, '');
+    }
+
     async function compartirWhatsAppPdf() {
         if (!pdfBlobActual) return;
-        const titulo = pdfNombreActual.replace('.pdf', '');
+        const titulo = tituloCompartirPdfCampo_();
         const msg = pdfMensajeWhatsAppActual || `${titulo}\n(Adjunta el PDF descargado)`;
         await compartirPdfPorWhatsApp(pdfBlobActual, pdfNombreActual, msg);
     }

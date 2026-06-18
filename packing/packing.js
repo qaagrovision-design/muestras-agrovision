@@ -3402,6 +3402,10 @@
 
     async function sincronizarPendientesPacking() {
         if (syncPackingEnCurso) return;
+        if (document.visibilityState === 'hidden') {
+            actualizarHeaderPendientes();
+            return;
+        }
         if (!navigator.onLine || !API_URL) {
             actualizarHeaderPendientes();
             return;
@@ -4201,6 +4205,12 @@
         if (!key) return '';
         escribirBorradorMuestraPacking_(key, capturarEstadoMuestraPacking());
         return key;
+    }
+
+    /** Solo localStorage — nunca envía a planilla ni cola de sync. */
+    function persistirSoloLocalPacking_() {
+        cancelarGuardadoBorradorProgramadoPacking_();
+        guardarBorradorMuestraActivaInmediato_();
     }
 
     /** Demo packing: escribe en inputs/campos visibles; el borrador captura el mismo estado que edición manual. */
@@ -5060,18 +5070,47 @@
     });
 
     window.addEventListener('beforeunload', () => {
-        guardarBorradorMuestraActiva();
+        persistirSoloLocalPacking_();
     });
+    window.addEventListener('pagehide', () => {
+        persistirSoloLocalPacking_();
+    });
+    function reafirmarBorradorPackingAlVolverVisible_() {
+        persistirSoloLocalPacking_();
+        if (!muestraSeleccionada()) return false;
+        const key = claveBorradorMuestraPacking(elFecha?.value, elMuestra?.value);
+        const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
+        if (!borrador || !hayDatosTrabajoMuestraPacking(borrador)) return false;
+        packingRestaurandoBorrador = true;
+        try {
+            aplicarEstadoMuestraPacking(borrador, { skipPreview: true });
+            actualizarContadoresTiempo();
+            actualizarContadoresPresionPacking();
+            actualizarFabRestanteBadge();
+        } finally {
+            packingRestaurandoBorrador = false;
+        }
+        return true;
+    }
+
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
-            guardarBorradorMuestraActiva();
+            persistirSoloLocalPacking_();
             return;
         }
+        if (reafirmarBorradorPackingAlVolverVisible_()) return;
         if (!puedeRefrescarFechaPacking_()) return;
         if (aplicarFechaHoyPacking_({ forzar: true }) && elFecha?.value) {
             void cargarMuestrasPorFecha(elFecha.value);
         }
     });
+
+    const PACKING_DRAFT_AUTOSAVE_MS = 3000;
+    setInterval(() => {
+        if (document.visibilityState === 'hidden') return;
+        if (packingOmitirAutoguardado || packingRestaurandoBorrador || !muestraSeleccionada()) return;
+        persistirSoloLocalPacking_();
+    }, PACKING_DRAFT_AUTOSAVE_MS);
 
     function fechaDisplayDdMmYyyyPacking(iso) {
         const p = String(iso || hoyIsoLocal()).split('-');
@@ -5203,6 +5242,7 @@
                 campo,
                 turno,
                 traz: [etapa, campo, turno].filter(Boolean).join('-'),
+                fundo: String(d.FUNDO ?? meta.fundo ?? '').trim(),
                 variedad: String(d.VARIEDAD ?? meta.variedad ?? '').trim(),
                 placa: String(d.PLACA_VEHICULO ?? meta.placa ?? '').trim().toUpperCase(),
                 guia: textoMetaCampoPdfPacking_(d.GUIA_REMISION || meta.guia),
@@ -5217,6 +5257,7 @@
             campo: partes[1] || '',
             turno: partes.slice(2).join('-') || '',
             traz,
+            fundo: String(meta.fundo || d.FUNDO || '').trim(),
             variedad: String(meta.variedad || '').trim(),
             placa: String(meta.placa || '').trim().toUpperCase(),
             guia: textoMetaCampoPdfPacking_(meta.guia || d.GUIA_REMISION),
@@ -5271,6 +5312,8 @@
             tituloHoja2: 'FORMATO MEDICIÓN DE TIEMPOS, TEMPERATURA Y PESOS EN RECEPCIÓN - ARÁNDANO - CS-C6-A9-LN',
             meta: {
                 fecha: fechaPdf,
+                fundo: trazMeta.fundo,
+                variedad: trazMeta.variedad,
                 trazabilidad: trazMeta.traz,
                 trazabilidadArchivo: trazMeta.traz,
                 rotulo: metaBase.rotulo,
