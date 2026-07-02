@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="application-name" content="Muestras Web">
+    <meta name="apple-mobile-web-app-title" content="Muestras Web">
+    <meta name="theme-color" content="#164C7C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+    <title>MP-TK</title>
+    <link rel="icon" href="../../assets/images/QA2026-2.0.png" type="image/png">
+    <link rel="apple-touch-icon" href="../../assets/images/QA2026-2.0.png">
+    <script src="../../core/icono-app.js"></script>
+    <link rel="manifest" href="../../assets/manifest.json">
+    <link rel="stylesheet" href="../../assets/styles.css">
+</head>
+<body class="packing-page mptk-page" data-mptk-formato="1.0">
+
+    <header>
+        <div class="header-top-row">
+            <h2 class="header-title">
+                <span class="header-title-prefix">Registro:</span>
+                <select
+                    class="header-modulo-select header-modulo-pill--wide"
+                    id="mptk-formato"
+                    name="formato"
+                    aria-label="Formato de registro"
+                    data-url-mp-tk="./"
+                    data-url-tk20="../tk-2.0/">
+                    <option value="1.0">MP-TK</option>
+                    <option value="2.0">TK-2.0</option>
+                </select>
+            </h2>
+            <div class="header-status-card is-online" id="header-status-card" aria-live="polite" aria-label="Pendientes y conexión">
+                <div class="header-status-ring" aria-hidden="true">
+                    <span class="header-status-ring-inner">
+                        <i data-lucide="wifi" class="header-status-wifi" id="header-status-wifi"></i>
+                    </span>
+                </div>
+                <div class="header-status-body">
+                    <div class="header-status-pend">Pendientes: <span class="header-status-pend-num" id="header-pendientes-count">00</span></div>
+                    <div class="header-status-conn">
+                        <span class="header-status-conn-dot" aria-hidden="true"></span>
+                        <span class="header-status-conn-text" id="header-conn-label">En línea</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="meta-shell packing-meta-shell" id="mptk-meta-shell">
+            <div class="packing-meta-clip">
+            <div class="packing-select-block" id="mptk-select-block">
+                <div class="packing-block-loader" id="mptk-select-loader" hidden aria-live="polite">
+                    <span class="packing-spinner" aria-hidden="true"></span>
+                    <span class="packing-loader-text" id="mptk-select-loader-msg">Cargando muestras…</span>
+                </div>
+                <div class="packing-select-row">
+                    <div class="packing-select-cell">
+                        <label class="meta-block-title" for="mptk-fecha">Fecha</label>
+                        <input class="meta-inp" id="mptk-fecha" name="fecha" type="date" aria-label="Fecha del registro">
+                    </div>
+                    <div class="packing-select-cell">
+                        <label class="meta-block-title" for="mptk-muestra">Muestra</label>
+                        <select class="meta-inp" id="mptk-muestra" name="muestra" disabled aria-label="N° muestra y ensayo">
+                            <option value="">Seleccionar fecha</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="packing-status-msg" id="mptk-status" hidden></p>
+            </div>
+
+            <section class="packing-resumen is-empty" id="mptk-resumen" aria-label="Resumen de datos">
+                <div class="packing-preview-panel meta-preview" id="mptk-preview" aria-live="polite">
+                    <div class="packing-preview-loader" id="mptk-preview-loader" hidden>
+                        <span class="packing-spinner packing-spinner--lg" aria-hidden="true"></span>
+                        <span class="packing-loader-text" id="mptk-preview-loader-msg">Cargando datos…</span>
+                        <span class="packing-loader-sub">Consultando la planilla, por favor espera</span>
+                    </div>
+                    <div class="packing-preview-body" id="mptk-preview-body">
+                        <div class="packing-chips-panel" id="mptk-chips-panel">
+                            <div class="packing-chips-box" id="mptk-chips-box">
+                                <div class="packing-chip packing-chip--traz">
+                                    <span class="packing-chip-label">Etapa · Campo · Turno</span>
+                                    <span class="packing-chip-value packing-chip-value--traz packing-chip-value--empty" id="mptk-traz">--</span>
+                                </div>
+                                <div class="packing-chip">
+                                    <span class="packing-chip-label">Variedad</span>
+                                    <span class="packing-chip-value packing-chip-value--empty" id="mptk-variedad">--</span>
+                                </div>
+                                <div class="packing-chip">
+                                    <span class="packing-chip-label">Placa TK</span>
+                                    <span class="packing-chip-value packing-chip-value--empty" id="mptk-placa">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            </div>
+            <button type="button" class="packing-resumen-fold-btn" id="mptk-resumen-toggle" aria-expanded="true" aria-controls="mptk-chips-box" title="Ocultar datos del registro" aria-label="Ocultar datos del registro" hidden>
+                <i data-lucide="clipboard-list"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="container" id="mptk-main" aria-label="Contenido MP-TK">
+        <input type="hidden" id="fecha_inspeccion_tk" name="fecha_inspeccion_tk" value="">
+
+        <div class="packing-hora-row is-disabled" id="mptk-hora-row" aria-disabled="true">
+            <div class="control-equitativo-bar packing-hora-bar">
+                <div class="control-equitativo-label">
+                    <b>Hora salida frío</b>
+                    <span>Datos importantes en MP-TK</span>
+                </div>
+                <div class="packing-hora-responsable-wrap">
+                    <input class="packing-responsable-inp" id="responsable_tk" name="responsable_tk" type="text" placeholder="Responsable" enterkeyhint="done" autocomplete="name" aria-label="Responsable" disabled>
+                </div>
+                <div class="control-equitativo-actions">
+                    <input class="control-equitativo-btn packing-hora-inicio-inp" id="hora_salida_frio_tk" name="hora_salida_frio_tk" type="time" enterkeyhint="done" aria-label="Hora salida frío" disabled>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-equitativo-bar control-equitativo-bar--stacked is-disabled" id="control_equitativo_bar_mptk">
+            <div class="control-equitativo-label">
+                <b>Control equitativo</b>
+                <span>Temperatura y humedad para el registro TK</span>
+            </div>
+            <div class="control-equitativo-actions">
+                <button type="button" class="control-equitativo-btn" id="btn_temp_mp_mptk" disabled title="Temperatura cámara materia prima" aria-label="Temperatura cámara MP">
+                    <i data-lucide="snowflake"></i>
+                </button>
+                <button type="button" class="control-equitativo-btn control-equitativo-btn--icon-combo" id="btn_temp_tk_mptk" disabled title="Temperatura traslado Thermo-King" aria-label="Temperatura traslado TK">
+                    <i data-lucide="truck"></i>
+                    <i data-lucide="snowflake" class="control-equitativo-icon-combo-ice" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="control-equitativo-btn" id="btn_hum_mptk" disabled title="Selecciona una muestra" aria-label="Humedad relativa MP-TK">
+                    <i data-lucide="droplets"></i>
+                </button>
+                <button type="button" class="control-equitativo-btn" id="btn_placa_mptk" disabled title="Selecciona una muestra" aria-label="Placa vehículo TK">
+                    <i data-lucide="car-front"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="packing-cards-wrap is-disabled" id="mptk-cards-wrap" aria-disabled="true"></div>
+
+        <div id="mptk-fields-store" hidden aria-hidden="true">
+            <input type="hidden" id="rotulo_muestra_tk" name="rotulo_muestra_tk" value="">
+            <input type="hidden" id="variedad_info_tk" name="variedad_info_tk" value="">
+            <input type="hidden" id="etapa_info_tk" name="etapa_info_tk" value="">
+            <input type="hidden" id="campo_info_tk" name="campo_info_tk" value="">
+            <input type="hidden" id="turno_info_tk" name="turno_info_tk" value="">
+            <input type="hidden" id="placa_thermoking_tk" name="placa_thermoking_tk" value="">
+            <input type="hidden" id="tiempo_ic_tk" name="tiempo_ic_tk" value="">
+            <input type="hidden" id="tiempo_st_tk" name="tiempo_st_tk" value="">
+            <input type="hidden" id="tiempo_it_tk" name="tiempo_it_tk" value="">
+            <input type="hidden" id="tiempo_dp_tk" name="tiempo_dp_tk" value="">
+            <input type="hidden" id="peso_ic_tk" name="peso_ic_tk" value="">
+            <input type="hidden" id="peso_st_tk" name="peso_st_tk" value="">
+            <input type="hidden" id="peso_it_tk" name="peso_it_tk" value="">
+            <input type="hidden" id="peso_dp_tk" name="peso_dp_tk" value="">
+            <input type="hidden" id="temp_ic_cm_tk" name="temp_ic_cm_tk" value="">
+            <input type="hidden" id="temp_ic_pu_tk" name="temp_ic_pu_tk" value="">
+            <input type="hidden" id="temp_st_cm_tk" name="temp_st_cm_tk" value="">
+            <input type="hidden" id="temp_st_pu_tk" name="temp_st_pu_tk" value="">
+            <input type="hidden" id="temp_it_amb_tk" name="temp_it_amb_tk" value="">
+            <input type="hidden" id="temp_it_veh_tk" name="temp_it_veh_tk" value="">
+            <input type="hidden" id="temp_it_pu_tk" name="temp_it_pu_tk" value="">
+            <input type="hidden" id="temp_dp_amb_tk" name="temp_dp_amb_tk" value="">
+            <input type="hidden" id="temp_dp_veh_tk" name="temp_dp_veh_tk" value="">
+            <input type="hidden" id="temp_dp_pu_tk" name="temp_dp_pu_tk" value="">
+            <input type="hidden" id="hum_ic_tk" name="hum_ic_tk" value="">
+            <input type="hidden" id="hum_st_tk" name="hum_st_tk" value="">
+            <input type="hidden" id="hum_aei_tk" name="hum_aei_tk" value="">
+            <input type="hidden" id="hum_ivi_tk" name="hum_ivi_tk" value="">
+            <input type="hidden" id="hum_aed_tk" name="hum_aed_tk" value="">
+            <input type="hidden" id="hum_ivd_tk" name="hum_ivd_tk" value="">
+            <input type="hidden" id="pres_ic_tk" name="pres_ic_tk" value="">
+            <input type="hidden" id="pres_st_tk" name="pres_st_tk" value="">
+            <input type="hidden" id="pres_aei_tk" name="pres_aei_tk" value="">
+            <input type="hidden" id="pres_ivi_tk" name="pres_ivi_tk" value="">
+            <input type="hidden" id="pres_aed_tk" name="pres_aed_tk" value="">
+            <input type="hidden" id="pres_ivd_tk" name="pres_ivd_tk" value="">
+            <input type="hidden" id="vapor_ic_tk" name="vapor_ic_tk" value="">
+            <input type="hidden" id="vapor_scm_tk" name="vapor_scm_tk" value="">
+            <input type="hidden" id="vapor_it_tk" name="vapor_it_tk" value="">
+            <input type="hidden" id="vapor_st_tk" name="vapor_st_tk" value="">
+            <input type="hidden" id="observacion_tk" name="observacion_tk" value="">
+        </div>
+
+        <div class="campo-envio-bar packing-envio-bar" id="mptk-envio-bar" role="region" aria-label="Enviar registro Thermo-King">
+            <button type="button" class="btn-save btn-save-campo" id="btn-guardar-enviar-tk" disabled>
+                Enviar registro
+            </button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mptk-pesos-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="mptk-pesos-modal-title" style="margin-bottom: 4px; color: var(--primary);">Editar Thermo-King #1</h2>
+            <p class="mptk-pesos-modal-sub" style="margin: 0 0 14px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: #64748b; text-transform: uppercase;">Peso bruto muestra (g)</p>
+            <div class="packing-pesos-grid mptk-pesos-grid">
+                <div class="form-group">
+                    <label for="mptk-inp-peso-ic">Ingreso · cámara materia prima (g)</label>
+                    <input type="text" id="mptk-inp-peso-ic" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-peso-st">Salida · cámara materia prima (g)</label>
+                    <input type="text" id="mptk-inp-peso-st" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-peso-it">Inicio traslado TK. (g)</label>
+                    <input type="text" id="mptk-inp-peso-it" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-peso-dp">Despacho TK. (g)</label>
+                    <input type="text" id="mptk-inp-peso-dp" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+            </div>
+            <div id="mptk-pesos-alert" class="metric-inline-alert" style="display:none;"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="mptk-pesos-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="mptk-pesos-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mptk-tiempos-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="mptk-tiempos-modal-title" style="margin-bottom: 4px; color: var(--primary);">Tiempos · Thermo-King #1</h2>
+            <p class="mptk-tiempos-modal-sub" style="margin: 0 0 14px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: #64748b; text-transform: uppercase;">Tiempos de la muestra (hora)</p>
+            <div class="packing-tiempos-grid mptk-tiempos-grid">
+                <div class="form-group">
+                    <label for="mptk-inp-tiempo-ic">Ing. · cám. MP</label>
+                    <input class="packing-tiempo-inp" id="mptk-inp-tiempo-ic" type="time" enterkeyhint="done">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-tiempo-st">Sal. · cám. MP</label>
+                    <input class="packing-tiempo-inp" id="mptk-inp-tiempo-st" type="time" enterkeyhint="done">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-tiempo-it">Inicio traslado TK.</label>
+                    <input class="packing-tiempo-inp" id="mptk-inp-tiempo-it" type="time" enterkeyhint="done">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-tiempo-dp">Despacho TK.</label>
+                    <input class="packing-tiempo-inp" id="mptk-inp-tiempo-dp" type="time" enterkeyhint="done">
+                </div>
+            </div>
+            <div id="mptk-tiempos-alert" class="metric-inline-alert" style="display:none;"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="mptk-tiempos-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="mptk-tiempos-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mptk-presion-amb-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="mptk-presion-amb-modal-title" style="margin-bottom: 16px; color: var(--primary);">Presión de vapor ambiente (Kpa) · TK #1</h2>
+            <div class="metric-modal-body" id="mptk_presion_amb_modal_body"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="mptk-presion-amb-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="mptk-presion-amb-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mptk-presion-fruta-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="mptk-presion-fruta-modal-title" style="margin-bottom: 4px; color: var(--primary);">Presión de vapor fruta (Kpa) · TK #1</h2>
+            <p class="mptk-pesos-modal-sub" style="margin: 0 0 14px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: #64748b; text-transform: uppercase;">Presión de vapor fruta (Kpa)</p>
+            <div class="packing-pesos-grid mptk-pesos-grid mptk-presion-fruta-grid">
+                <div class="form-group">
+                    <label for="mptk-inp-vapor-ic">Ingreso · cámara materia prima (Kpa)</label>
+                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-ic" data-field="vapor_ic_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-vapor-st">Salida · cámara materia prima (Kpa)</label>
+                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-st" data-field="vapor_scm_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-vapor-it">Inicio traslado TK. (Kpa)</label>
+                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-it" data-field="vapor_it_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                </div>
+                <div class="form-group">
+                    <label for="mptk-inp-vapor-dp">Despacho TK. (Kpa)</label>
+                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-dp" data-field="vapor_st_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                </div>
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="mptk-presion-fruta-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="mptk-presion-fruta-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mptk-observation-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Observación</h2>
+            <div class="form-group">
+                <label for="mptk-visual-observation">OBSERVACIÓN MP-TK</label>
+                <input type="text" id="mptk-visual-observation" placeholder="Opcional: incidencia o comentario" enterkeyhint="done">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="mptk-observation-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="mptk-observation-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="mptk-placa-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">Placa vehículo TK</h2>
+            <div class="form-group">
+                <label for="mptk-placa-inp">PLACA</label>
+                <input type="text" id="mptk-placa-inp" name="placa_thermoking" placeholder="Ej. 9967-OK" enterkeyhint="done" maxlength="20" autocomplete="off" autocapitalize="characters">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="mptk-placa-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="mptk-placa-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="control_global_modal_overlay_mptk" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="control_global_modal_title_mptk" style="margin-bottom: 16px; color: var(--primary);">Control equitativo</h2>
+            <div class="metric-modal-body" id="control_global_modal_body_mptk"></div>
+            <p class="packing-control-hint" style="margin:14px 0 14px;font-size:9.5px;line-height:1.15;color:#c62828;font-weight:500;white-space:nowrap;text-align:center;">
+                Revisar: la presión V. ambiental siempre debe ser menor que presión V. fruta.
+            </p>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="btn_cancel_control_global_mptk">Cancelar</button>
+                <button class="btn-save" type="button" id="btn_save_control_global_mptk">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="time-picker-modal-overlay">
+        <div class="time-picker-modal">
+            <div class="time-picker-head">
+                <div class="time-picker-title">Seleccionar hora</div>
+                <div class="time-picker-head-end">
+                    <input type="text" class="time-picker-current" id="time-picker-current" value="--:--" maxlength="5" placeholder="HH:MM" aria-label="Escribir hora" title="Toca para escribir la hora con teclado" autocomplete="off" spellcheck="false">
+                    <button type="button" class="time-picker-clear-mptk" id="time-picker-clear-mptk" aria-label="Eliminar hora" title="Eliminar hora">
+                        <i data-lucide="x" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="time-picker-wheel">
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-hour-up" aria-label="Subir hora">▲</button>
+                    <div class="time-picker-value" id="time-picker-hour">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-hour-down" aria-label="Bajar hora">▼</button>
+                </div>
+                <div class="time-picker-sep">:</div>
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-minute-up" aria-label="Subir minuto">▲</button>
+                    <div class="time-picker-value" id="time-picker-minute">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-minute-down" aria-label="Bajar minuto">▼</button>
+                </div>
+            </div>
+            <div class="time-picker-actions">
+                <button type="button" class="btn-secondary" id="time-picker-now">Tomar hora exacta</button>
+                <button type="button" class="btn-secondary" id="time-picker-cancel">Cancelar</button>
+                <button type="button" class="btn-save" id="time-picker-apply">Tomar hora</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="fab-menu" id="fab-menu-mptk">
+        <div class="fab-menu-actions">
+            <button class="fab-mini fab-mini--sync" type="button" id="fab-mptk-sync" aria-label="Actualizar app y planilla" title="Descarga la versión nueva de la app y sincroniza MP-TK si hay internet. No borra borradores ni pendientes.">
+                <i data-lucide="refresh-cw"></i>
+            </button>
+            <button class="fab-mini fab-mini--danger" type="button" id="fab-mptk-borrar" aria-label="Borrar borradores y caché de MP-TK" title="Borra borradores locales de MP-TK y pendientes Thermo-King. Recarga la app. No borra la planilla en Google.">
+                <i data-lucide="trash-2"></i>
+            </button>
+            <button type="button" class="fab-mini fab-mini--registro" id="fab-mptk-demo" aria-label="Datos de prueba MP-TK" title="Llena datos demo en la muestra del selector.">
+                <i data-lucide="flask-conical"></i>
+            </button>
+        </div>
+        <button type="button" class="fab-pdf" id="fab-mptk-pdf" aria-label="Generar PDF del registro MP-TK">
+            <i data-lucide="file-text"></i>
+        </button>
+        <button type="button" class="packing-agregar-fab" id="fab-mptk-agregar" aria-label="Abrir captura MP-TK" title="Selecciona muestra para continuar">
+            <svg class="packing-agregar-plus fab-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"></path>
+            </svg>
+            <span class="packing-agregar-badge" id="fab-mptk-restante-badge">0</span>
+        </button>
+        <div class="fecha-ring-widget fecha-ring-widget--fab fecha-ring-widget--packing" id="mptk-fecha-ring-widget" role="button" tabindex="0" aria-label="Fecha de hoy" title="">
+            <div class="fecha-ring-circle" id="mptk-fecha-ring-circle" aria-hidden="true"></div>
+            <div class="fecha-ring-content">
+                <span class="fecha-ring-day" id="fecha-ring-day-mptk">--</span>
+                <span class="fecha-ring-month" id="fecha-ring-month-mptk">----</span>
+            </div>
+            <div class="fecha-ring-popover" id="mptk-fecha-ring-popover" role="tooltip" hidden></div>
+        </div>
+        <button class="fab-options" id="fab-options-btn-mptk" type="button" aria-label="Opciones rápidas MP-TK" aria-expanded="false">
+            <i data-lucide="ellipsis"></i>
+        </button>
+    </div>
+
+    <nav id="main-bottom-nav">
+        <a class="nav-btn nav-link" id="nav-campo" data-nav-index="0" href="../campo/" aria-label="Campo">
+            <i data-lucide="house"></i>
+            <span>Campo</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-packing" data-nav-index="1" href="../packing/" aria-label="Packing">
+            <i data-lucide="scan-line"></i>
+            <span>Packing</span>
+        </a>
+        <a class="nav-btn nav-link active" id="nav-mp-tk" data-nav-index="2" href="./" aria-label="Cámara materia prima y Thermo-King">
+            <i data-lucide="snowflake"></i>
+            <span>MP-TK</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-historial" data-nav-index="3" href="../historial/" aria-label="Historial">
+            <i data-lucide="clock-3"></i>
+            <span>Historial</span>
+        </a>
+    </nav>
+
+    <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
+        <div class="modal-content pdf-modal-content">
+            <div class="pdf-modal-head">
+                <div id="pdf-modal-title" class="pdf-modal-title-wrap" role="heading" aria-level="2">Vista previa PDF</div>
+                <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="pdf-preview-zoom-bar" id="pdf-preview-zoom-bar">
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-out" aria-label="Alejar">−</button>
+                <span class="pdf-zoom-label" id="pdf-zoom-label">100%</span>
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-in" aria-label="Acercar">+</button>
+                <button type="button" class="pdf-zoom-btn pdf-zoom-btn--reset" id="pdf-zoom-reset">Ajustar</button>
+                <span class="pdf-zoom-hint">Pellizca con dos dedos para zoom</span>
+            </div>
+            <div class="pdf-preview-stage" id="pdf-preview-stage">
+                <embed id="pdf-preview-embed" type="application/pdf" class="pdf-preview-embed" hidden title="Vista previa PDF">
+                <div class="pdf-preview-loading" id="pdf-preview-loading">
+                    <span class="pdf-preview-loading-spinner" aria-hidden="true"></span>
+                    <span>Cargando vista previa…</span>
+                </div>
+                <div class="pdf-preview-scaler" id="pdf-preview-scaler">
+                    <div class="pdf-preview-pages" id="pdf-preview-pages"></div>
+                </div>
+                <div class="pdf-preview-fallback" id="pdf-preview-fallback" hidden>
+                    <i data-lucide="file-text" class="pdf-preview-fallback-icon" aria-hidden="true"></i>
+                    <p class="pdf-preview-fallback-title">No se pudo mostrar la vista previa</p>
+                    <p class="pdf-preview-fallback-hint">El PDF sí se generó. Usa <strong>Descargar</strong>, <strong>WhatsApp</strong> o ábrelo en el visor del teléfono.</p>
+                    <button type="button" class="btn-save pdf-preview-open-btn" id="pdf-btn-abrir">Abrir PDF</button>
+                </div>
+            </div>
+            <div class="pdf-modal-actions">
+                <button type="button" class="btn-save pdf-action-btn" id="pdf-btn-descargar">
+                    <i data-lucide="download"></i>
+                    Descargar
+                </button>
+                <button type="button" class="btn-save pdf-action-btn pdf-action-btn--wsp" id="pdf-btn-wsp">
+                    <i data-lucide="message-circle"></i>
+                    WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../core/script.js"></script>
+    <script src="../../core/mensajes-usuario.js"></script>
+    <script src="../../core/fundo-flujo-tk20.js"></script>
+    <script src="./mptk-formato.js"></script>
+    <script src="../../assets/librerias/lucide.min.js"></script>
+    <script src="../../assets/librerias/sweetalert2.all.min.js"></script>
+    <link rel="stylesheet" href="../../core/flujo-bienvenida.css">
+    <script src="../../core/flujo-bienvenida.js"></script>
+    <script src="../../core/time-picker.js"></script>
+    <script src="../../core/api-config.js"></script>
+    <script src="../../core/fecha-operativa.js"></script>
+    <script src="./mptk-ui.js"></script>
+    <script src="./thermoking.js"></script>
+    <script src="../../assets/librerias/jspdf.umd.min.js"></script>
+    <script src="../../assets/librerias/pdf.min.js"></script>
+    <script src="../../core/pdf-nombre.js"></script>
+    <script src="../../core/pdf-preview-live.js"></script>
+    <script src="./mptk-pdf.js"></script>
+    <script src="../../core/hist-pdf-store.js"></script>
+    <script src="../../core/hist-pdf-envio.js"></script>
+</body>
+</html>

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="application-name" content="Muestras Web">
+    <meta name="apple-mobile-web-app-title" content="Muestras Web">
+    <meta name="theme-color" content="#164C7C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+    <title>TK-2.0</title>
+    <link rel="icon" href="../../assets/images/QA2026-2.0.png" type="image/png">
+    <link rel="apple-touch-icon" href="../../assets/images/QA2026-2.0.png">
+    <script src="../../core/icono-app.js"></script>
+    <link rel="manifest" href="../../assets/manifest.json">
+    <link rel="stylesheet" href="../../assets/styles.css">
+</head>
+<body class="packing-page mptk-page mptk-formato-20-page" data-mptk-formato="2.0">
+
+    <header>
+        <div class="header-top-row">
+            <h2 class="header-title">
+                <span class="header-title-prefix">Registro:</span>
+                <select
+                    class="header-modulo-select header-modulo-pill--wide"
+                    id="mptk-formato"
+                    name="formato"
+                    aria-label="Formato de registro"
+                    data-url-mp-tk="../mp-tk/"
+                    data-url-tk20="./">
+                    <option value="1.0">MP-TK</option>
+                    <option value="2.0">TK-2.0</option>
+                </select>
+            </h2>
+            <div class="header-status-card is-online" id="header-status-card" aria-live="polite" aria-label="Pendientes y conexión">
+                <div class="header-status-ring" aria-hidden="true">
+                    <span class="header-status-ring-inner">
+                        <i data-lucide="wifi" class="header-status-wifi" id="header-status-wifi"></i>
+                    </span>
+                </div>
+                <div class="header-status-body">
+                    <div class="header-status-pend">Pendientes: <span class="header-status-pend-num" id="header-pendientes-count">00</span></div>
+                    <div class="header-status-conn">
+                        <span class="header-status-conn-dot" aria-hidden="true"></span>
+                        <span class="header-status-conn-text" id="header-conn-label">En línea</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="meta-shell packing-meta-shell" id="mptk-meta-shell">
+            <div class="packing-meta-clip">
+            <div class="packing-select-block" id="mptk-select-block">
+                <div class="packing-block-loader" id="mptk-select-loader" hidden aria-live="polite">
+                    <span class="packing-spinner" aria-hidden="true"></span>
+                    <span class="packing-loader-text" id="mptk-select-loader-msg">Cargando muestras…</span>
+                </div>
+                <div class="packing-select-row">
+                    <div class="packing-select-cell">
+                        <label class="meta-block-title" for="mptk-fecha">Fecha</label>
+                        <input class="meta-inp" id="mptk-fecha" name="fecha" type="date" aria-label="Fecha del registro">
+                    </div>
+                    <div class="packing-select-cell">
+                        <label class="meta-block-title" for="mptk-muestra">Muestra</label>
+                        <select class="meta-inp" id="mptk-muestra" name="muestra" disabled aria-label="N° muestra y ensayo">
+                            <option value="">Seleccionar fecha</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="packing-status-msg" id="mptk-status" hidden></p>
+            </div>
+
+            <section class="packing-resumen is-empty" id="mptk-resumen" aria-label="Resumen de datos">
+                <div class="packing-preview-panel meta-preview" id="mptk-preview" aria-live="polite">
+                    <div class="packing-preview-loader" id="mptk-preview-loader" hidden>
+                        <span class="packing-spinner packing-spinner--lg" aria-hidden="true"></span>
+                        <span class="packing-loader-text" id="mptk-preview-loader-msg">Cargando datos…</span>
+                        <span class="packing-loader-sub">Consultando la planilla, por favor espera</span>
+                    </div>
+                    <div class="packing-preview-body" id="mptk-preview-body">
+                        <div class="packing-chips-panel" id="mptk-chips-panel">
+                            <div class="packing-chips-box" id="mptk-chips-box">
+                                <div class="packing-chip packing-chip--traz">
+                                    <span class="packing-chip-label">Etapa · Campo · Turno</span>
+                                    <span class="packing-chip-value packing-chip-value--traz packing-chip-value--empty" id="mptk-traz">--</span>
+                                </div>
+                                <div class="packing-chip">
+                                    <span class="packing-chip-label">Variedad</span>
+                                    <span class="packing-chip-value packing-chip-value--empty" id="mptk-variedad">--</span>
+                                </div>
+                                <div class="packing-chip">
+                                    <span class="packing-chip-label">Placa</span>
+                                    <span class="packing-chip-value packing-chip-value--empty" id="mptk-placa">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            </div>
+            <button type="button" class="packing-resumen-fold-btn" id="mptk-resumen-toggle" aria-expanded="true" aria-controls="mptk-chips-box" title="Ocultar datos del registro" aria-label="Ocultar datos del registro" hidden>
+                <i data-lucide="clipboard-list"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="container mptk-formato-20-wrap" id="tk20-main" aria-label="TK 2.0">
+        <div class="packing-hora-row is-disabled" id="tk2_hora_row" aria-disabled="true">
+            <div class="control-equitativo-bar packing-hora-bar">
+                <div class="control-equitativo-label">
+                    <b>Hora inicio recep.</b>
+                    <span>Datos importantes en TK-2.0</span>
+                </div>
+                <div class="packing-hora-responsable-wrap">
+                    <input class="packing-responsable-inp" id="tk2_responsable" name="tk2_responsable" type="text" placeholder="Responsable" enterkeyhint="done" autocomplete="name" aria-label="Responsable" disabled>
+                </div>
+                <div class="control-equitativo-actions">
+                    <button type="button" class="control-equitativo-btn" id="tk2_btn_transporte" title="Placa, guía y acopio" aria-label="Datos de transporte" disabled>
+                        <i data-lucide="truck"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <section class="tk20-etapa-block" id="tk20-etapa-llegada" aria-label="Llegada Fruta Acopio">
+            <div class="control-equitativo-bar is-disabled" id="tk2_control_bar_llegada" aria-disabled="true">
+                <div class="control-equitativo-label">
+                    <b>Control - Llegada Fruta Acopio</b>
+                    <span>Temperatura y humedad para el registro</span>
+                </div>
+                <div class="control-equitativo-actions">
+                    <button type="button" class="control-equitativo-btn" id="tk2_btn_temp_llegada" title="Temperatura llegada fruta acopio" aria-label="Temperatura llegada fruta acopio" disabled>
+                        <i data-lucide="snowflake"></i>
+                    </button>
+                    <button type="button" class="control-equitativo-btn" id="tk2_btn_hum_llegada" title="Humedad relativa" aria-label="Humedad" disabled>
+                        <i data-lucide="droplets"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="packing-cards-wrap is-disabled" id="tk20-cards-llegada" aria-disabled="true"></div>
+        </section>
+
+        <section class="tk20-etapa-block" id="tk20-etapa-traslado" aria-label="Control Inicio de traslado">
+            <div class="control-equitativo-bar is-disabled" id="tk2_control_bar_traslado" aria-disabled="true">
+                <div class="control-equitativo-label">
+                    <b>Control - Inicio de traslado</b>
+                    <span>Temperatura y humedad para el registro</span>
+                </div>
+                <div class="control-equitativo-actions">
+                    <button type="button" class="control-equitativo-btn" id="tk2_btn_temp_traslado" title="Temperatura inicio de traslado" aria-label="Temperatura inicio de traslado" disabled>
+                        <i data-lucide="snowflake"></i>
+                    </button>
+                    <button type="button" class="control-equitativo-btn" id="tk2_btn_hum_traslado" title="Humedad relativa" aria-label="Humedad" disabled>
+                        <i data-lucide="droplets"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="packing-cards-wrap is-disabled" id="packing-cards-wrap" aria-disabled="true"></div>
+        </section>
+
+        <div class="campo-envio-bar packing-envio-bar is-disabled" id="tk2_envio_bar" role="region" aria-label="Enviar registro al servidor">
+            <button type="button" class="btn-save btn-save-campo" id="tk2_btn_enviar" disabled>
+                Enviar registro
+            </button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tk2_pesos_modal" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="tk2_pesos_modal_title" style="margin-bottom: 16px; color: var(--primary);">Pesos visuales · Inicio de traslado #1</h2>
+            <p class="tk20-pesos-modal-sub">8 clamshell en (g)</p>
+            <div class="tk20-pesos-modal-grid" id="tk2_pesos_modal_body"></div>
+            <div id="tk2_pesos_alert" class="metric-inline-alert" style="display:none;"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="tk2_pesos_modal_cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="tk2_pesos_modal_guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tk2_presion_modal" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="tk2_presion_modal_title" class="tk20-modal-title">Control equitativo · Presión</h2>
+            <div class="metric-modal-body" id="tk2_presion_modal_body"></div>
+            <p class="packing-control-hint tk20-control-hint">Revisar: la presión V. ambiental siempre debe ser menor que presión V. fruta.</p>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="tk2_presion_modal_cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="tk2_presion_modal_guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tk2_obs_modal" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="tk2_obs_modal_title" style="margin-bottom: 16px; color: var(--primary);">Observación</h2>
+            <div class="form-group">
+                <label for="tk2_observacion">OBSERVACIÓN DEL CLAMSHELL</label>
+                <input type="text" id="tk2_observacion" name="tk2_observacion" data-field="tk2_observacion" placeholder="Opcional: incidencia, comentario" enterkeyhint="done">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="tk2_obs_modal_cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="tk2_obs_modal_guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tk2_transporte_modal" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="tk2_transporte_modal_title" style="margin-bottom: 16px; color: var(--primary);">Transporte · Acopio</h2>
+            <div class="metric-modal-body" id="tk2_transporte_modal_body">
+                <div class="form-group">
+                    <label class="meta-block-title" for="tk2_placa">Placa del vehículo</label>
+                    <input class="meta-inp" id="tk2_placa" name="tk2_placa" type="text" placeholder="Ej. 9967-OK" enterkeyhint="done" autocomplete="off" aria-label="Placa del vehículo">
+                </div>
+                <div class="tk2-transporte-guia-row">
+                    <div class="form-group">
+                        <label class="meta-block-title" for="tk2_guia_remision">Guía de remisión de acopio campo</label>
+                        <input class="meta-inp" id="tk2_guia_remision" name="tk2_guia_remision" type="text" placeholder="Ej. 208353" enterkeyhint="done" autocomplete="off" aria-label="Guía de remisión">
+                    </div>
+                    <div class="form-group tk2-transporte-acopio-cell">
+                        <label class="meta-block-title" for="tk2_acopio">Acopio</label>
+                        <select class="meta-inp meta-inp--acopio" id="tk2_acopio" name="tk2_acopio" aria-label="Acopio">
+                            <option value="">Seleccionar acopio</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="tk2_transporte_modal_cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="tk2_transporte_modal_guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="tk2_control_modal" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="tk2_control_modal_title" class="tk20-modal-title">Control equitativo</h2>
+            <div class="metric-modal-body" id="tk2_control_modal_body"></div>
+            <p class="packing-control-hint tk20-control-hint">Revisar: la presión V. ambiental siempre debe ser menor que presión V. fruta.</p>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="tk2_control_modal_cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="tk2_control_modal_guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="time-picker-modal-overlay">
+        <div class="time-picker-modal">
+            <div class="time-picker-head">
+                <div class="time-picker-title">Seleccionar hora</div>
+                <input type="text" class="time-picker-current" id="time-picker-current" value="--:--" maxlength="5" placeholder="HH:MM" aria-label="Escribir hora" title="Toca para escribir la hora con teclado" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="time-picker-wheel">
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-hour-up" aria-label="Subir hora">▲</button>
+                    <div class="time-picker-value" id="time-picker-hour">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-hour-down" aria-label="Bajar hora">▼</button>
+                </div>
+                <div class="time-picker-sep">:</div>
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-minute-up" aria-label="Subir minuto">▲</button>
+                    <div class="time-picker-value" id="time-picker-minute">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-minute-down" aria-label="Bajar minuto">▼</button>
+                </div>
+            </div>
+            <div class="time-picker-actions">
+                <button type="button" class="btn-secondary" id="time-picker-now">Tomar hora exacta</button>
+                <button type="button" class="btn-secondary" id="time-picker-cancel">Cancelar</button>
+                <button type="button" class="btn-save" id="time-picker-apply">Tomar hora</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="fab-menu" id="fab-menu-tk20">
+        <div class="fab-menu-actions">
+            <button class="fab-mini fab-mini--sync" type="button" id="fab-tk20-sync" aria-label="Actualizar app y planilla" title="Descarga la versión nueva de la app y sincroniza la planilla si hay internet. No borra borradores ni pendientes.">
+                <i data-lucide="refresh-cw"></i>
+            </button>
+            <button class="fab-mini fab-mini--danger" type="button" id="fab-tk20-borrar" aria-label="Borrar caché local TK-2.0" title="Recarga la app. No borra la planilla en Google.">
+                <i data-lucide="trash-2"></i>
+            </button>
+            <button type="button" class="fab-mini fab-mini--registro" id="fab-tk20-demo" aria-label="Cargar datos de prueba" title="Rellena controles y pesos de ejemplo para probar el PDF">
+                <i data-lucide="clipboard-list"></i>
+            </button>
+        </div>
+        <button type="button" class="fab-pdf" id="fab-tk20-pdf" aria-label="Generar PDF del registro TK-2.0">
+            <i data-lucide="file-text"></i>
+        </button>
+        <div class="fecha-ring-widget fecha-ring-widget--fab fecha-ring-widget--packing" id="tk20-fecha-ring-widget" role="button" tabindex="0" aria-label="Fecha de hoy" title="">
+            <div class="fecha-ring-circle" id="tk20-fecha-ring-circle" aria-hidden="true"></div>
+            <div class="fecha-ring-content">
+                <span class="fecha-ring-day" id="fecha-ring-day-tk20">--</span>
+                <span class="fecha-ring-month" id="fecha-ring-month-tk20">----</span>
+            </div>
+            <div class="fecha-ring-popover" id="tk20-fecha-ring-popover" role="tooltip" hidden></div>
+        </div>
+        <button class="fab-options" id="fab-options-btn-tk20" type="button" aria-label="Opciones rápidas TK-2.0" aria-expanded="false">
+            <i data-lucide="ellipsis"></i>
+        </button>
+    </div>
+
+    <nav id="main-bottom-nav">
+        <a class="nav-btn nav-link" id="nav-campo" data-nav-index="0" href="../campo/" aria-label="Campo">
+            <i data-lucide="house"></i>
+            <span>Campo</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-packing" data-nav-index="1" href="../packing/" aria-label="Packing">
+            <i data-lucide="scan-line"></i>
+            <span>Packing</span>
+        </a>
+        <a class="nav-btn nav-link active" id="nav-mp-tk" data-nav-index="2" href="../mp-tk/" aria-label="MP-TK">
+            <i data-lucide="snowflake"></i>
+            <span>MP-TK</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-historial" data-nav-index="3" href="../historial/" aria-label="Historial">
+            <i data-lucide="clock-3"></i>
+            <span>Historial</span>
+        </a>
+    </nav>
+
+    <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
+        <div class="modal-content pdf-modal-content">
+            <div class="pdf-modal-head">
+                <div id="pdf-modal-title" class="pdf-modal-title-wrap" role="heading" aria-level="2">Vista previa PDF</div>
+                <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="pdf-preview-zoom-bar" id="pdf-preview-zoom-bar">
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-out" aria-label="Alejar">−</button>
+                <span class="pdf-zoom-label" id="pdf-zoom-label">100%</span>
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-in" aria-label="Acercar">+</button>
+                <button type="button" class="pdf-zoom-btn pdf-zoom-btn--reset" id="pdf-zoom-reset">Ajustar</button>
+                <span class="pdf-zoom-hint">Pellizca con dos dedos para zoom</span>
+            </div>
+            <div class="pdf-preview-stage" id="pdf-preview-stage">
+                <embed id="pdf-preview-embed" type="application/pdf" class="pdf-preview-embed" hidden title="Vista previa PDF">
+                <div class="pdf-preview-loading" id="pdf-preview-loading">
+                    <span class="pdf-preview-loading-spinner" aria-hidden="true"></span>
+                    <span>Cargando vista previa…</span>
+                </div>
+                <div class="pdf-preview-scaler" id="pdf-preview-scaler">
+                    <div class="pdf-preview-pages" id="pdf-preview-pages"></div>
+                </div>
+                <div class="pdf-preview-fallback" id="pdf-preview-fallback" hidden>
+                    <i data-lucide="file-text" class="pdf-preview-fallback-icon" aria-hidden="true"></i>
+                    <p class="pdf-preview-fallback-title">No se pudo mostrar la vista previa</p>
+                    <p class="pdf-preview-fallback-hint">El PDF sí se generó. Usa <strong>Descargar</strong>, <strong>WhatsApp</strong> o ábrelo en el visor del teléfono.</p>
+                    <button type="button" class="btn-save pdf-preview-open-btn" id="pdf-btn-abrir">Abrir PDF</button>
+                </div>
+            </div>
+            <div class="pdf-modal-actions">
+                <button type="button" class="btn-save pdf-action-btn" id="pdf-btn-descargar">
+                    <i data-lucide="download"></i>
+                    Descargar
+                </button>
+                <button type="button" class="btn-save pdf-action-btn pdf-action-btn--wsp" id="pdf-btn-wsp">
+                    <i data-lucide="message-circle"></i>
+                    WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../core/script.js"></script>
+    <script src="../../core/mensajes-usuario.js"></script>
+    <script src="../../core/fundo-flujo-tk20.js"></script>
+    <script src="./tk20-formato.js"></script>
+    <script src="../../assets/librerias/lucide.min.js"></script>
+    <script src="../../assets/librerias/sweetalert2.all.min.js"></script>
+    <script src="./tk20-swal.js"></script>
+    <link rel="stylesheet" href="../../core/flujo-bienvenida.css">
+    <script src="../../core/flujo-bienvenida.js"></script>
+    <script src="../../core/time-picker.js"></script>
+    <script src="../../core/api-config.js"></script>
+    <script src="../../core/fecha-operativa.js"></script>
+    <script src="./tk20-header.js"></script>
+    <script src="../../core/presion-vapor.js"></script>
+    <script src="./tk20-fields.js"></script>
+    <script src="./tk20-pesos-config.js"></script>
+    <script src="./tk20-body.js"></script>
+    <script src="./tk20-control.js"></script>
+    <script src="./tk20-presion.js"></script>
+    <script src="./tk20-modals.js"></script>
+    <script src="../../core/hist-pdf-store.js"></script>
+    <script src="../../core/hist-pdf-envio.js"></script>
+    <script src="./tk20-sync.js"></script>
+    <script src="./tk20-envio.js"></script>
+    <script src="./tk20-transporte.js"></script>
+    <script src="./tk20-draft.js"></script>
+    <script src="../../assets/librerias/jspdf.umd.min.js"></script>
+    <script src="../../assets/librerias/pdf.min.js"></script>
+    <script src="../../core/pdf-nombre.js"></script>
+    <script src="../../core/pdf-preview-live.js"></script>
+    <script src="./tk20-pdf.js"></script>
+    <script src="./tk20-fab.js"></script>
+</body>
+</html>

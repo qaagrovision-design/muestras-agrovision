@@ -1,0 +1,133 @@
+/* Modal de bienvenida por módulo — SweetAlert2 (global, fuera del shell de la app) */
+
+.flujo-bienvenida-popup.swal2-popup {
+    padding: 0 !important;
+    border-radius: 20px !important;
+    overflow: hidden;
+    box-shadow:
+        0 24px 48px rgba(15, 23, 42, 0.18),
+        0 8px 16px rgba(15, 23, 42, 0.08) !important;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.flujo-bienvenida-popup .swal2-icon {
+    width: 3.25rem !important;
+    height: 3.25rem !important;
+    margin: 1.35rem auto 0.65rem !important;
+    border-width: 3px !important;
+}
+
+.flujo-bienvenida-popup .swal2-icon-content {
+    font-size: 1.65rem !important;
+}
+
+.flujo-bienvenida-title.swal2-title {
+    font-size: 1.28rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em;
+    padding: 0 1.5rem 0.35rem !important;
+    margin: 0 !important;
+    color: #0f172a !important;
+}
+
+.flujo-bienvenida-swal.swal2-html-container {
+    padding: 0.5rem 1.5rem 1rem !important;
+    margin: 0 !important;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #334155;
+    text-align: left;
+    overflow: visible;
+}
+
+.fb-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fb-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.fb-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 11px 13px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+}
+
+.fb-step-n {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.55rem;
+    height: 1.55rem;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(145deg, #1a5f96 0%, #164c7c 100%);
+    box-shadow: 0 2px 6px rgba(22, 76, 124, 0.28);
+}
+
+.fb-step-t {
+    flex: 1;
+    min-width: 0;
+    padding-top: 1px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #1e293b;
+}
+
+.fb-step-t b {
+    color: #0f4a7d;
+    font-weight: 800;
+}
+
+.fb-note {
+    margin: 0;
+    padding: 11px 13px;
+    border-radius: 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #475569;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+}
+
+.fb-note b {
+    color: #92400e;
+    font-weight: 700;
+}
+
+.flujo-bienvenida-popup .swal2-actions {
+    margin: 0 !important;
+    padding: 0 1.35rem 1.35rem !important;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.flujo-bienvenida-btn.swal2-confirm {
+    width: 100%;
+    margin: 0 !important;
+    padding: 0.72rem 1.25rem !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 14px rgba(22, 76, 124, 0.28) !important;
+}
+
+.flujo-bienvenida-btn.swal2-confirm:focus {
+    box-shadow: 0 0 0 3px rgba(22, 76, 124, 0.22) !important;
+}

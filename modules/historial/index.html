@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="application-name" content="Muestras Web">
+    <meta name="apple-mobile-web-app-title" content="Muestras Web">
+    <meta name="theme-color" content="#164C7C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+    <title>Historial</title>
+    <link rel="icon" href="../../assets/images/QA2026-2.0.png" type="image/png">
+    <link rel="apple-touch-icon" href="../../assets/images/QA2026-2.0.png">
+    <script src="../../core/icono-app.js"></script>
+    <link rel="manifest" href="../../assets/manifest.json">
+    <link rel="stylesheet" href="../../assets/styles.css">
+</head>
+<body class="modulo-aux-page">
+
+    <header>
+        <div class="header-top-row">
+            <h2 class="header-title">
+                <span class="header-title-prefix">Módulo:</span>
+                <span class="header-modulo-pill">Historial</span>
+            </h2>
+            <div class="header-status-card header-status-card--solo-conn is-online" id="hist-header-status" aria-live="polite" aria-label="Conexión">
+                <div class="header-status-ring" aria-hidden="true">
+                    <span class="header-status-ring-inner">
+                        <i data-lucide="wifi" class="header-status-wifi" id="hist-header-wifi"></i>
+                    </span>
+                </div>
+                <div class="header-status-body">
+                    <div class="header-status-conn">
+                        <span class="header-status-conn-dot" aria-hidden="true"></span>
+                        <span class="header-status-conn-text" id="hist-conn-label">En línea</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p class="modulo-header-desc">Campo, Packing, MP-TK, TK-2.0 y RC5 por muestra — según fundo A9 o flujo estándar.</p>
+    </header>
+
+    <div class="container modulo-aux-wrap hist-page">
+        <section class="hist-hero" aria-labelledby="hist-hero-title">
+            <button type="button" class="hist-hero-info-btn" id="hist-hero-info-pdf" aria-label="Información sobre PDFs locales">
+                <span class="hist-hero-info-ping" aria-hidden="true"></span>
+                <i data-lucide="bell-ring" aria-hidden="true"></i>
+            </button>
+            <span class="hist-hero-badge">Resumen · sincronización</span>
+            <h1 class="hist-hero-title" id="hist-hero-title">Historial de muestras</h1>
+            <p class="hist-hero-lead">Planilla = registro en Sheets. Este teléfono = tus envíos y PDF local.</p>
+            <div class="hist-stats" aria-label="Indicadores">
+                <article class="hist-stat hist-stat--server">
+                    <span class="hist-stat-icon" aria-hidden="true"><i data-lucide="cloud-check"></i></span>
+                    <div class="hist-stat-body">
+                        <b id="kpi-servidor">0</b>
+                        <span id="kpi-servidor-label">Servidor (total)</span>
+                    </div>
+                </article>
+                <article class="hist-stat hist-stat--pend">
+                    <span class="hist-stat-icon" aria-hidden="true"><i data-lucide="wifi-off"></i></span>
+                    <div class="hist-stat-body">
+                        <b id="kpi-pendientes">0</b>
+                        <span>Pendiente</span>
+                    </div>
+                </article>
+                <article class="hist-stat hist-stat--block">
+                    <span class="hist-stat-icon" aria-hidden="true"><i data-lucide="shield-alert"></i></span>
+                    <div class="hist-stat-body">
+                        <b id="kpi-bloqueados">0</b>
+                        <span>Bloqueado</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="hist-block" id="hist-server-block" aria-labelledby="hist-server-title" aria-busy="true">
+            <div class="hist-block-head">
+                <span class="hist-block-icon hist-block-icon--server" aria-hidden="true"><i data-lucide="database"></i></span>
+                <div class="hist-block-titles">
+                    <h2 class="hist-block-title" id="hist-server-title">Planilla (servidor)</h2>
+                    <p class="hist-block-desc" id="hist-server-desc">Cargando historial de planilla…</p>
+                </div>
+            </div>
+            <div class="hist-block-body">
+                <div class="hist-block-loader" id="hist-server-loader" aria-live="polite">
+                    <span class="hist-spinner" aria-hidden="true"></span>
+                    <p class="hist-loader-text">Cargando historial de planilla…</p>
+                    <p class="hist-loader-hint">Consultando Google Sheets · hoy y ayer</p>
+                </div>
+                <div id="server-list" class="hist-list" hidden></div>
+            </div>
+            <nav id="server-pagination" class="hist-pagination" aria-label="Paginación servidor" hidden>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="prev" disabled aria-label="Atrás">
+                    <i data-lucide="chevron-left" aria-hidden="true"></i><span>Atrás</span>
+                </button>
+                <span class="hist-page-count">1 / 1</span>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="next" disabled aria-label="Avanzar">
+                    <span>Avanzar</span><i data-lucide="chevron-right" aria-hidden="true"></i>
+                </button>
+            </nav>
+        </section>
+
+        <section class="hist-block" aria-labelledby="hist-local-title">
+            <div class="hist-block-head">
+                <span class="hist-block-icon hist-block-icon--local" aria-hidden="true"><i data-lucide="smartphone"></i></span>
+                <div class="hist-block-titles">
+                    <h2 class="hist-block-title" id="hist-local-title">En este teléfono</h2>
+                    <p class="hist-block-desc" id="hist-local-desc">Envíos desde este teléfono · PDF solo aquí</p>
+                </div>
+            </div>
+            <div id="local-list" class="hist-list"></div>
+            <nav id="local-pagination" class="hist-pagination" aria-label="Paginación cola local" hidden>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="prev" disabled aria-label="Atrás">
+                    <i data-lucide="chevron-left" aria-hidden="true"></i><span>Atrás</span>
+                </button>
+                <span class="hist-page-count">1 / 1</span>
+                <button type="button" class="hist-page-btn" data-hist-page-dir="next" disabled aria-label="Avanzar">
+                    <span>Avanzar</span><i data-lucide="chevron-right" aria-hidden="true"></i>
+                </button>
+            </nav>
+        </section>
+
+        <a class="hist-block hist-block--nav" href="../recomendaciones/" aria-labelledby="hist-rec-title">
+            <div class="hist-block-head">
+                <span class="hist-block-icon hist-block-icon--rec" aria-hidden="true"><i data-lucide="lightbulb"></i></span>
+                <div class="hist-block-titles">
+                    <h2 class="hist-block-title" id="hist-rec-title">Recomendaciones</h2>
+                    <p class="hist-block-desc">Tips para registrar muestras sin estrés</p>
+                </div>
+                <span class="hist-block-nav-chevron" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
+            </div>
+        </a>
+    </div>
+
+    <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
+        <div class="modal-content pdf-modal-content">
+            <div class="pdf-modal-head">
+                <div id="pdf-modal-title" class="pdf-modal-title-wrap" role="heading" aria-level="2">Vista previa PDF</div>
+                <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="pdf-preview-zoom-bar" id="pdf-preview-zoom-bar">
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-out" aria-label="Alejar">−</button>
+                <span class="pdf-zoom-label" id="pdf-zoom-label">100%</span>
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-in" aria-label="Acercar">+</button>
+                <button type="button" class="pdf-zoom-btn pdf-zoom-btn--reset" id="pdf-zoom-reset">Ajustar</button>
+                <span class="pdf-zoom-hint">Pellizca con dos dedos para zoom</span>
+            </div>
+            <div class="pdf-preview-stage" id="pdf-preview-stage">
+                <embed id="pdf-preview-embed" type="application/pdf" class="pdf-preview-embed" hidden title="Vista previa PDF">
+                <div class="pdf-preview-loading" id="pdf-preview-loading">
+                    <span class="pdf-preview-loading-spinner" aria-hidden="true"></span>
+                    <span>Cargando vista previa…</span>
+                </div>
+                <div class="pdf-preview-scaler" id="pdf-preview-scaler">
+                    <div class="pdf-preview-pages" id="pdf-preview-pages"></div>
+                </div>
+                <div class="pdf-preview-fallback" id="pdf-preview-fallback" hidden>
+                    <i data-lucide="file-text" class="pdf-preview-fallback-icon" aria-hidden="true"></i>
+                    <p class="pdf-preview-fallback-title">No se pudo mostrar la vista previa</p>
+                    <p class="pdf-preview-fallback-hint">El PDF sí se generó. Usa <strong>Descargar</strong>, <strong>WhatsApp</strong> o ábrelo en el visor del teléfono.</p>
+                    <button type="button" class="btn-save pdf-preview-open-btn" id="pdf-btn-abrir">Abrir PDF</button>
+                </div>
+            </div>
+            <div class="pdf-modal-actions">
+                <button type="button" class="btn-save pdf-action-btn" id="pdf-btn-descargar">
+                    <i data-lucide="download"></i>
+                    Descargar
+                </button>
+                <button type="button" class="btn-save pdf-action-btn pdf-action-btn--wsp" id="pdf-btn-wsp">
+                    <i data-lucide="message-circle"></i>
+                    WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <nav id="main-bottom-nav">
+        <a class="nav-btn nav-link" id="nav-campo" data-nav-index="0" href="../campo/" aria-label="Campo">
+            <i data-lucide="house"></i>
+            <span>Campo</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-packing" data-nav-index="1" href="../packing/" aria-label="Packing">
+            <i data-lucide="scan-line"></i>
+            <span>Packing</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-mp-tk" data-nav-index="2" href="../mp-tk/" aria-label="MP-TK">
+            <i data-lucide="snowflake"></i>
+            <span>MP-TK</span>
+        </a>
+        <a class="nav-btn nav-link active" id="nav-historial" data-nav-index="3" href="./" aria-label="Historial">
+            <i data-lucide="clock-3"></i>
+            <span>Historial</span>
+        </a>
+    </nav>
+
+    <script src="../../core/api-config.js"></script>
+    <script src="../../core/script.js"></script>
+    <script src="../../core/hist-pdf-store.js"></script>
+    <script src="../../assets/librerias/jspdf.umd.min.js"></script>
+    <script src="../../assets/librerias/pdf.min.js"></script>
+    <script src="../../core/pdf-nombre.js"></script>
+    <script src="../campo/campo-pdf.js"></script>
+    <script src="../../assets/librerias/lucide.min.js"></script>
+    <script src="../../assets/librerias/sweetalert2.all.min.js"></script>
+    <script>
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+
+        const API_URL = String(window.APPS_SCRIPT_API_URL || '').trim();
+        const SYNC_QUEUE_KEY = 'tiempos-sync-queue-v1';
+        const SYNC_HISTORY_KEY = 'tiempos-sync-history-v1';
+        const SYNC_ENVIADOS_KEY = 'tiempos-sync-enviados-v1';
+        const HIST_PER_PAGE = 5;
+        const HIST_TEXTO_SERVIDOR = 'Registro en planilla (Google Sheets) · hoy y ayer';
+        const HIST_TEXTO_LOCAL = 'Envíos desde este teléfono · PDF solo aquí';
+
+        let histServerRows = [];
+        let histLocalRows = [];
+        let histServerPage = 0;
+        let histLocalPage = 0;
+        let histPdfClaves = new Set();
+        let histPdfRegistros = [];
+        let histPdfModsPorMuestra = new Map();
+
+        const HIST_PDF_MODULO_LABEL = {
+            campo: 'Visual',
+            acopio: 'Acopio',
+            packing: 'Packing',
+            'packing-rc5': 'Packing RC5',
+            mptk: 'MP-TK',
+            'tk-2.0': 'TK-2.0'
+        };
+
+        function hoyIsoLocal() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + day;
+        }
+
+        function ayerIsoLocal() {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + day;
+        }
+
+        function normalizarFechaHist(val) {
+            const s = String(val || '').trim();
+            if (!s) return '';
+            const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (iso) return iso[0];
+            const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (slash) {
+                return slash[3] + '-' + String(slash[2]).padStart(2, '0') + '-' + String(slash[1]).padStart(2, '0');
+            }
+            const dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+            if (dash) {
+                return dash[3] + '-' + String(dash[2]).padStart(2, '0') + '-' + String(dash[1]).padStart(2, '0');
+            }
+            return s;
+        }
+
+        function fechasHistorialPermitidas() {
+            const hoy = hoyIsoLocal();
+            const ayer = ayerIsoLocal();
+            return { hoy: hoy, ayer: ayer, set: new Set([hoy, ayer]) };
+        }
+
+        function esFechaHistorialVisible(fecha) {
+            return fechasHistorialPermitidas().set.has(normalizarFechaHist(fecha));
+        }
+
+        function rangoHistorialEtiqueta() {
+            const f = fechasHistorialPermitidas();
+            return 'Hoy ' + formatFechaHist(f.hoy) + ' y ayer ' + formatFechaHist(f.ayer);
+        }
+
+        function mostrarModalInfoPdfHistorial_() {
+            const rango = rangoHistorialEtiqueta();
+            const html = [
+                '<div class="hist-info-pdf-modal">',
+                '<p class="hist-info-pdf-lead">Los PDF se guardan <strong>solo en este teléfono</strong> al enviar una muestra, para compartirlos rápido (WhatsApp, correo, etc.).</p>',
+                '<ul class="hist-info-pdf-list">',
+                '<li><strong>Duración máxima: 48 horas.</strong> La app conserva PDF de <em>' + rango + '</em>.</li>',
+                '<li><strong>Borrado automático.</strong> Al cambiar el día, la app elimina lo anterior a ayer. Mañana desaparece lo de anteayer, y así cada día.</li>',
+                '<li><strong>Recomendación.</strong> Comparte o descarga el PDF el mismo día del envío. No uses el historial del teléfono como archivo permanente.</li>',
+                '</ul>',
+                '<p class="hist-info-pdf-note">Los datos en planilla (servidor) no se borran; solo los archivos PDF locales.</p>',
+                '</div>'
+            ].join('');
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                window.Swal.fire({
+                    icon: 'info',
+                    title: 'PDFs en este teléfono',
+                    html,
+                    confirmButtonText: 'Entendido',
+                    width: 'min(92vw, 420px)',
+                    customClass: { htmlContainer: 'hist-info-pdf-swal' }
+                });
+                return;
+            }
+            alert('Los PDF duran máximo 48 h en este teléfono (hoy y ayer). Compártelos a tiempo; se borran solos al cambiar el día.');
+        }
+
+        function crearIconosLucideEn_(root) {
+            if (!root || !window.lucide || typeof window.lucide.createIcons !== 'function') return;
+            window.lucide.createIcons({ nameAttr: 'data-lucide', root: root });
+        }
+
+        function actualizarHeaderHistorial() {
+            const card = document.getElementById('hist-header-status');
+            const label = document.getElementById('hist-conn-label');
+            const wifi = document.getElementById('hist-header-wifi');
+            const on = navigator.onLine;
+            if (card) {
+                card.classList.toggle('is-online', on);
+                card.classList.toggle('is-offline', !on);
+            }
+            if (label) label.textContent = on ? 'En línea' : 'Sin internet';
+            if (wifi) {
+                const iconName = on ? 'wifi' : 'wifi-off';
+                if (wifi.getAttribute('data-lucide') !== iconName) {
+                    wifi.setAttribute('data-lucide', iconName);
+                    crearIconosLucideEn_(wifi.closest('.header-status-ring') || wifi.parentElement);
+                }
+            }
+        }
+
+        window.addEventListener('online', () => actualizarHeaderHistorial());
+        window.addEventListener('offline', () => actualizarHeaderHistorial());
+
+        function cbJsonp(urlBase, params) {
+            return new Promise((resolve, reject) => {
+                const cb = '__hist_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                const noopCb = function () { };
+                const qs = new URLSearchParams(params || {});
+                qs.set('callback', cb);
+                const src = urlBase + (urlBase.includes('?') ? '&' : '?') + qs.toString();
+                const script = document.createElement('script');
+                let done = false;
+                const timeoutId = setTimeout(() => {
+                    if (done) return;
+                    done = true;
+                    window[cb] = noopCb;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(new Error('Timeout JSONP'));
+                }, 12000);
+                window[cb] = (payload) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timeoutId);
+                    window[cb] = noopCb;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    resolve(payload);
+                };
+                script.onerror = () => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timeoutId);
+                    window[cb] = noopCb;
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(new Error('Error JSONP'));
+                };
+                script.src = src;
+                document.body.appendChild(script);
+            });
+        }
+
+        function readJsonLs(key) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return [];
+                const arr = JSON.parse(raw);
+                return Array.isArray(arr) ? arr : [];
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function pillForEstado(e) {
+            const x = String(e || '').toLowerCase();
+            if (x === 'subido' || x === 'enviado') return '<span class="hist-pill hist-pill-ok"><i data-lucide="check-circle-2" aria-hidden="true"></i>Subido</span>';
+            if (x === 'pendiente') return '<span class="hist-pill hist-pill-pend"><i data-lucide="cloud-upload" aria-hidden="true"></i>Pendiente</span>';
+            return '<span class="hist-pill hist-pill-stop"><i data-lucide="alert-circle" aria-hidden="true"></i>' + escHistText(x || 'otro') + '</span>';
+        }
+
+        function escHistText(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function formatHoraHist(val) {
+            if (val === null || val === undefined || val === '') return '';
+            if (typeof val === 'number' && val > 0) {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+                }
+            }
+            const s = String(val).trim();
+            const m = s.match(/^(\d{1,2}):(\d{2})/);
+            if (m) return (m[1].length < 2 ? '0' + m[1] : m[1]) + ':' + m[2];
+            return s;
+        }
+
+        function formatFechaHist(iso) {
+            const s = String(iso || '').trim();
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) return m[3] + '/' + m[2] + '/' + m[1];
+            return s || '--';
+        }
+
+        function numeroEnsayoDesdeTexto(txt) {
+            const m = String(txt || '').trim().match(/\d+/);
+            return m ? m[0] : '';
+        }
+
+        function etiquetaMuestra(ensayoNumero, ensayoNombre) {
+            const n = String(ensayoNumero || '').trim() || numeroEnsayoDesdeTexto(ensayoNombre);
+            if (n) return 'Muestra ' + n;
+            const nom = String(ensayoNombre || '').trim();
+            if (nom) return nom;
+            return 'Muestra';
+        }
+
+        const HIST_MODULO_ORDER = ['campo', 'acopio', 'tk-2.0', 'packing', 'mptk', 'packing-rc5'];
+        const HIST_MODULO_META = {
+            campo: { label: 'Visual', icon: 'sprout', cls: 'hist-tipo--campo' },
+            acopio: { label: 'Acopio', icon: 'warehouse', cls: 'hist-tipo--acopio' },
+            'tk-2.0': { label: 'TK-2.0', icon: 'truck', cls: 'hist-tipo--tk20' },
+            packing: { label: 'Packing', icon: 'package-check', cls: 'hist-tipo--packing' },
+            'packing-rc5': { label: 'Packing RC5', icon: 'package', cls: 'hist-tipo--packing' },
+            mptk: { label: 'MP-TK', icon: 'snowflake', cls: 'hist-tipo--mptk' }
+        };
+
+        function fundoEsA9Historial_(r) {
+            if (r?.fundo_habilita_flujo_tk20 === true) return true;
+            const f = String(r?.fundo || '').trim().toUpperCase();
+            return f === 'A9';
+        }
+
+        function notaFlujoHistorial_(r) {
+            if (!fundoEsA9Historial_(r)) {
+                const fundo = String(r?.fundo || '').trim();
+                return fundo ? ('Fundo ' + fundo + ' · Campo → Packing') : 'Flujo estándar · Campo → Packing';
+            }
+            const mods = Array.isArray(r?.modulos) ? r.modulos : [];
+            if (mods.includes('tk-2.0')) return 'Fundo A9 · Campo → TK-2.0 → Packing';
+            if (mods.includes('mptk') || mods.includes('packing-rc5')) {
+                return 'Fundo A9 · Campo → Packing → MP-TK → RC5';
+            }
+            return 'Fundo A9';
+        }
+
+        function modulosDesdeRegistroSync_(q) {
+            const modo = String(q?.modo || '').toLowerCase();
+            const modoReg = String(q?.modo_registro || '').toLowerCase();
+            const payloadMode = String(q?.payload?.mode || '').toLowerCase();
+            if (modo === 'packing-rc5' || payloadMode === 'packing-rc5') return ['packing-rc5'];
+            if (modo === 'tk20' || modo === 'tk-2.0' || modo === 'tk_20'
+                || payloadMode === 'tk20' || payloadMode === 'tk-2.0' || payloadMode === 'tk_20') {
+                return ['tk-2.0'];
+            }
+            if (modo === 'packing' || modoReg === 'packing' || payloadMode === 'packing') return ['packing'];
+            if (modo === 'thermoking' || modo === 'mptk' || modoReg === 'thermoking' || modoReg === 'mptk' || payloadMode === 'thermoking') {
+                return ['mptk'];
+            }
+            if (modoReg === 'acopio') return ['acopio'];
+            return ['campo'];
+        }
+
+        function modulosDesdeFilaServidor_(r) {
+            const mods = new Set();
+            const modoReg = String(r?.modo_registro || '').toLowerCase();
+            if (r?.tiene_campo) mods.add(modoReg === 'acopio' ? 'acopio' : 'campo');
+            if (r?.tiene_packing) mods.add('packing');
+            if (fundoEsA9Historial_(r)) {
+                if (r?.tiene_tk20) mods.add('tk-2.0');
+                if (r?.tiene_mptk || r?.tiene_thermoking) mods.add('mptk');
+                if (r?.tiene_packing_rc5) mods.add('packing-rc5');
+            }
+            if (!mods.size) {
+                const t = String(r?.tipo_dato || '').toLowerCase();
+                if (t === 'packing') mods.add('packing');
+                else if (t === 'ambos') { mods.add('campo'); mods.add('packing'); }
+                else mods.add('campo');
+            }
+            return HIST_MODULO_ORDER.filter((m) => mods.has(m));
+        }
+
+        function claveMuestraHistorial_(fecha, ensayoNumero, numMuestra) {
+            return normalizarFechaHist(fecha) + '||' + String(ensayoNumero || '').trim()
+                + '||' + normalizarNumHistFila(numMuestra || '');
+        }
+
+        function mergeModulosEnFila_(fila, nuevos) {
+            const set = new Set(Array.isArray(fila.modulos) ? fila.modulos : []);
+            (nuevos || []).forEach((m) => set.add(m));
+            fila.modulos = HIST_MODULO_ORDER.filter((m) => set.has(m));
+            return fila;
+        }
+
+        function estadoPrioridadHistorial_(e) {
+            const x = String(e || '').toLowerCase();
+            if (x === 'subido' || x === 'enviado') return 3;
+            if (x === 'pendiente') return 2;
+            return 1;
+        }
+
+        function mergeEstadoHistorial_(a, b) {
+            return estadoPrioridadHistorial_(a) >= estadoPrioridadHistorial_(b) ? a : b;
+        }
+
+        function badgeModuloHtml(mod) {
+            const meta = HIST_MODULO_META[mod] || HIST_MODULO_META.campo;
+            return '<span class="hist-tipo ' + meta.cls + '" title="' + escHistText(meta.label) + '">'
+                + '<span class="hist-tipo-icon" aria-hidden="true"><i data-lucide="' + meta.icon + '"></i></span>'
+                + '<span class="hist-tipo-name">' + escHistText(meta.label) + '</span></span>';
+        }
+
+        function badgesModulosHtml(modulos) {
+            const lista = (Array.isArray(modulos) && modulos.length) ? modulos : ['campo'];
+            return '<div class="hist-tipos">' + lista.map(badgeModuloHtml).join('') + '</div>';
+        }
+
+        function iconoPrincipalModulos_(modulos) {
+            const m = Array.isArray(modulos) ? modulos : [];
+            if (m.includes('packing-rc5')) return 'package';
+            if (m.includes('mptk')) return 'snowflake';
+            if (m.includes('tk-2.0')) return 'truck';
+            if (m.includes('packing')) return 'package';
+            if (m.includes('acopio')) return 'warehouse';
+            return 'sprout';
+        }
+
+        function claseIconoPrincipalModulos_(modulos) {
+            const m = Array.isArray(modulos) ? modulos : [];
+            if (m.length > 1) return 'hist-card-icon--teal';
+            if (m.length === 1 && m[0] === 'packing') return 'hist-card-icon--indigo';
+            if (m.length === 1 && m[0] === 'mptk') return 'hist-card-icon--cyan';
+            return 'hist-card-icon--blue';
+        }
+
+        function detalleModulosLineaHtml_(r, opts) {
+            const partes = [];
+            const mods = r.modulos || [];
+            const horas = r.horas_modulo || {};
+            if (mods.includes('campo') || mods.includes('acopio')) {
+                const lbl = mods.includes('acopio') ? 'Acopio' : 'Visual';
+                const h = horas.campo || horas.acopio || r.hora_registro || '';
+                partes.push(lbl + (h ? ' ' + h : ''));
+            }
+            if (mods.includes('tk-2.0')) {
+                const h = horas['tk-2.0'] || r.hora_tk20 || '';
+                partes.push('TK-2.0' + (h ? ' ' + h : ''));
+            }
+            if (mods.includes('packing')) {
+                const h = horas.packing || r.hora_packing || '';
+                partes.push('Packing' + (h ? ' ' + h : ''));
+            }
+            if (mods.includes('mptk')) {
+                const h = horas.mptk || r.hora_mptk || '';
+                partes.push('MP-TK' + (h ? ' ' + h : ''));
+            }
+            if (mods.includes('packing-rc5')) {
+                const h = horas.packing_rc5 || r.hora_packing_rc5 || '';
+                partes.push('RC5' + (h ? ' ' + h : ''));
+            }
+            if (!partes.length) return '';
+            let suf = '';
+            const flujo = notaFlujoHistorial_(r);
+            if (flujo) suf = ' · ' + flujo;
+            if (opts && opts.esServidor && r.total > 1) suf += ' · ' + r.total + ' filas en planilla';
+            else if (opts && opts.esServidor && r.filas_campo > 0 && r.filas_packing > 0) {
+                suf += ' · ' + r.filas_campo + ' campo, ' + r.filas_packing + ' packing';
+            }
+            return '<p class="hist-card-detalle">' + escHistText(partes.join(' · ') + suf) + '</p>';
+        }
+
+        function clavePdfHistorial(fecha, ensayoNumero, numMuestra, modulo) {
+            if (window.HistPdfStore && typeof window.HistPdfStore.claveRegistro === 'function') {
+                return window.HistPdfStore.claveRegistro(fecha, ensayoNumero, numMuestra, modulo);
+            }
+            return normalizarFechaHist(fecha) + '||' + String(ensayoNumero || '').trim()
+                + '||' + String(numMuestra || '').trim() + '||' + String(modulo || 'campo').toLowerCase();
+        }
+
+        function ensayoNumeroHistFila(r) {
+            const en = String(r?.ensayo_numero || '').trim();
+            if (en) return en;
+            return numeroEnsayoDesdeTexto(r?.ensayo_nombre || r?.ensayo || '');
+        }
+
+        function normalizarNumHistFila(val) {
+            return String(val || '').trim().toUpperCase();
+        }
+
+        function filaCoincidePdfRegistro_(r, reg) {
+            const f = normalizarFechaHist(r?.fecha);
+            const rf = window.HistPdfStore && typeof window.HistPdfStore.normalizarFecha === 'function'
+                ? window.HistPdfStore.normalizarFecha(reg?.fecha)
+                : normalizarFechaHist(reg?.fecha);
+            if (!f || f !== rf) return false;
+            const en = ensayoNumeroHistFila(r);
+            const ren = String(reg?.ensayo_numero || '').trim();
+            if (en && ren && en !== ren) return false;
+            const nm = normalizarNumHistFila(r?.num_muestra);
+            const rnm = normalizarNumHistFila(reg?.num_muestra);
+            if (nm && nm !== '--' && rnm && nm !== rnm) return false;
+            return true;
+        }
+
+        function claveMuestraPdfHist_(fecha, ensayoNumero, numMuestra) {
+            return normalizarFechaHist(fecha) + '||' + String(ensayoNumero || '').trim()
+                + '||' + normalizarNumHistFila(numMuestra || '');
+        }
+
+        function modulosPdfDisponiblesFila(r) {
+            if (Array.isArray(r?._pdfMods)) return r._pdfMods;
+            const f = normalizarFechaHist(r?.fecha);
+            const en = ensayoNumeroHistFila(r);
+            const nm = String(r?.num_muestra || '').trim();
+            const mods = new Set(histPdfModsPorMuestra.get(claveMuestraPdfHist_(f, en, nm)) || []);
+            ['campo', 'acopio', 'packing', 'packing-rc5', 'mptk', 'tk-2.0'].forEach((m) => {
+                if (histPdfClaves.has(clavePdfHistorial(f, en, nm, m))) mods.add(m);
+            });
+            return [...mods];
+        }
+
+        function filaMuestraSubida(r, opts) {
+            if (opts && opts.esServidor) return true;
+            const st = String(r?.estado || '').toLowerCase();
+            return st === 'subido' || st === 'enviado';
+        }
+
+        function filaDebeMostrarPdf(r, opts) {
+            if (opts && opts.esServidor) return true;
+            if (!filaMuestraSubida(r, opts)) return false;
+            return true;
+        }
+
+        function histPdfBtnHtml(r, pdfMods) {
+            const mods = Array.isArray(pdfMods) ? pdfMods : modulosPdfDisponiblesFila(r);
+            const disponible = mods.length > 0;
+            const f = escHistText(normalizarFechaHist(r.fecha));
+            const en = escHistText(ensayoNumeroHistFila(r));
+            const nm = escHistText(String(r.num_muestra || '').trim());
+            const cls = 'hist-pdf-btn' + (disponible ? ' hist-pdf-btn--ok' : ' hist-pdf-btn--off');
+            const titulo = disponible ? 'Ver PDF guardado en el teléfono' : 'PDF local no disponible (solo hoy/ayer tras enviar)';
+            return '<button type="button" class="' + cls + '" data-hist-pdf="1"'
+                + ' data-hist-fecha="' + f + '" data-hist-ensayo="' + en + '" data-hist-num="' + nm + '"'
+                + ' data-hist-modulos="' + escHistText(mods.join(',')) + '"'
+                + ' data-hist-disponible="' + (disponible ? '1' : '0') + '"'
+                + ' aria-label="' + escHistText(titulo) + '" title="' + escHistText(titulo) + '">'
+                + '<span class="hist-pdf-btn-icon" aria-hidden="true"><i data-lucide="file-text"></i></span>'
+                + '<span class="hist-pdf-btn-label">PDF</span></button>';
+        }
+
+        async function cargarIndicesPdfHistorial() {
+            try {
+                if (window.HistPdfStore && typeof window.HistPdfStore.listarRegistrosActivos === 'function') {
+                    histPdfRegistros = await window.HistPdfStore.listarRegistrosActivos();
+                    histPdfClaves = new Set();
+                    histPdfModsPorMuestra = new Map();
+                    (histPdfRegistros || []).forEach((reg) => {
+                        const f = normalizarFechaHist(reg?.fecha);
+                        const en = String(reg?.ensayo_numero || '').trim();
+                        const nm = String(reg?.num_muestra || '').trim();
+                        const mod = String(reg?.modulo || 'campo').toLowerCase();
+                        const k = claveMuestraPdfHist_(f, en, nm);
+                        if (!histPdfModsPorMuestra.has(k)) histPdfModsPorMuestra.set(k, new Set());
+                        histPdfModsPorMuestra.get(k).add(mod);
+                        histPdfClaves.add(clavePdfHistorial(f, en, nm, mod));
+                    });
+                    return;
+                }
+            } catch (_) { /* ignore */ }
+            histPdfClaves = new Set();
+            histPdfRegistros = [];
+            histPdfModsPorMuestra = new Map();
+        }
+
+        async function resolverPdfHistorialLocal_(fecha, ensayoNumero, numMuestra, modulo) {
+            if (!window.HistPdfStore) return null;
+            let rec = null;
+            if (typeof window.HistPdfStore.obtener === 'function') {
+                rec = await window.HistPdfStore.obtener(fecha, ensayoNumero, numMuestra, modulo);
+            }
+            if ((!rec || !rec.blob) && typeof window.HistPdfStore.listarRegistrosActivos === 'function') {
+                const activos = await window.HistPdfStore.listarRegistrosActivos();
+                const fila = { fecha, ensayo_numero: ensayoNumero, num_muestra: numMuestra };
+                const hit = activos.find((reg) => filaCoincidePdfRegistro_(fila, reg)
+                    && String(reg.modulo || '').toLowerCase() === String(modulo || 'campo').toLowerCase());
+                if (hit && hit.blob) {
+                    rec = {
+                        blob: new Blob([hit.blob], { type: 'application/pdf' }),
+                        nombre: hit.nombre || 'muestra.pdf'
+                    };
+                }
+            }
+            return rec && rec.blob ? rec : null;
+        }
+
+        async function mostrarModalPdfHistorial(rec) {
+            if (!rec || !rec.blob) return false;
+            if (typeof window.abrirModalPdfCampo !== 'function') {
+                window.open(URL.createObjectURL(rec.blob), '_blank', 'noopener,noreferrer');
+                return true;
+            }
+            await window.abrirModalPdfCampo(rec.blob, rec.nombre || 'muestra.pdf');
+            refrescarIconosHistorial();
+            return true;
+        }
+
+        async function elegirModuloPdfHistorial(mods) {
+            const lista = Array.isArray(mods) ? mods.filter(Boolean) : [];
+            if (!lista.length) return '';
+            if (lista.length === 1) return lista[0];
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                const inputOptions = {};
+                lista.forEach((m) => { inputOptions[m] = HIST_PDF_MODULO_LABEL[m] || m; });
+                const resp = await window.Swal.fire({
+                    icon: 'question',
+                    title: 'Elegir PDF',
+                    text: 'Esta muestra tiene más de un PDF guardado en el teléfono.',
+                    input: 'select',
+                    inputOptions,
+                    inputValue: lista[0],
+                    showCancelButton: true,
+                    confirmButtonText: 'Abrir',
+                    cancelButtonText: 'Cancelar'
+                });
+                return resp.isConfirmed ? String(resp.value || lista[0]) : '';
+            }
+            return lista[0];
+        }
+
+        async function abrirPdfHistorial(fecha, ensayoNumero, numMuestra, modulosCsv) {
+            if (!window.HistPdfStore || typeof window.HistPdfStore.obtener !== 'function') {
+                if (window.Swal) window.Swal.fire({ icon: 'info', title: 'PDF no disponible', text: 'Recarga la página e intenta de nuevo.' });
+                return;
+            }
+            let mods = String(modulosCsv || '').trim()
+                ? modulosCsv.split(',').map((m) => m.trim()).filter(Boolean)
+                : [];
+            if (!mods.length && typeof window.HistPdfStore.modulosDisponibles === 'function') {
+                mods = await window.HistPdfStore.modulosDisponibles(fecha, ensayoNumero, numMuestra);
+            }
+            if (!mods.length) {
+                const fila = { fecha, ensayo_numero: ensayoNumero, num_muestra: numMuestra };
+                mods = modulosPdfDisponiblesFila(fila);
+            }
+            if (!mods.length) {
+                if (window.Swal) {
+                    window.Swal.fire({
+                        icon: 'info',
+                        title: 'Sin PDF en el teléfono',
+                        text: 'Este registro está en planilla, pero no hay PDF local guardado (solo se guardan al enviar, hoy y ayer).'
+                    });
+                }
+                return;
+            }
+            const modulo = await elegirModuloPdfHistorial(mods);
+            if (!modulo) return;
+            try {
+                const rec = await resolverPdfHistorialLocal_(fecha, ensayoNumero, numMuestra, modulo);
+                if (!rec) {
+                    if (window.Swal) {
+                        window.Swal.fire({
+                            icon: 'info',
+                            title: 'Sin PDF local',
+                            text: 'No se encontró el archivo en el teléfono. Envía la muestra de nuevo tras actualizar la app.'
+                        });
+                    }
+                    await cargarIndicesPdfHistorial();
+                    pintarListaServidor();
+                    pintarListaLocal();
+                    return;
+                }
+                if (!await mostrarModalPdfHistorial(rec)) {
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'warning', title: 'PDF', text: 'No se pudo abrir el visor.' });
+                    }
+                }
+            } catch (err) {
+                console.warn('[HistPDF] abrir:', err);
+                if (window.Swal) window.Swal.fire({ icon: 'error', title: 'No se pudo abrir el PDF', text: 'Intenta de nuevo.' });
+            }
+        }
+
+        function enlazarClicksPdfHistorial(contenedor) {
+            if (!contenedor || contenedor.dataset.histPdfBound === '1') return;
+            contenedor.dataset.histPdfBound = '1';
+            contenedor.addEventListener('click', (ev) => {
+                const btn = ev.target && ev.target.closest ? ev.target.closest('[data-hist-pdf]') : null;
+                if (!btn) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                void abrirPdfHistorial(
+                    btn.getAttribute('data-hist-fecha'),
+                    btn.getAttribute('data-hist-ensayo'),
+                    btn.getAttribute('data-hist-num'),
+                    btn.getAttribute('data-hist-modulos')
+                );
+            });
+        }
+
+        function histCardHtml(r, opts) {
+            const label = etiquetaMuestra(r.ensayo_numero, r.ensayo_nombre || r.ensayo);
+            const horaTxt = formatHoraHist(r.hora_registro || r.hora_guardada || r.ts);
+            const extra = opts && opts.extra ? String(opts.extra) : '';
+            const estadoHtml = opts && opts.estadoHtml ? opts.estadoHtml : '';
+            const mostrarPdf = !!(opts && opts.mostrarPdf);
+            const metaClass = 'hist-card-meta' + (mostrarPdf ? ' hist-card-meta--con-pdf' : '');
+            const pdfBtn = mostrarPdf ? histPdfBtnHtml(r, opts?.pdfMods) : '';
+            const modulos = Array.isArray(r.modulos) && r.modulos.length ? r.modulos : ['campo'];
+            const detalleMods = detalleModulosLineaHtml_(r, opts);
+            const cardMod = modulos.length > 1 ? 'multi' : modulos[0];
+            return ''
+                + '<article class="hist-card hist-card--' + escHistText(cardMod) + '">'
+                + '<header class="hist-card-header">'
+                + '<div class="hist-card-icon ' + claseIconoPrincipalModulos_(modulos) + '" aria-hidden="true">'
+                + '<i data-lucide="' + iconoPrincipalModulos_(modulos) + '"></i>'
+                + '</div>'
+                + '<div class="hist-card-main">'
+                + '<div class="hist-card-topline">'
+                + '<h3 class="hist-card-title">' + escHistText(label) + '</h3>'
+                + '<div class="hist-card-numchip">'
+                + '<span class="hist-card-numchip-label">N°</span>'
+                + '<strong class="hist-card-numchip-value">' + escHistText(r.num_muestra || '--') + '</strong>'
+                + '</div>'
+                + '</div>'
+                + badgesModulosHtml(modulos)
+                + detalleMods
+                + '</div>'
+                + '</header>'
+                + '<div class="' + metaClass + '">'
+                + '<div class="hist-meta-item"><i data-lucide="calendar-days" aria-hidden="true"></i>'
+                + '<span>' + escHistText(formatFechaHist(r.fecha)) + '</span></div>'
+                + '<div class="hist-meta-item hist-meta-item--time"><i data-lucide="timer" aria-hidden="true"></i>'
+                + '<span>' + escHistText(horaTxt || 'Sin hora') + '</span></div>'
+                + pdfBtn
+                + '</div>'
+                + '<footer class="hist-card-footer">'
+                + (extra ? '<span class="hist-card-note">' + escHistText(extra) + '</span>' : '<span class="hist-card-note"></span>')
+                + (estadoHtml ? '<div class="hist-card-status">' + estadoHtml + '</div>' : '')
+                + '</footer>'
+                + '</article>';
+        }
+
+        function refrescarIconosHistorial() {
+            crearIconosLucideEn_(document.querySelector('.hist-page'));
+            crearIconosLucideEn_(document.getElementById('main-bottom-nav'));
+        }
+
+        function totalPaginasHistorial(total) {
+            return Math.max(1, Math.ceil(Math.max(0, total) / HIST_PER_PAGE));
+        }
+
+        function acotarPaginaHistorial(page, totalItems) {
+            const maxPage = Math.max(0, totalPaginasHistorial(totalItems) - 1);
+            return Math.min(Math.max(0, page), maxPage);
+        }
+
+        function scrollAlInicioListaHistorial(listId) {
+            const list = document.getElementById(listId);
+            if (!list) return;
+            const block = list.closest('.hist-block');
+            if (block && typeof block.scrollIntoView === 'function') {
+                block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function actualizarDescBloqueHistorial(descId, total, page, textoBase) {
+            const el = document.getElementById(descId);
+            if (!el) return;
+            if (!total) {
+                el.textContent = textoBase + ' · ' + rangoHistorialEtiqueta();
+                return;
+            }
+            if (total <= HIST_PER_PAGE) {
+                el.textContent = total + (total === 1 ? ' registro' : ' registros') + ' · ' + textoBase;
+                return;
+            }
+            const inicio = page * HIST_PER_PAGE + 1;
+            const fin = Math.min(total, (page + 1) * HIST_PER_PAGE);
+            const totalPages = totalPaginasHistorial(total);
+            el.textContent = total + ' registros · viendo ' + inicio + '–' + fin
+                + ' (pág. ' + (page + 1) + '/' + totalPages + ') · ' + textoBase;
+        }
+
+        function mostrarCargaServidorHistorial_() {
+            const block = document.getElementById('hist-server-block');
+            const loader = document.getElementById('hist-server-loader');
+            const list = document.getElementById('server-list');
+            const pag = document.getElementById('server-pagination');
+            const desc = document.getElementById('hist-server-desc');
+            if (block) {
+                block.classList.add('is-loading');
+                block.setAttribute('aria-busy', 'true');
+            }
+            if (loader) loader.hidden = false;
+            if (list) list.hidden = true;
+            if (pag) pag.hidden = true;
+            if (desc) desc.textContent = 'Cargando historial de planilla…';
+        }
+
+        function ocultarCargaServidorHistorial_() {
+            const block = document.getElementById('hist-server-block');
+            const loader = document.getElementById('hist-server-loader');
+            const list = document.getElementById('server-list');
+            if (block) {
+                block.classList.remove('is-loading');
+                block.setAttribute('aria-busy', 'false');
+            }
+            if (loader) loader.hidden = true;
+            if (list) list.hidden = false;
+        }
+
+        function fechaHistMs(fecha, hora) {
+            const s = String(fecha || '').trim();
+            if (!s) return 0;
+            let y = 0;
+            let mo = 0;
+            let d = 0;
+            let iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (iso) {
+                y = Number(iso[1]);
+                mo = Number(iso[2]) - 1;
+                d = Number(iso[3]);
+            } else {
+                let slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (slash) {
+                    d = Number(slash[1]);
+                    mo = Number(slash[2]) - 1;
+                    y = Number(slash[3]);
+                } else {
+                    let dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+                    if (dash) {
+                        d = Number(dash[1]);
+                        mo = Number(dash[2]) - 1;
+                        y = Number(dash[3]);
+                    }
+                }
+            }
+            if (!y) return 0;
+            const dt = new Date(y, mo, d);
+            const hm = String(hora || '').trim().match(/^(\d{1,2}):(\d{2})/);
+            if (hm) dt.setHours(Number(hm[1]), Number(hm[2]), 0, 0);
+            return dt.getTime();
+        }
+
+        function scrollAlPaginacionHistorial(navId) {
+            const nav = document.getElementById(navId);
+            if (nav && typeof nav.scrollIntoView === 'function') {
+                nav.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        function actualizarPaginacionHistorial(navId, page, totalItems, onPageChange) {
+            const nav = document.getElementById(navId);
+            if (!nav) return;
+            const prevBtn = nav.querySelector('[data-hist-page-dir="prev"]');
+            const nextBtn = nav.querySelector('[data-hist-page-dir="next"]');
+            const countEl = nav.querySelector('.hist-page-count');
+
+            if (!totalItems) {
+                nav.hidden = true;
+                return;
+            }
+
+            const totalPages = totalPaginasHistorial(totalItems);
+            if (totalPages <= 1) {
+                nav.hidden = true;
+                return;
+            }
+
+            nav.hidden = false;
+            const safePage = acotarPaginaHistorial(page, totalItems);
+
+            if (countEl) countEl.textContent = (safePage + 1) + ' / ' + totalPages;
+            if (prevBtn) prevBtn.disabled = safePage <= 0;
+            if (nextBtn) nextBtn.disabled = safePage >= totalPages - 1;
+
+            nav.querySelectorAll('[data-hist-page-dir]').forEach((btn) => {
+                btn.onclick = () => {
+                    const dir = btn.getAttribute('data-hist-page-dir');
+                    if (dir === 'prev' && safePage > 0) {
+                        onPageChange(safePage - 1);
+                        scrollAlPaginacionHistorial(navId);
+                    }
+                    if (dir === 'next' && safePage < totalPages - 1) {
+                        onPageChange(safePage + 1);
+                        scrollAlPaginacionHistorial(navId);
+                    }
+                };
+            });
+            refrescarIconosHistorial();
+        }
+
+        function pintarListaServidor() {
+            const box = document.getElementById('server-list');
+            if (!box) return;
+            histServerPage = acotarPaginaHistorial(histServerPage, histServerRows.length);
+            if (!histServerRows.length) {
+                box.innerHTML = '<div class="hist-empty"><i data-lucide="inbox" aria-hidden="true"></i><span>Sin registros de hoy ni ayer en planilla.</span></div>';
+                refrescarIconosHistorial();
+                actualizarDescBloqueHistorial('hist-server-desc', 0, 0, HIST_TEXTO_SERVIDOR);
+                actualizarPaginacionHistorial('server-pagination', 0, 0, () => {});
+                return;
+            }
+            const start = histServerPage * HIST_PER_PAGE;
+            const pageRows = histServerRows.slice(start, start + HIST_PER_PAGE);
+            box.innerHTML = pageRows.map((r) => {
+                const pdfMods = modulosPdfDisponiblesFila(r);
+                r._pdfMods = pdfMods;
+                return histCardHtml(r, {
+                    esServidor: true,
+                    estadoHtml: '<span class="hist-pill hist-pill-ok"><i data-lucide="sheet" aria-hidden="true"></i>En planilla</span>',
+                    mostrarPdf: true,
+                    pdfMods: pdfMods
+                });
+            }).join('');
+            refrescarIconosHistorial();
+            actualizarDescBloqueHistorial('hist-server-desc', histServerRows.length, histServerPage, HIST_TEXTO_SERVIDOR);
+            actualizarPaginacionHistorial('server-pagination', histServerPage, histServerRows.length, (p) => {
+                histServerPage = p;
+                pintarListaServidor();
+            });
+        }
+
+        function pintarListaLocal() {
+            const box = document.getElementById('local-list');
+            if (!box) return;
+            histLocalPage = acotarPaginaHistorial(histLocalPage, histLocalRows.length);
+            if (!histLocalRows.length) {
+                box.innerHTML = '<div class="hist-empty"><i data-lucide="check-circle-2" aria-hidden="true"></i><span>Sin registros locales para hoy y ayer.</span></div>';
+                refrescarIconosHistorial();
+                actualizarDescBloqueHistorial('hist-local-desc', 0, 0, HIST_TEXTO_LOCAL);
+                actualizarPaginacionHistorial('local-pagination', 0, 0, () => {});
+                return;
+            }
+            const start = histLocalPage * HIST_PER_PAGE;
+            const pageRows = histLocalRows.slice(start, start + HIST_PER_PAGE);
+            box.innerHTML = pageRows.map((r) => {
+                const extra = 'Intentos: ' + r.intentos + (r.error ? ' · ' + r.error : '');
+                return histCardHtml(r, {
+                    extra: extra,
+                    estadoHtml: pillForEstado(r.estado),
+                    mostrarPdf: filaDebeMostrarPdf(r, { esServidor: false }),
+                    pdfMods: r._pdfMods
+                });
+            }).join('');
+            refrescarIconosHistorial();
+            actualizarDescBloqueHistorial('hist-local-desc', histLocalRows.length, histLocalPage, HIST_TEXTO_LOCAL);
+            actualizarPaginacionHistorial('local-pagination', histLocalPage, histLocalRows.length, (p) => {
+                histLocalPage = p;
+                pintarListaLocal();
+            });
+        }
+
+        function renderServer(registrados) {
+            const permitidas = fechasHistorialPermitidas();
+            const list = Array.isArray(registrados) ? registrados.slice(0) : [];
+            const grouped = {};
+            list.forEach((r, idx) => {
+                const fecha = normalizarFechaHist(r?.fecha);
+                const num = String(r?.num_muestra || '').trim();
+                const clamshell = String(r?.n_clamshell || '').trim();
+                const en = String(r?.ensayo_numero || '').trim();
+                const tieneCampo = !!r?.tiene_campo;
+                const tienePacking = !!r?.tiene_packing;
+                const tieneMptk = !!(r?.tiene_mptk || r?.tiene_thermoking);
+                const tieneTk20 = !!r?.tiene_tk20;
+                const tieneRc5 = !!r?.tiene_packing_rc5;
+                if (!fecha || !en || !permitidas.set.has(fecha)) return;
+                const idMuestra = num || clamshell;
+                if (!idMuestra && !tieneCampo && !tienePacking && !tieneMptk && !tieneTk20 && !tieneRc5) return;
+                const key = fecha + '||' + en + '||' + (idMuestra || ('idx-' + idx));
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        fecha: fecha,
+                        num_muestra: idMuestra || '--',
+                        ensayo_numero: en,
+                        ensayo_nombre: String(r?.ensayo_nombre || '').trim(),
+                        total: 0,
+                        filas_campo: 0,
+                        filas_packing: 0,
+                        hora_registro: '',
+                        hora_packing: '',
+                        hora_mptk: '',
+                        hora_tk20: '',
+                        hora_packing_rc5: '',
+                        horas_modulo: {},
+                        tiene_campo: false,
+                        tiene_packing: false,
+                        tiene_mptk: false,
+                        tiene_tk20: false,
+                        tiene_packing_rc5: false,
+                        fundo: '',
+                        fundo_habilita_flujo_tk20: false,
+                        modo_registro: String(r?.modo_registro || '').trim().toLowerCase(),
+                        modulos: [],
+                        orden_ms: 0
+                    };
+                }
+                const g = grouped[key];
+                g.total += 1;
+                if (tieneCampo) g.filas_campo += 1;
+                if (tienePacking) g.filas_packing += 1;
+                const hCampo = String(r?.hora_registro || '').trim();
+                const hPack = String(r?.hora_packing || '').trim();
+                const hTk = String(r?.hora_mptk || '').trim();
+                const hTk20 = String(r?.hora_tk20 || '').trim();
+                const hRc5 = String(r?.hora_packing_rc5 || '').trim();
+                if (hCampo && !g.hora_registro) g.hora_registro = hCampo;
+                if (hPack && !g.hora_packing) g.hora_packing = hPack;
+                if (hTk && !g.hora_mptk) g.hora_mptk = hTk;
+                if (hTk20 && !g.hora_tk20) g.hora_tk20 = hTk20;
+                if (hRc5 && !g.hora_packing_rc5) g.hora_packing_rc5 = hRc5;
+                if (hCampo) {
+                    const modoH = String(r?.modo_registro || g.modo_registro || '').toLowerCase();
+                    g.horas_modulo[modoH === 'acopio' ? 'acopio' : 'campo'] = hCampo;
+                }
+                if (hPack) g.horas_modulo.packing = hPack;
+                if (hTk) g.horas_modulo.mptk = hTk;
+                if (hTk20) g.horas_modulo['tk-2.0'] = hTk20;
+                if (hRc5) g.horas_modulo.packing_rc5 = hRc5;
+                g.tiene_campo = g.tiene_campo || tieneCampo;
+                g.tiene_packing = g.tiene_packing || tienePacking;
+                g.tiene_mptk = g.tiene_mptk || tieneMptk;
+                g.tiene_tk20 = g.tiene_tk20 || tieneTk20;
+                g.tiene_packing_rc5 = g.tiene_packing_rc5 || tieneRc5;
+                if (!g.modo_registro && r?.modo_registro) g.modo_registro = String(r.modo_registro).trim().toLowerCase();
+                if (r?.fundo && !g.fundo) g.fundo = String(r.fundo).trim();
+                if (r?.fundo_habilita_flujo_tk20 === true) g.fundo_habilita_flujo_tk20 = true;
+                g.orden_ms = Math.max(g.orden_ms, fechaHistMs(fecha, hCampo || hTk20 || hPack || hTk || hRc5 || g.hora_registro));
+            });
+            let view = Object.values(grouped).sort((a, b) => {
+                const ta = a.orden_ms || fechaHistMs(a.fecha, a.hora_registro);
+                const tb = b.orden_ms || fechaHistMs(b.fecha, b.hora_registro);
+                if (tb !== ta) return tb - ta;
+                const f = String(b.fecha || '').localeCompare(String(a.fecha || ''));
+                if (f !== 0) return f;
+                const na = Number(a.ensayo_numero) || 0;
+                const nb = Number(b.ensayo_numero) || 0;
+                if (na !== nb) return nb - na;
+                return String(b.num_muestra || '').localeCompare(String(a.num_muestra || ''));
+            });
+            view.forEach((g) => { g.modulos = modulosDesdeFilaServidor_(g); });
+            view.forEach((g) => {
+                const pdfMods = modulosPdfDisponiblesFila(g);
+                g._pdfMods = pdfMods;
+                mergeModulosEnFila_(g, pdfMods);
+            });
+
+            document.getElementById('kpi-servidor').textContent = String(view.length);
+            histServerRows = view;
+            histServerPage = 0;
+            pintarListaServidor();
+        }
+
+        function fusionarFilaLocalHistorial_(mapa, fila) {
+            const clave = claveMuestraHistorial_(fila.fecha, fila.ensayo_numero, fila.num_muestra);
+            if (!clave || clave.endsWith('||')) return;
+            const prev = mapa.get(clave);
+            if (!prev) {
+                mapa.set(clave, {
+                    uid: fila.uid || '',
+                    fecha: fila.fecha,
+                    ensayo: fila.ensayo || '',
+                    ensayo_numero: fila.ensayo_numero,
+                    ensayo_nombre: fila.ensayo_nombre || fila.ensayo || '',
+                    num_muestra: fila.num_muestra || '',
+                    modulos: fila.modulos ? fila.modulos.slice() : [],
+                    horas_modulo: Object.assign({}, fila.horas_modulo || {}),
+                    estado: fila.estado || '',
+                    error: fila.error || '',
+                    intentos: Number(fila.intentos || 0),
+                    hora_registro: fila.hora_registro || '',
+                    hora_guardada: fila.hora_guardada || '',
+                    ts: Number(fila.ts || 0)
+                });
+                return;
+            }
+            mergeModulosEnFila_(prev, fila.modulos);
+            prev.estado = mergeEstadoHistorial_(prev.estado, fila.estado);
+            if (!prev.error && fila.error) prev.error = fila.error;
+            prev.intentos = Math.max(prev.intentos, Number(fila.intentos || 0));
+            prev.ts = Math.max(prev.ts, Number(fila.ts || 0));
+            const hm = fila.horas_modulo || {};
+            Object.keys(hm).forEach((k) => {
+                if (hm[k] && !prev.horas_modulo[k]) prev.horas_modulo[k] = hm[k];
+            });
+            if (!prev.hora_registro && fila.hora_registro) prev.hora_registro = fila.hora_registro;
+            if (!prev.hora_guardada && fila.hora_guardada) prev.hora_guardada = fila.hora_guardada;
+        }
+
+        function renderLocal() {
+            const queue = readJsonLs(SYNC_QUEUE_KEY);
+            const archivados = readJsonLs(SYNC_ENVIADOS_KEY);
+            const hist = readJsonLs(SYNC_HISTORY_KEY);
+            const byUid = {};
+            hist.forEach((h) => {
+                if (!h || !h.uid) return;
+                const prev = byUid[h.uid];
+                if (!prev || Number(h.ts || 0) >= Number(prev.ts || 0)) byUid[h.uid] = h;
+            });
+            const filaDesdeRegistro = (q, last) => {
+                const mods = modulosDesdeRegistroSync_(q);
+                const ts = Number(last?.ts || q?.actualizado_en || q?.creado_en || 0);
+                const horaRows = q?.rows;
+                let horaCampo = '';
+                if (Array.isArray(horaRows) && horaRows.length && horaRows[0].length >= 48) {
+                    horaCampo = String(horaRows[0][47] || '').trim();
+                }
+                const horasModulo = {};
+                if (mods.includes('campo') || mods.includes('acopio')) {
+                    horasModulo[mods.includes('acopio') ? 'acopio' : 'campo'] = horaCampo || formatHoraHist(ts);
+                }
+                if (mods.includes('packing')) horasModulo.packing = formatHoraHist(ts);
+                if (mods.includes('mptk')) horasModulo.mptk = formatHoraHist(ts);
+                if (mods.includes('tk-2.0')) horasModulo['tk-2.0'] = formatHoraHist(ts);
+                if (mods.includes('packing-rc5')) horasModulo.packing_rc5 = formatHoraHist(ts);
+                const st = String(last?.estado || q?.estado || '').toLowerCase();
+                return {
+                    uid: q?.uid || '',
+                    fecha: q?.fecha || '',
+                    ensayo: q?.ensayo || '',
+                    ensayo_numero: String(q?.ensayo_numero || '').trim() || numeroEnsayoDesdeTexto(q?.ensayo),
+                    ensayo_nombre: String(q?.ensayo || '').trim(),
+                    num_muestra: q?.num_muestra || '',
+                    modulos: mods,
+                    horas_modulo: horasModulo,
+                    estado: (st === 'enviado') ? 'subido' : st,
+                    error: last?.error || q?.error || '',
+                    intentos: Number(last?.intentos || q?.intentos || 0),
+                    hora_registro: horaCampo,
+                    hora_guardada: horaCampo || ts,
+                    ts: ts
+                };
+            };
+            const mapa = new Map();
+            queue.forEach((q) => {
+                const last = (q && q.uid) ? byUid[q.uid] : null;
+                fusionarFilaLocalHistorial_(mapa, filaDesdeRegistro(q, last));
+            });
+            archivados.forEach((a) => {
+                if (!a) return;
+                fusionarFilaLocalHistorial_(mapa, filaDesdeRegistro(a, a));
+            });
+            (histPdfRegistros || []).forEach((reg) => {
+                const fecha = normalizarFechaHist(reg?.fecha);
+                const en = String(reg?.ensayo_numero || '').trim();
+                const nm = String(reg?.num_muestra || '').trim();
+                if (!fecha || !en || !esFechaHistorialVisible(fecha)) return;
+                const mod = String(reg.modulo || 'campo').toLowerCase();
+                const stub = {
+                    fecha,
+                    ensayo_numero: en,
+                    ensayo_nombre: 'Ensayo ' + en,
+                    num_muestra: nm,
+                    modulos: [mod],
+                    horas_modulo: {},
+                    estado: 'subido',
+                    error: '',
+                    intentos: 0,
+                    ts: Number(reg?.guardado_en || reg?.ts || Date.now())
+                };
+                stub.horas_modulo[mod === 'acopio' ? 'acopio' : mod] = formatHoraHist(stub.ts);
+                fusionarFilaLocalHistorial_(mapa, stub);
+            });
+            const rowsRecientes = [...mapa.values()].filter((r) => esFechaHistorialVisible(r.fecha));
+            rowsRecientes.forEach((r) => {
+                const pdfMods = modulosPdfDisponiblesFila(r);
+                r._pdfMods = pdfMods;
+                mergeModulosEnFila_(r, pdfMods);
+                if (pdfMods.length && estadoPrioridadHistorial_(r.estado) < 3) r.estado = 'subido';
+            });
+            const pendientes = rowsRecientes.filter((r) => r.estado === 'pendiente').length;
+            const bloqueados = rowsRecientes.filter((r) => {
+                const st = String(r.estado || '').toLowerCase();
+                return st && st !== 'pendiente' && st !== 'subido' && st !== 'enviado';
+            }).length;
+            document.getElementById('kpi-pendientes').textContent = String(pendientes);
+            document.getElementById('kpi-bloqueados').textContent = String(bloqueados);
+            actualizarHeaderHistorial();
+
+            histLocalRows = rowsRecientes.slice(0).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+            histLocalPage = 0;
+            pintarListaLocal();
+        }
+
+        async function refrescarHistorialTrasCambioPdf_() {
+            await cargarIndicesPdfHistorial();
+            renderLocal();
+            if (histServerRows.length) {
+                histServerRows.forEach((g) => {
+                    const pdfMods = modulosPdfDisponiblesFila(g);
+                    g._pdfMods = pdfMods;
+                    mergeModulosEnFila_(g, pdfMods);
+                });
+                pintarListaServidor();
+            }
+        }
+
+        let histPdfRefreshTimer = null;
+        function programarRefrescoHistorialPdf_() {
+            clearTimeout(histPdfRefreshTimer);
+            histPdfRefreshTimer = setTimeout(() => { void refrescarHistorialTrasCambioPdf_(); }, 400);
+        }
+
+        window.addEventListener('focus', programarRefrescoHistorialPdf_);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) programarRefrescoHistorialPdf_();
+        });
+
+        async function initHistorial() {
+            actualizarHeaderHistorial();
+            const btnInfoPdf = document.getElementById('hist-hero-info-pdf');
+            if (btnInfoPdf && btnInfoPdf.dataset.bound !== '1') {
+                btnInfoPdf.dataset.bound = '1';
+                btnInfoPdf.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    mostrarModalInfoPdfHistorial_();
+                });
+            }
+            if (typeof window.initPdfVisorModalCampo === 'function') {
+                window.initPdfVisorModalCampo();
+            }
+            enlazarClicksPdfHistorial(document.getElementById('local-list'));
+            enlazarClicksPdfHistorial(document.getElementById('server-list'));
+            mostrarCargaServidorHistorial_();
+            const permitidas = fechasHistorialPermitidas();
+            const serverPromise = cbJsonp(API_URL, {
+                listado_registrados: '1',
+                fecha_desde: permitidas.ayer,
+                fecha_hasta: permitidas.hoy
+            });
+            await cargarIndicesPdfHistorial();
+            renderLocal();
+            try {
+                const r = await serverPromise;
+                if (!r || r.ok !== true) throw new Error('Respuesta inválida');
+                renderServer(r.registrados || []);
+            } catch (_) {
+                document.getElementById('server-list').innerHTML = '<div class="hist-empty hist-empty--warn"><i data-lucide="cloud-off" aria-hidden="true"></i><span>No se pudo consultar el servidor. Revisa internet.</span></div>';
+                refrescarIconosHistorial();
+                actualizarDescBloqueHistorial('hist-server-desc', 0, 0, HIST_TEXTO_SERVIDOR);
+                actualizarPaginacionHistorial('server-pagination', 0, 0, () => {});
+            } finally {
+                ocultarCargaServidorHistorial_();
+            }
+        }
+
+        initHistorial();
+    </script>
+</body>
+</html>

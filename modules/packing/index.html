@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="application-name" content="Muestras Web">
+    <meta name="apple-mobile-web-app-title" content="Muestras Web">
+    <meta name="theme-color" content="#164C7C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+    <title>Packing</title>
+    <link rel="icon" href="../../assets/images/QA2026-2.0.png" type="image/png">
+    <link rel="apple-touch-icon" href="../../assets/images/QA2026-2.0.png">
+    <script src="../../core/icono-app.js"></script>
+    <link rel="manifest" href="../../assets/manifest.json">
+    <link rel="stylesheet" href="../../assets/styles.css">
+</head>
+<body class="packing-page">
+
+    <header>
+        <div class="header-top-row">
+            <h2 class="header-title">
+                <span class="header-title-prefix">Registro:</span>
+                <select
+                    id="header-packing-variante"
+                    class="header-modulo-select header-modulo-pill--wide"
+                    name="packingVariante"
+                    aria-label="Variante de packing"
+                    data-url-rc5="../packing-rc5/">
+                    <option value="packing" selected>Packing</option>
+                    <option value="packing-rc5">Packing RC5</option>
+                </select>
+            </h2>
+            <div class="header-status-card is-online" id="header-status-card" aria-live="polite" aria-label="Pendientes y conexión">
+                <div class="header-status-ring" aria-hidden="true">
+                    <span class="header-status-ring-inner">
+                        <i data-lucide="wifi" class="header-status-wifi" id="header-status-wifi"></i>
+                    </span>
+                </div>
+                <div class="header-status-body">
+                    <div class="header-status-pend">Pendientes: <span class="header-status-pend-num" id="header-pendientes-count">00</span></div>
+                    <div class="header-status-conn">
+                        <span class="header-status-conn-dot" aria-hidden="true"></span>
+                        <span class="header-status-conn-text" id="header-conn-label">En línea</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="meta-shell packing-meta-shell" id="packing-meta-shell">
+            <div class="packing-meta-clip">
+            <div class="packing-select-block" id="packing-select-block">
+                <div class="packing-block-loader" id="packing-select-loader" hidden aria-live="polite">
+                    <span class="packing-spinner" aria-hidden="true"></span>
+                    <span class="packing-loader-text" id="packing-select-loader-msg">Cargando muestras…</span>
+                </div>
+                <div class="packing-select-row">
+                    <div class="packing-select-cell">
+                        <label class="meta-block-title" for="packing-fecha">Fecha</label>
+                        <input class="meta-inp" id="packing-fecha" name="fecha" type="date" aria-label="Fecha del registro">
+                    </div>
+                    <div class="packing-select-cell">
+                        <label class="meta-block-title" for="packing-muestra">Muestra</label>
+                        <select class="meta-inp" id="packing-muestra" name="muestra" disabled aria-label="N° muestra y ensayo">
+                            <option value="">Seleccionar fecha</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="packing-status-msg" id="packing-status" hidden></p>
+            </div>
+
+            <section class="packing-resumen is-empty" id="packing-resumen" aria-label="Resumen de datos">
+                <div class="packing-preview-panel meta-preview" id="packing-preview" aria-live="polite">
+                    <div class="packing-preview-loader" id="packing-preview-loader" hidden>
+                        <span class="packing-spinner packing-spinner--lg" aria-hidden="true"></span>
+                        <span class="packing-loader-text" id="packing-preview-loader-msg">Cargando datos…</span>
+                        <span class="packing-loader-sub">Consultando la planilla, por favor espera</span>
+                    </div>
+                    <div class="packing-preview-body" id="packing-preview-body">
+                        <div class="packing-chips-panel" id="packing-chips-panel">
+                            <div class="packing-chips-box" id="packing-chips-box">
+                                <div class="packing-chip packing-chip--traz">
+                                    <span class="packing-chip-label">Etapa · Campo · Turno</span>
+                                    <span class="packing-chip-value packing-chip-value--traz packing-chip-value--empty" id="pk-traz">--</span>
+                                </div>
+                                <div class="packing-chip">
+                                    <span class="packing-chip-label">Variedad</span>
+                                    <span class="packing-chip-value packing-chip-value--empty" id="pk-variedad">--</span>
+                                </div>
+                                <div class="packing-chip">
+                                    <span class="packing-chip-label">Placa</span>
+                                    <span class="packing-chip-value packing-chip-value--empty" id="pk-placa">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            </div>
+            <button type="button" class="packing-resumen-fold-btn" id="packing-resumen-toggle" aria-expanded="true" aria-controls="packing-chips-box" title="Ocultar datos del registro" aria-label="Ocultar datos del registro" hidden>
+                <i data-lucide="clipboard-list"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="container" id="packing-main" aria-label="Contenido packing">
+        <div class="packing-flujo-tk20-row" id="packing-flujo-tk20-row" hidden>
+            <div class="control-equitativo-bar packing-hora-bar packing-flujo-tk20-bar">
+                <div class="control-equitativo-label">
+                    <b>Flujo TK-2.0</b>
+                    <span id="packing-flujo-tk20-hint">Campo AV · TK-2.0 FG</span>
+                </div>
+                <div class="control-equitativo-actions packing-flujo-tk20-actions">
+                    <button type="button" class="packing-flujo-tk20-switch" id="packing-flujo-tk20-switch" role="switch" aria-checked="false" aria-label="Activar flujo TK-2.0 (Campo → TK-2.0 → Packing)" title="Indica que el packing viene del flujo TK-2.0">
+                        <span class="packing-flujo-tk20-switch-track" aria-hidden="true">
+                            <span class="packing-flujo-tk20-switch-thumb"></span>
+                        </span>
+                        <span class="packing-flujo-tk20-switch-text">OFF</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="packing-hora-row is-disabled" id="packing-hora-row" aria-disabled="true">
+            <div class="control-equitativo-bar packing-hora-bar">
+                <div class="control-equitativo-label">
+                    <b>Hora inicio recep.</b>
+                    <span>Datos importantes en packing</span>
+                </div>
+                <div class="packing-hora-responsable-wrap">
+                    <input class="packing-responsable-inp" id="packing-responsable" name="responsable" type="text" placeholder="Responsable" enterkeyhint="done" autocomplete="name" aria-label="Responsable" disabled>
+                </div>
+                <div class="control-equitativo-actions">
+                    <input class="control-equitativo-btn packing-hora-inicio-inp" id="packing-hora-inicio" name="hora_inicio" type="time" enterkeyhint="done" aria-label="Hora inicio recepción">
+                </div>
+            </div>
+        </div>
+
+        <div class="control-equitativo-bar" id="control_equitativo_bar_packing">
+            <div class="control-equitativo-label">
+                <b>Control equitativo</b>
+                <span>Temperatura y humedad para todos los clamshell</span>
+            </div>
+            <div class="control-equitativo-actions">
+                <button type="button" class="control-equitativo-btn" id="btn_viaje_packing" disabled title="Selecciona una muestra" aria-label="Número de viaje packing">
+                    <i data-lucide="truck"></i>
+                </button>
+                <button type="button" class="control-equitativo-btn" id="btn_temp_packing" disabled title="Selecciona una muestra" aria-label="Temperatura global packing">
+                    <i data-lucide="thermometer"></i>
+                </button>
+                <button type="button" class="control-equitativo-btn" id="btn_hum_packing" disabled title="Selecciona una muestra" aria-label="Humedad global packing">
+                    <i data-lucide="droplets"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="packing-cards-wrap is-disabled" id="packing-cards-wrap" aria-disabled="true"></div>
+
+        <div class="campo-envio-bar packing-envio-bar" id="packing-envio-bar" role="region" aria-label="Enviar registro al servidor">
+            <button type="button" class="btn-save btn-save-campo" id="btn-guardar-enviar-packing" disabled>
+                Enviar registro
+            </button>
+        </div>
+    </div>
+
+    <div class="fab-menu" id="fab-menu-packing">
+        <div class="fab-menu-actions">
+            <button class="fab-mini fab-mini--sync" type="button" id="fab-packing-sync" aria-label="Actualizar app y planilla" title="Descarga la versión nueva de la app y sincroniza packing si hay internet. No borra borradores ni pendientes.">
+                <i data-lucide="refresh-cw"></i>
+            </button>
+            <button class="fab-mini fab-mini--danger" type="button" id="fab-packing-borrar" aria-label="Borrar borradores y caché de packing" title="Borra borradores locales (demo, clamshells, tiempos), cola pendiente y caché. Recarga la app. No borra la planilla en Google.">
+                <i data-lucide="trash-2"></i>
+            </button>
+            <button type="button" class="fab-mini fab-mini--registro" id="fab-packing-demo" aria-label="Datos de prueba packing" title="Llena demo en la muestra del selector. Cambia de muestra y vuelve a presionar para la siguiente.">
+                <i data-lucide="flask-conical"></i>
+            </button>
+        </div>
+        <button type="button" class="fab-pdf" id="fab-pdf-btn" aria-label="Generar PDF del registro">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="file-text" aria-hidden="true" class="lucide lucide-file-text"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"></path><path d="M14 2v5a1 1 0 0 0 1 1h5"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg>
+        </button>
+        <button type="button" class="packing-agregar-fab" id="fab-packing-agregar" aria-label="Agregar clamshell" title="Seleccionar muestra para continuar por favor">
+            <svg class="packing-agregar-plus fab-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"></path>
+            </svg>
+            <span class="packing-agregar-badge" id="fab-packing-restante-badge">0</span>
+        </button>
+        <div class="fecha-ring-widget fecha-ring-widget--fab fecha-ring-widget--packing" id="packing-fecha-ring-widget" role="button" tabindex="0" aria-label="Fecha de hoy" title="">
+            <div class="fecha-ring-circle" id="packing-fecha-ring-circle" aria-hidden="true"></div>
+            <div class="fecha-ring-content">
+                <span class="fecha-ring-day" id="fecha-ring-day-packing">--</span>
+                <span class="fecha-ring-month" id="fecha-ring-month-packing">----</span>
+            </div>
+            <div class="fecha-ring-popover" id="packing-fecha-ring-popover" role="tooltip" hidden></div>
+        </div>
+        <button class="fab-options" id="fab-options-btn-packing" type="button" aria-label="Opciones rápidas packing" aria-expanded="false">
+            <i data-lucide="ellipsis"></i>
+        </button>
+    </div>
+
+    <div class="modal-overlay" id="packing-pesos-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="packing-pesos-modal-title" style="margin-bottom: 16px; color: var(--primary);">Editar Clamshell #1</h2>
+            <div class="packing-pesos-grid" id="packing_pesos_modal_body">
+                <div class="form-group">
+                    <label for="pk-inp-peso-recep">PESO RECEPCIÓN (g)</label>
+                    <input type="number" id="pk-inp-peso-recep" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group">
+                    <label for="pk-inp-peso-ing-gas">PESO I-GASIF. (g)</label>
+                    <input type="number" id="pk-inp-peso-ing-gas" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group">
+                    <label for="pk-inp-peso-sal-gas">PESO S-GASIF. (g)</label>
+                    <input type="number" id="pk-inp-peso-sal-gas" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group">
+                    <label for="pk-inp-peso-ing-pre">PESO INGRESO PREFRÍO (g)</label>
+                    <input type="number" id="pk-inp-peso-ing-pre" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+                <div class="form-group packing-peso-row-full">
+                    <label for="pk-inp-peso-sal-pre">PESO SALIDA PREFRÍO (g)</label>
+                    <input type="number" id="pk-inp-peso-sal-pre" step="0.1" placeholder="00" enterkeyhint="done" inputmode="decimal">
+                </div>
+            </div>
+            <div id="packing-pesos-alert" class="metric-inline-alert" style="display:none;"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="packing-pesos-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="packing-pesos-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="packing-tiempos-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="packing-tiempos-modal-title" style="margin-bottom: 16px; color: var(--primary);">Tiempos de la muestra (hora) · Clamshell #1</h2>
+            <div class="metric-modal-body" id="packing_tiempos_modal_body">
+                <div class="packing-tiempos-grid">
+                    <div class="form-group">
+                        <label for="pk-tiempo-recepcion">Recepción</label>
+                        <input class="packing-tiempo-inp" id="pk-tiempo-recepcion" name="recepcion" type="time" enterkeyhint="done" aria-label="Recepción" disabled>
+                    </div>
+                    <div class="form-group">
+                        <label for="pk-tiempo-ingreso-gas">Ingreso gasificado</label>
+                        <input class="packing-tiempo-inp" id="pk-tiempo-ingreso-gas" name="ingreso_gasificado" type="time" enterkeyhint="done" aria-label="Ingreso gasificado" disabled>
+                    </div>
+                    <div class="form-group">
+                        <label for="pk-tiempo-salida-gas">Salida gasificado</label>
+                        <input class="packing-tiempo-inp" id="pk-tiempo-salida-gas" name="salida_gasificado" type="time" enterkeyhint="done" aria-label="Salida gasificado" disabled>
+                    </div>
+                    <div class="form-group">
+                        <label for="pk-tiempo-ingreso-pre">Ingreso prefrío</label>
+                        <input class="packing-tiempo-inp" id="pk-tiempo-ingreso-pre" name="ingreso_prefrio" type="time" enterkeyhint="done" aria-label="Ingreso prefrío" disabled>
+                    </div>
+                </div>
+                <div class="form-group packing-tiempo-row-full">
+                    <label for="pk-tiempo-salida-pre">Salida prefrío</label>
+                    <input class="packing-tiempo-inp" id="pk-tiempo-salida-pre" name="salida_prefrio" type="time" enterkeyhint="done" aria-label="Salida prefrío" disabled>
+                </div>
+                <div id="packing-tiempos-alert" class="metric-inline-alert" style="display:none;"></div>
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="packing-tiempos-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="packing-tiempos-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay is-readonly-view" id="packing-presion-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="packing-presion-modal-title">Presión vapor</h2>
+            <div class="metric-modal-body" id="packing-presion-modal-body"></div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="packing-presion-cancel">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="packing-observation-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="packing-observation-modal-title" style="margin-bottom: 16px; color: var(--primary);">Observación</h2>
+            <div class="form-group">
+                <label for="packing-visual-observation">OBSERVACIÓN DEL CLAMSHELL</label>
+                <input type="text" id="packing-visual-observation" placeholder="Opcional: incidencia, comentario, condición de packing" enterkeyhint="done">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="packing-observation-cancel">Cancelar</button>
+                <button class="btn-save" type="button" id="packing-observation-guardar">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <nav id="main-bottom-nav">
+        <a class="nav-btn nav-link" id="nav-campo" data-nav-index="0" href="../campo/" aria-label="Campo">
+            <i data-lucide="house"></i>
+            <span>Campo</span>
+        </a>
+        <a class="nav-btn nav-link active" id="nav-packing" data-nav-index="1" href="./" aria-label="Packing">
+            <i data-lucide="scan-line"></i>
+            <span>Packing</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-mp-tk" data-nav-index="2" href="../mp-tk/" aria-label="MP-TK">
+            <i data-lucide="snowflake"></i>
+            <span>MP-TK</span>
+        </a>
+        <a class="nav-btn nav-link" id="nav-historial" data-nav-index="3" href="../historial/" aria-label="Historial">
+            <i data-lucide="clock-3"></i>
+            <span>Historial</span>
+        </a>
+    </nav>
+
+    <div class="modal-overlay" id="packing-viaje-modal-overlay" aria-hidden="true">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 16px; color: var(--primary);">N° viaje</h2>
+            <div class="form-group">
+                <label for="packing-n-viaje-inp">N° VIAJE</label>
+                <input type="text" id="packing-n-viaje-inp" name="n_viaje" placeholder="Ej. 12" enterkeyhint="done" maxlength="2" autocomplete="off">
+            </div>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="btn_cancel_viaje_packing">Cancelar</button>
+                <button class="btn-save" type="button" id="btn_save_viaje_packing">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="control_global_modal_overlay_packing" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="control_global_modal_title_packing" style="margin-bottom: 16px; color: var(--primary);">Control equitativo</h2>
+            <div class="metric-modal-body" id="control_global_modal_body_packing"></div>
+            <p class="packing-control-hint" style="margin:14px 0 14px;font-size:9.5px;line-height:1.15;color:#c62828;font-weight:500;white-space:nowrap;text-align:center;">
+                Revisar: la presión V. ambiental siempre debe ser menor que presión V. fruta.
+            </p>
+            <div class="metric-modal-foot">
+                <button class="btn-secondary" type="button" id="btn_cancel_control_global_packing">Cancelar</button>
+                <button class="btn-save" type="button" id="btn_save_control_global_packing">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="time-picker-modal-overlay">
+        <div class="time-picker-modal">
+            <div class="time-picker-head">
+                <div class="time-picker-title">Seleccionar hora</div>
+                <input type="text" class="time-picker-current" id="time-picker-current" value="--:--" maxlength="5" placeholder="HH:MM" aria-label="Escribir hora" title="Toca para escribir la hora con teclado" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="time-picker-wheel">
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-hour-up" aria-label="Subir hora">▲</button>
+                    <div class="time-picker-value" id="time-picker-hour">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-hour-down" aria-label="Bajar hora">▼</button>
+                </div>
+                <div class="time-picker-sep">:</div>
+                <div class="time-picker-col">
+                    <button type="button" class="time-picker-step" id="time-picker-minute-up" aria-label="Subir minuto">▲</button>
+                    <div class="time-picker-value" id="time-picker-minute">00</div>
+                    <button type="button" class="time-picker-step" id="time-picker-minute-down" aria-label="Bajar minuto">▼</button>
+                </div>
+            </div>
+            <div class="time-picker-actions">
+                <button type="button" class="btn-secondary" id="time-picker-now">Tomar hora exacta</button>
+                <button type="button" class="btn-secondary" id="time-picker-cancel">Cancelar</button>
+                <button type="button" class="btn-save" id="time-picker-apply">Tomar hora</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay pdf-modal-overlay" id="pdf-modal-overlay" role="dialog" aria-labelledby="pdf-modal-title" aria-modal="true">
+        <div class="modal-content pdf-modal-content">
+            <div class="pdf-modal-head">
+                <div id="pdf-modal-title" class="pdf-modal-title-wrap" role="heading" aria-level="2">Vista previa PDF</div>
+                <button type="button" class="pdf-modal-close" id="pdf-btn-cerrar" aria-label="Cerrar vista previa">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="pdf-preview-zoom-bar" id="pdf-preview-zoom-bar">
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-out" aria-label="Alejar">−</button>
+                <span class="pdf-zoom-label" id="pdf-zoom-label">100%</span>
+                <button type="button" class="pdf-zoom-btn" id="pdf-zoom-in" aria-label="Acercar">+</button>
+                <button type="button" class="pdf-zoom-btn pdf-zoom-btn--reset" id="pdf-zoom-reset">Ajustar</button>
+                <span class="pdf-zoom-hint">Pellizca con dos dedos para zoom</span>
+            </div>
+            <div class="pdf-preview-stage" id="pdf-preview-stage">
+                <embed id="pdf-preview-embed" type="application/pdf" class="pdf-preview-embed" hidden title="Vista previa PDF">
+                <div class="pdf-preview-loading" id="pdf-preview-loading">
+                    <span class="pdf-preview-loading-spinner" aria-hidden="true"></span>
+                    <span>Cargando vista previa…</span>
+                </div>
+                <div class="pdf-preview-scaler" id="pdf-preview-scaler">
+                    <div class="pdf-preview-pages" id="pdf-preview-pages"></div>
+                </div>
+                <div class="pdf-preview-fallback" id="pdf-preview-fallback" hidden>
+                    <i data-lucide="file-text" class="pdf-preview-fallback-icon" aria-hidden="true"></i>
+                    <p class="pdf-preview-fallback-title">No se pudo mostrar la vista previa</p>
+                    <p class="pdf-preview-fallback-hint">El PDF sí se generó. Usa <strong>Descargar</strong>, <strong>WhatsApp</strong> o ábrelo en el visor del teléfono.</p>
+                    <button type="button" class="btn-save pdf-preview-open-btn" id="pdf-btn-abrir">Abrir PDF</button>
+                </div>
+            </div>
+            <div class="pdf-modal-actions">
+                <button type="button" class="btn-save pdf-action-btn" id="pdf-btn-descargar">
+                    <i data-lucide="download"></i>
+                    Descargar
+                </button>
+                <button type="button" class="btn-save pdf-action-btn pdf-action-btn--wsp" id="pdf-btn-wsp">
+                    <i data-lucide="message-circle"></i>
+                    WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../core/script.js"></script>
+    <script src="../../core/mensajes-usuario.js"></script>
+    <script src="../../core/fundo-flujo-tk20.js"></script>
+    <script src="../../assets/librerias/lucide.min.js"></script>
+    <script src="../../assets/librerias/sweetalert2.all.min.js"></script>
+    <link rel="stylesheet" href="../../core/flujo-bienvenida.css">
+    <script src="../../core/flujo-bienvenida.js"></script>
+    <script src="../../core/time-picker.js"></script>
+    <script src="../../assets/librerias/jspdf.umd.min.js"></script>
+    <script src="../../assets/librerias/pdf.min.js"></script>
+    <script src="../../core/api-config.js"></script>
+    <script src="../../core/fecha-operativa.js"></script>
+    <script src="./packing-variante-nav.js"></script>
+    <script src="./packing.js"></script>
+    <script src="../../core/pdf-nombre.js"></script>
+    <script src="../../core/pdf-preview-live.js"></script>
+    <script src="./packing-pdf.js"></script>
+    <script src="../../core/hist-pdf-store.js"></script>
+    <script src="../../core/hist-pdf-envio.js"></script>
+</body>
+</html>
