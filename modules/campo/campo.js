@@ -1269,10 +1269,9 @@ const META_SAVE_IDS = [
             return n.toFixed(3);
         }
 
-        /** Visual: clamshell 5+ copia Peso 1 desde Peso 2. Acopio: los 5 pesos son editables en cada clamshell. */
-        function clamshellUsaPeso1DesdePeso2(nroClamshell) {
-            if (esModoRegistroAcopio_()) return false;
-            return Number(nroClamshell) >= 5;
+        /** Antes: Visual clamshell 5+ copiaba Peso 1 desde Peso 2. Ya no: todos los pesos son editables. */
+        function clamshellUsaPeso1DesdePeso2(/* nroClamshell */) {
+            return false;
         }
 
         function peso1EfectivoCampo(item, nroClamshell) {
@@ -5134,7 +5133,7 @@ const META_SAVE_IDS = [
                 presionStrParaEnvio(temp.presionFrutaLlegada),
                 presionStrParaEnvio(temp.presionFrutaDespacho),
                 strOrEmpty(limitarObservacionClamshell_(item?.observacion)),
-                strOrEmpty(meta['visual-observacion-formato'] || document.getElementById('visual-observacion-formato')?.value),
+                strOrEmpty(observacionFormatoSoloMetaEnsayo_(ensayoNombre, meta)),
                 strOrEmpty(horaRegistro)
             ];
         }
@@ -10171,17 +10170,24 @@ const META_SAVE_IDS = [
             return String(v ?? '').trim().slice(0, OBSERVACION_CLAMSHELL_MAX_CHARS);
         }
 
-        function textoObservacionesPiePdfDesdeItems_(items) {
-            return (items || []).map((it, idx) => {
-                const o = limitarObservacionClamshell_(it?.observacion);
-                if (!o) return '';
-                return `C${idx + 1}: ${o}`;
-            }).filter(Boolean).join(' · ');
+        function observacionFormatoSoloMetaEnsayo_(clave, meta) {
+            const m = meta || metaPorEnsayo[clave] || {};
+            const desdeMeta = limitarObservacionClamshell_(m['visual-observacion-formato']);
+            if (desdeMeta) return desdeMeta;
+            // DOM solo si es el ensayo activo (nunca filtrar formato de otra muestra).
+            const activo = String(obtenerEnsayoActivo() || '').trim();
+            if (String(clave || '').trim() === activo) {
+                return limitarObservacionClamshell_(
+                    document.getElementById('visual-observacion-formato')?.value
+                );
+            }
+            return '';
         }
 
         function construirPagina2PdfCampo_(ml, items) {
             const tempL = ml?.temperatura || {};
             const humL = ml?.humedad || {};
+            // Una obs por clamshell/índice — sin juntar en un solo texto.
             const obsLista = (items || []).map((it) => limitarObservacionClamshell_(it.observacion));
             return {
                 humedad: [
@@ -10208,7 +10214,7 @@ const META_SAVE_IDS = [
                     presionFrutaPdfCampo_(tempL.llegadaPulpa, tempL.presionFrutaLlegada),
                     presionFrutaPdfCampo_(tempL.despachoPulpa, tempL.presionFrutaDespacho)
                 ],
-                observaciones: textoObservacionesPiePdfDesdeItems_(items),
+                observaciones: '',
                 observacionesLista: obsLista
             };
         }
@@ -10278,12 +10284,8 @@ const META_SAVE_IDS = [
                 },
                 filas,
                 pagina2: construirPagina2PdfCampo_(ml, items),
-                // Pie OBSERVACIONES: por clamshell (no solo observación formato global).
-                observacionesFormato: textoObservacionesPiePdfDesdeItems_(items)
-                    || limitarObservacionClamshell_(
-                        meta['visual-observacion-formato']
-                        || document.getElementById('visual-observacion-formato')?.value
-                    ),
+                // Pie hoja 1: solo observación de formato de ESTA muestra (no mezclar clamshells).
+                observacionesFormato: observacionFormatoSoloMetaEnsayo_(clave, meta),
                 horaPesado: ''
             };
         }

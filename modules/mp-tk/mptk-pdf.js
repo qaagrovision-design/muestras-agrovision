@@ -890,9 +890,7 @@
             if (Array.isArray(pagina2?.observacionesLista)) {
                 return pagina2.observacionesLista.map((o) => valCelda(o));
             }
-            const raw = txt(pagina2?.observaciones);
-            if (!raw) return [];
-            return raw.split(/\s*·\s*/).map((s) => s.trim()).filter(Boolean);
+            return [];
         }
 
         const obsLista = listaObservacionesP2(p2);

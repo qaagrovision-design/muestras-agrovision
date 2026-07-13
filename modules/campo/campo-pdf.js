@@ -837,8 +837,9 @@
         doc.text('OBSERVACIONES:', xObs + 2, yFootTop + 4);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6);
-        // Preferir observaciones por clamshell (pie); formato global solo si no hay ninguna.
-        const obsFormato = txt(datos.pagina2?.observaciones) || txt(datos.observacionesFormato);
+        // Pie: solo observación de formato de la muestra (no mezclar obs de clamshells).
+        // Obs por clamshell van en hoja 2, columna OBSERVACIONES, una por fila/índice.
+        const obsFormato = txt(datos.observacionesFormato);
         if (obsFormato) {
             const lineas = doc.splitTextToSize(obsFormato, obsW - 4);
             let yObs = yFootTop + 7;
@@ -889,9 +890,8 @@
             if (Array.isArray(pagina2?.observacionesLista)) {
                 return pagina2.observacionesLista.map((o) => valCelda(o));
             }
-            const raw = txt(pagina2?.observaciones);
-            if (!raw) return [];
-            return raw.split(/\s*·\s*/).map((s) => s.trim()).filter(Boolean);
+            // No partir un texto unido "C1: … · C2: …" — eso mezclaba posiciones.
+            return [];
         }
 
         const obsLista = listaObservacionesP2(p2);

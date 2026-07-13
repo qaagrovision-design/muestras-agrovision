@@ -334,11 +334,11 @@ function ensayosRegistradosEnFechaGlobal_(ss, fechaNorm) {
     var sh = hojas[hi];
     var lastRow = sh.getLastRow();
     if (lastRow < 2) continue;
-    var dataOp = sh.getRange(2, 1, lastRow, 15).getValues();
+    var dataOp = sh.getRange(2, 1, lastRow, Math.max(15, IDX_REGISTRO_ENSAYO_NUMERO + 1)).getValues();
     for (var oi = 0; oi < dataOp.length; oi++) {
       var fOp = formatFechaPacking(dataOp[oi][0]);
       if (fOp !== fechaNorm) continue;
-      var enOp = dataOp[oi][13];
+      var enOp = dataOp[oi][IDX_REGISTRO_ENSAYO_NUMERO];
       var enOpStr = (enOp !== null && enOp !== undefined && enOp !== '')
         ? (Number(enOp) === Math.floor(Number(enOp)) ? String(Number(enOp)) : String(enOp).trim())
         : '';
@@ -993,7 +993,7 @@ function buscarDuplicadoNumMuestraEnHoja_(sheet, numMuestraNorm) {
   if (lastRow < 2) return null;
   var idx = indiceColumnaNumMuestraHoja1_(sheet);
   var ssDup = sheet.getParent();
-  var numCols = Math.max(14, idx + 1, numColsRegistroDesdeHoja_(ssDup, sheet));
+  var numCols = Math.max(15, IDX_REGISTRO_ENSAYO_NUMERO + 1, idx + 1, numColsRegistroDesdeHoja_(ssDup, sheet));
   var vals = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
   for (var i = 0; i < vals.length; i++) {
     var rowNm = normalizarNumMuestraClave(vals[i].length > idx ? vals[i][idx] : '');
@@ -1001,7 +1001,9 @@ function buscarDuplicadoNumMuestraEnHoja_(sheet, numMuestraNorm) {
     return {
       num_muestra: nm,
       fecha: formatFechaPacking(vals[i][0]) || '',
-      ensayo_numero: (vals[i][13] != null && vals[i][13] !== '') ? String(vals[i][13]).trim() : ''
+      ensayo_numero: (vals[i][IDX_REGISTRO_ENSAYO_NUMERO] != null && vals[i][IDX_REGISTRO_ENSAYO_NUMERO] !== '')
+        ? String(vals[i][IDX_REGISTRO_ENSAYO_NUMERO]).trim()
+        : ''
     };
   }
   return null;
@@ -2266,11 +2268,11 @@ function contarFilasFechaEnsayoEnHoja_(sheet, fecha, ensayoNumero) {
   if (lastRow < 2) return 0;
   var fechaNorm = formatFechaPacking(fecha) || fecha;
   var enNorm = normalizarEnsayoNumeroGs_(ensayoNumero);
-  var dataRows = sheet.getRange(2, 1, lastRow, 15).getValues();
+  var dataRows = sheet.getRange(2, 1, lastRow, Math.max(15, IDX_REGISTRO_ENSAYO_NUMERO + 1)).getValues();
   var n = 0;
   for (var k = 0; k < dataRows.length; k++) {
     var rowFechaStr = formatFechaPacking(dataRows[k][0]);
-    var rowEnStr = normalizarEnsayoNumeroGs_(dataRows[k][13]);
+    var rowEnStr = normalizarEnsayoNumeroGs_(dataRows[k][IDX_REGISTRO_ENSAYO_NUMERO]);
     if (rowFechaStr === fechaNorm && rowEnStr === enNorm) n++;
   }
   return n;
@@ -2453,12 +2455,12 @@ function listadoMuestrasPorFechaGlobal_(ss, fechaRaw, opts) {
     var lrLm = shLm.getLastRow();
     if (lrLm < 2) continue;
     var idxLm = indiceColumnaNumMuestraHoja1_(shLm);
-    var dataLm = shLm.getRange(2, 1, lrLm - 1, Math.max(14, idxLm + 1)).getValues();
+    var dataLm = shLm.getRange(2, 1, lrLm - 1, Math.max(15, IDX_REGISTRO_ENSAYO_NUMERO + 1, idxLm + 1)).getValues();
     for (var lmi = 0; lmi < dataLm.length; lmi++) {
       var rl = dataLm[lmi];
       var fl = formatFechaPacking(rl[0]);
       if (fl !== fechaLm) continue;
-      var enStrLm = normalizarEnsayoNumeroGs_(rl[13]);
+      var enStrLm = normalizarEnsayoNumeroGs_(rl[IDX_REGISTRO_ENSAYO_NUMERO]);
       var numLm = (rl.length > idxLm && rl[idxLm] != null && rl[idxLm] !== undefined)
         ? String(rl[idxLm]).trim()
         : '';
@@ -3177,13 +3179,13 @@ function doGet(e) {
         if (lrEns < 2) continue;
         var packColEns = packingStartColDesdeHoja_(ssGet, shEns);
         var tkColEns = thermokingStartColDesdeHoja_(ssGet, shEns);
-        var dataEns = shEns.getRange(2, 1, lrEns, 15).getValues();
+        var dataEns = shEns.getRange(2, 1, lrEns, Math.max(15, IDX_REGISTRO_ENSAYO_NUMERO + 1)).getValues();
         var packingBlock = shEns.getRange(2, packColEns, lrEns, PACKING_COLS).getValues();
         var tkBlock = shEns.getRange(2, tkColEns, lrEns, THERMOKING_COLS).getValues();
         for (var j = 0; j < dataEns.length; j++) {
           var rowFechaStr = formatFecha(dataEns[j][0]);
           if (rowFechaStr === fecha) {
-            var en = String(dataEns[j][13] || '').trim();
+            var en = String(dataEns[j][IDX_REGISTRO_ENSAYO_NUMERO] || '').trim();
             if (en) {
               if (!ensayosInfo[en]) ensayosInfo[en] = { tieneVisual: false, tienePacking: false, tieneThermoKing: false };
               ensayosInfo[en].tieneVisual = true;
