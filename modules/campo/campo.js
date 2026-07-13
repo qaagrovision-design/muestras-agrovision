@@ -1955,7 +1955,14 @@ const META_SAVE_IDS = [
             let n = 0;
             for (let m = 1; m < destino; m++) {
                 if (ensayoNumeroRegistradoHoy(String(m))) continue;
-                if (muestraEstaEnSecuenciaLlenado(m)) n++;
+                if (!muestraEstaEnSecuenciaLlenado(m)) continue;
+                const eName = ensayoNombreDesdeNumero(m);
+                const ya = parseNumMuestraSoloDigitos(
+                    numerosMuestraFijadosSesion[eName]
+                    || metaPorEnsayo[eName]?.['visual-num-muestra']
+                );
+                if (ya > 0) continue;
+                n++;
             }
             return n;
         }
@@ -3067,7 +3074,11 @@ const META_SAVE_IDS = [
         function metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, ensayoActual) {
             if (ensayoActual && ensayoKey === ensayoActual) return false;
             if (ensayoEstaRegistradoHoy(ensayoKey)) return false;
-            return true;
+            const n = Number(numeroDesdeEnsayoTexto(ensayoKey)) || 0;
+            // Solo N° reales de muestras en secuencia o fijados (evita fantasma → saltos 091→093).
+            if (numerosMuestraFijadosSesion[ensayoKey]) return true;
+            if (n >= 1 && muestraEstaEnSecuenciaLlenado(n)) return true;
+            return false;
         }
 
         function ensayoNombreDesdeNumero(ensayoNumero) {
@@ -6983,12 +6994,14 @@ const META_SAVE_IDS = [
             return soloAvisar;
         }
 
-        /** N° = último en planilla/cola + muestras anteriores aún no guardadas hoy (sin doble contar). */
+        /**
+         * N° = último real (planilla + cola + N° ya asignados a OTRAS muestras) + 1.
+         * No suma “huecos” por muestras previas sin N° (eso causaba saltos de +2…+5).
+         */
         function calcularNumMuestraBaseDesdeContexto(ensayo) {
-            const destino = Number(numeroDesdeEnsayoTexto(ensayo)) || 1;
-            const previas = contarMuestrasAnterioresEnSecuencia(destino);
-            const ultimo = leerMaxNumericoNumMuestraTodoContexto();
-            return formatearNumMuestraAutoDesdeN(ultimo + previas + 1);
+            const eAct = String(ensayo || '').trim();
+            const ultimo = leerMaxNumericoNumMuestraTodoContexto(eAct);
+            return formatearNumMuestraAutoDesdeN(ultimo + 1);
         }
 
         /** Lote adicional del mismo ensayo ya registrado hoy: siguiente N° global (nunca vacío). */
@@ -7248,8 +7261,9 @@ const META_SAVE_IDS = [
             return prefijo + seq;
         }
 
-        function leerMaxNumericoNumMuestraTodoContexto() {
+        function leerMaxNumericoNumMuestraTodoContexto(ensayoExcluir) {
             let maxN = numMuestraMaxServidorCache;
+            const excluir = String(ensayoExcluir || '').trim();
             const subir = (raw) => {
                 if (!raw) return;
                 actualizarPrefijoNumMuestraCacheDesdeTexto(raw);
@@ -7257,20 +7271,29 @@ const META_SAVE_IDS = [
                 if (k > maxN) maxN = k;
             };
             Object.entries(metaPorEnsayo).forEach(([ensayoKey, meta]) => {
-                if (!metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, null)) return;
+                if (excluir && ensayoKey === excluir) return;
+                if (!metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, excluir || null)) return;
                 subir(meta?.['visual-num-muestra']);
+                subir(numerosMuestraFijadosSesion[ensayoKey]);
+            });
+            Object.keys(numerosMuestraFijadosSesion || {}).forEach((ensayoKey) => {
+                if (excluir && ensayoKey === excluir) return;
+                if (!metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, excluir || null)) return;
+                subir(numerosMuestraFijadosSesion[ensayoKey]);
             });
             try {
                 const queue = cargarColaSync();
                 queue.forEach((reg) => {
                     const st = String(reg?.estado || '');
                     if (st !== 'pendiente' && st !== 'bloqueado') return;
+                    // No inflar con el mismo ensayo que estamos calculando.
+                    if (excluir) {
+                        const eReg = String(reg?.ensayo || reg?.ensayo_nombre || '').trim();
+                        if (eReg && eReg === excluir) return;
+                    }
                     subir(reg?.num_muestra);
                 });
             } catch (_) { /* ignore */ }
-            // Con planilla sincronizada NO usar mapa local de “usados”:
-            // ahí quedaban N° fantasma y el siguiente saltaba (053 → 058).
-            // Offline / sin sync: solo cuentan reservas reales (pendiente/bloqueado).
             const confiarSoloPlanilla = numMuestraSincronizadoServidor && navigator.onLine && !!API_URL;
             if (!confiarSoloPlanilla) {
                 try {
@@ -7280,6 +7303,7 @@ const META_SAVE_IDS = [
                         const st = String(det?.estado || '').toLowerCase();
                         if (st === 'cancelado') return;
                         if (st !== 'pendiente' && st !== 'bloqueado') return;
+                        if (excluir && String(det?.ensayo || '').trim() === excluir) return;
                         subir(clave);
                     });
                 } catch (_) { /* ignore */ }
@@ -7290,12 +7314,15 @@ const META_SAVE_IDS = [
         /** Tras leer planilla: limpia N° locales ya “registrados” (evita inflar el siguiente). */
         function purgarUsadosLocalTrasSyncPlanilla_() {
             if (!numMuestraSincronizadoServidor) return;
+            const maxPlanilla = Number(numMuestraMaxServidorCache) || 0;
             try {
                 const map = cargarNumMuestraUsadosLocal();
                 let changed = false;
                 Object.keys(map).forEach((clave) => {
                     const st = String(map[clave]?.estado || '').toLowerCase();
-                    if (st === 'registrado' || st === 'subido' || st === 'cancelado') {
+                    const dig = parseNumMuestraSoloDigitos(clave);
+                    if (st === 'registrado' || st === 'subido' || st === 'cancelado'
+                        || (dig > 0 && dig <= maxPlanilla)) {
                         delete map[clave];
                         changed = true;
                     }
@@ -7303,6 +7330,27 @@ const META_SAVE_IDS = [
                 if (changed) {
                     guardarNumMuestraUsadosLocal(map);
                     logNumMuestra('purgarUsadosLocalTrasSyncPlanilla_', { quedan: Object.keys(map).length });
+                }
+            } catch (_) { /* ignore */ }
+            // Cola: si el N° ya está en planilla, no debe inflar el siguiente.
+            try {
+                const queue = cargarColaSync();
+                let qChanged = false;
+                const next = queue.filter((reg) => {
+                    const dig = parseNumMuestraSoloDigitos(reg?.num_muestra);
+                    const st = String(reg?.estado || '').toLowerCase();
+                    if ((st === 'pendiente' || st === 'bloqueado') && dig > 0 && dig <= maxPlanilla) {
+                        qChanged = true;
+                        return false;
+                    }
+                    return true;
+                });
+                if (qChanged) {
+                    guardarColaSync(next);
+                    logNumMuestra('purgarColaNumMuestraYaEnPlanilla_', {
+                        max_planilla: maxPlanilla,
+                        quedan: next.length
+                    });
                 }
             } catch (_) { /* ignore */ }
         }

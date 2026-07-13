@@ -292,7 +292,8 @@ function ultimoNumMuestraCeldaGlobal_(ss) {
 function resolverProximoNumMuestraJsonGlobal_(ss, soloDesdeHoja) {
   var ultimoCelda = ultimoNumMuestraCeldaGlobal_(ss);
   var sheetMax = maxNumMuestraGlobalEnRegistro_(ss);
-  var baseUltimo = ultimoCelda.digitos > 0 ? ultimoCelda.digitos : sheetMax;
+  // Usar el mayor entre última celda y max de columna (evita huecos/duplicados).
+  var baseUltimo = Math.max(ultimoCelda.digitos || 0, sheetMax || 0);
   var prefijo = resolverPrefijoNumMuestraGs_(ultimoCelda, sheetMax, baseUltimo);
   if (soloDesdeHoja) {
     var nextSolo = baseUltimo + 1;
