@@ -210,14 +210,14 @@
     }
 
     function modoNombrePdfCampo_(datos) {
-        return 'Campo';
+        return esPdfCampoModoAcopio_(datos) ? 'Campo Acopio' : 'Campo Visual';
     }
 
     function nombreArchivoPdf(datos) {
         const lista = normalizarListaDatosPdfCampo_(datos);
         if (typeof window.nombreArchivoPdfDesdeListaMuestras === 'function') {
             return window.nombreArchivoPdfDesdeListaMuestras(lista, {
-                modo: 'Campo',
+                modo: modoNombrePdfCampo_(datos),
                 fecha: datos?.fecha
             });
         }
@@ -837,7 +837,8 @@
         doc.text('OBSERVACIONES:', xObs + 2, yFootTop + 4);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6);
-        const obsFormato = txt(datos.observacionesFormato);
+        // Preferir observaciones por clamshell (pie); formato global solo si no hay ninguna.
+        const obsFormato = txt(datos.pagina2?.observaciones) || txt(datos.observacionesFormato);
         if (obsFormato) {
             const lineas = doc.splitTextToSize(obsFormato, obsW - 4);
             let yObs = yFootTop + 7;
@@ -1004,7 +1005,7 @@
                     rotulo: bloque.meta?.muestraLabel || bloque.meta?.rotulo,
                     trazabilidadArchivo: bloque.meta?.trazabilidadArchivo || bloque.meta?.trazabilidad
                 }
-            })), { modo: 'Campo', fecha: datos?.fecha });
+            })), { modo: modoNombrePdfCampo_(datos), fecha: datos?.fecha });
         }
         return 'muestra.pdf';
     }
@@ -1631,7 +1632,7 @@
         const lista = normalizarListaDatosPdfCampo_(pdfDatosActual);
         if (lista.length && typeof window.textoNombresPdfParaCompartir === 'function') {
             return window.textoNombresPdfParaCompartir(lista, {
-                modo: 'Campo',
+                modo: modoNombrePdfCampo_(pdfDatosActual),
                 fecha: pdfDatosActual?.fecha
             });
         }

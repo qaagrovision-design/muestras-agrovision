@@ -1,4 +1,4 @@
-/** TK-2.0: 2 cards (Llegada + Traslado), grilla de pesos según filas de campo (4–8). */
+/** TK-2.0: 2 cards (Llegada + Traslado), grilla fija de 8 pesos. */
 (function initTk20Body() {
     const F = window.Tk20Fields;
     const elMain = document.getElementById('tk20-main');

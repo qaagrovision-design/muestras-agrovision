@@ -240,9 +240,25 @@
         window.Tk20Presion?.recalcularTodas?.({ render: false, control: valores });
     }
 
+    function persistirModalControlSilencioso_() {
+        if (!elModal || elModal.style.display !== 'flex' || !elBody) return;
+        elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => formatearInput(inp, true));
+        elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
+            const k = inp.getAttribute('data-field');
+            if (k) setVal(k, inp.value);
+        });
+        window.Tk20Presion?.recalcularTodas?.({ render: false });
+    }
+
+    function getValoresConFlush_() {
+        persistirModalControlSilencioso_();
+        return { ...valores };
+    }
+
     window.Tk20Control = {
-        getValores: () => ({ ...valores }),
+        getValores: getValoresConFlush_,
         setValores,
-        setBarDesbloqueada
+        setBarDesbloqueada,
+        persistirAbierto: persistirModalControlSilencioso_
     };
 }());

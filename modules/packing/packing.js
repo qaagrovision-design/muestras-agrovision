@@ -185,6 +185,25 @@
         return { recepcion: 'Peso recepción' };
     }
 
+    /** Pesos obligatorios al enviar (gasificado es opcional). */
+    const PACKING_PESO_KEYS_GAS = ['ingresoGas', 'salidaGas'];
+    const PACKING_PESO_KEYS_OBLIGATORIOS = ['recepcion', 'ingresoPre', 'salidaPre'];
+    const PACKING_GAS_ETAPA_IDXS = [1, 2];
+
+    function packingPesoLabelsObligatoriosUi_() {
+        const all = packingPesoLabelsUi_();
+        if (PACKING_RC5_MODULE) return all;
+        const out = {};
+        PACKING_PESO_KEYS_OBLIGATORIOS.forEach((k) => {
+            if (all[k]) out[k] = all[k];
+        });
+        return out;
+    }
+
+    function esEtapaGasificadoPacking_(idx) {
+        return PACKING_GAS_ETAPA_IDXS.indexOf(Number(idx)) >= 0;
+    }
+
     function packingPesoBrutoKeysUi_() {
         return PACKING_RC5_MODULE
             ? ['recepcion']
@@ -485,19 +504,29 @@
         const salGas = pesoNumero(p.salidaGas);
         const ingPre = pesoNumero(p.ingresoPre);
         const salPre = pesoNumero(p.salidaPre);
-        if (limiteRecepcion != null && pesoSuperaLimite(recep, limiteRecepcion)) {
+        if (limiteRecepcion != null && recep > 0 && pesoSuperaLimite(recep, limiteRecepcion)) {
             errores.push('Peso recepción no puede superar el despacho acopio-campo (' + limiteRecepcion + 'g).');
         }
-        if (ingGas > recep + 0.001) {
+        const gasLlenos = (ingGas > 0 ? 1 : 0) + (salGas > 0 ? 1 : 0);
+        if (gasLlenos === 1) {
+            errores.push('Completa ambos pesos de gasificado (I-GASIF. y S-GASIF.) o déjalos vacíos.');
+        }
+        if (ingGas > 0 && ingGas > recep + 0.001) {
             errores.push('Peso I-GASIF.: debe ser igual o menor que peso recepción.');
         }
-        if (salGas > recep + 0.001) {
+        if (salGas > 0 && salGas > recep + 0.001) {
             errores.push('Peso S-GASIF.: debe ser igual o menor que peso recepción.');
         }
-        if (ingPre > salGas + 0.001) {
-            errores.push('Peso ingreso prefrío: debe ser igual o menor que peso S-GASIF.');
+        if (ingPre > 0) {
+            const ancla = salGas > 0 ? salGas : (ingGas > 0 ? ingGas : recep);
+            const etiquetaAncla = salGas > 0
+                ? 'peso S-GASIF.'
+                : (ingGas > 0 ? 'peso I-GASIF.' : 'peso recepción');
+            if (ancla > 0 && ingPre > ancla + 0.001) {
+                errores.push('Peso ingreso prefrío: debe ser igual o menor que ' + etiquetaAncla + '.');
+            }
         }
-        if (salPre > ingPre + 0.001) {
+        if (salPre > 0 && salPre > ingPre + 0.001) {
             errores.push('Peso salida prefrío: debe ser igual o menor que peso ingreso prefrío.');
         }
         return errores;
@@ -572,8 +601,15 @@
         if (ingresoGas && salidaGas && horaMenorQue(ingresoGas, salidaGas)) {
             errores.push('Hora salida gasif.: debe ser igual o posterior a hora ingreso gasif.');
         }
+        if ((ingresoGas && !salidaGas) || (!ingresoGas && salidaGas)) {
+            errores.push('Completa ingreso y salida gasificado, o déjalos vacíos.');
+        }
         if (salidaGas && ingresoPre && horaMenorQue(salidaGas, ingresoPre)) {
             errores.push('Hora ingreso prefrío: debe ser igual o posterior a hora salida gasif.');
+        } else if (!salidaGas && ingresoGas && ingresoPre && horaMenorQue(ingresoGas, ingresoPre)) {
+            errores.push('Hora ingreso prefrío: debe ser igual o posterior a hora ingreso gasif.');
+        } else if (!salidaGas && !ingresoGas && recepcion && ingresoPre && horaMenorQue(recepcion, ingresoPre)) {
+            errores.push('Hora ingreso prefrío: debe ser igual o posterior a hora recepción.');
         }
         if (ingresoPre && salidaPre && horaMenorQue(ingresoPre, salidaPre)) {
             errores.push('Hora salida prefrío: debe ser igual o posterior a hora ingreso prefrío.');
@@ -1348,11 +1384,14 @@
         }
 
         const tiempos = Array.isArray(estado?.tiempos) ? estado.tiempos : [];
-        const ctDone = tiempos.filter((v) => String(v || '').trim()).length;
-        if (ctDone < tiemposMuestraTotal_()) {
+        const faltanTiempos = faltanTiemposObligatoriosPacking_(tiempos);
+        if (faltanTiempos.length) {
+            const req = tiemposIndicesObligatoriosPacking_().length;
+            const done = req - faltanTiempos.length;
             errores.push(
                 msgErrorTiemposPacking(
-                    'Completa las ' + tiemposMuestraTotal_() + ' etapas (' + ctDone + '/' + tiemposMuestraTotal_() + ').'
+                    'Completa recepción e ingreso/salida prefrío (' + done + '/' + req
+                    + '). Gasificado es opcional.'
                 )
             );
         }
@@ -1373,26 +1412,29 @@
             );
         }
 
-        const cAmb = conteoPresionPacking(cg.presionAmb);
-        const cFruta = conteoPresionPacking(cg.presionFruta);
-        if (!faltanControl && cAmb.done < cAmb.total) {
+        const idxsPres = idxsPresionRequeridaPacking_();
+        const faltanAmb = faltanPresionesEnIdxsPacking_(cg.presionAmb, idxsPres);
+        const faltanFruta = faltanPresionesEnIdxsPacking_(cg.presionFruta, idxsPres);
+        if (!faltanControl && faltanAmb.length) {
             errores.push(
                 msgErrorGlobalPacking(
                     '☁️',
-                    'Revisa temperatura ambiente y humedad (' + cAmb.done + '/' + cAmb.total + ').'
+                    'Revisa temperatura ambiente y humedad ('
+                    + (idxsPres.length - faltanAmb.length) + '/' + idxsPres.length + ').'
                 )
             );
         }
-        if (!faltanControl && cFruta.done < cFruta.total) {
+        if (!faltanControl && faltanFruta.length) {
             errores.push(
                 msgErrorGlobalPacking(
                     '🍎',
-                    'Revisa temperatura pulpa (' + cFruta.done + '/' + cFruta.total + ').'
+                    'Revisa temperatura pulpa ('
+                    + (idxsPres.length - faltanFruta.length) + '/' + idxsPres.length + ').'
                 )
             );
         }
 
-        const pesoLabels = packingPesoLabelsUi_();
+        const pesoLabels = packingPesoLabelsObligatoriosUi_();
         const snapPesos = quotaSnap && typeof quotaSnap === 'object' ? quotaSnap : {};
         const tieneDespachoSnap = (Array.isArray(snapPesos.despachoPorFila) && snapPesos.despachoPorFila.length)
             || snapPesos.despachoAcopio != null;
@@ -2754,6 +2796,10 @@
         return CONTROL_ETAPAS_PACKING.filter((e) => e.idx === 0);
     }
 
+    function controlEtapasObligatoriasPacking_() {
+        return controlEtapasPackingUi_().filter((e) => !esEtapaGasificadoPacking_(e.idx));
+    }
+
     function controlEtapasTotalPacking_() {
         return controlEtapasPackingUi_().length;
     }
@@ -2982,6 +3028,7 @@
     }
 
     function capturarEstadoMuestraPacking(rawMuestraOpt) {
+        persistirModalesAbiertasPacking_();
         const rawMuestra = String(rawMuestraOpt ?? elMuestra?.value ?? '').trim();
         return {
             packingCards: packingCards.map((c) => ({
@@ -3301,7 +3348,7 @@
     }
 
     function controlGlobalPackingCompleto_(t, h) {
-        const etapas = controlEtapasPackingUi_();
+        const etapas = controlEtapasObligatoriasPacking_();
         for (let j = 0; j < etapas.length; j++) {
             const i = etapas[j].idx;
             if (!controlGlobalPackingTieneDato(t.amb[i])
@@ -3316,7 +3363,76 @@
     function mensajeControlGlobalIncompletoPacking_() {
         return PACKING_RC5_MODULE
             ? 'Abre Temperatura y Humedad global y completa recepción.'
-            : 'Abre Temperatura y Humedad global y completa las 5 etapas.';
+            : 'Abre Temperatura y Humedad global y completa recepción e ingreso/salida prefrío (gasificado es opcional).';
+    }
+
+    function tiemposIndicesObligatoriosPacking_() {
+        return PACKING_RC5_MODULE ? [0] : [0, 3, 4];
+    }
+
+    function faltanTiemposObligatoriosPacking_(tiemposArr) {
+        const arr = Array.isArray(tiemposArr) ? tiemposArr : [];
+        return tiemposIndicesObligatoriosPacking_().filter((i) => !String(arr[i] || '').trim());
+    }
+
+    function idxsPresionRequeridaPacking_() {
+        return controlEtapasObligatoriasPacking_().map((e) => e.idx);
+    }
+
+    function faltanPresionesEnIdxsPacking_(valores, idxs) {
+        return (idxs || []).filter((i) => !String(valores?.[i] || '').trim());
+    }
+
+    /** True si no hay ningún dato de ingreso/salida gasificado (tiempos, pesos, temp, humedad). */
+    function estadoSinDatosGasificadoPacking_(estado) {
+        if (PACKING_RC5_MODULE) return false;
+        const tiempos = Array.isArray(estado?.tiempos) ? estado.tiempos : [];
+        if (String(tiempos[1] || '').trim() || String(tiempos[2] || '').trim()) return false;
+
+        const cg = estado?.control && typeof estado.control === 'object' ? estado.control : {};
+        const t = cg.temperatura && typeof cg.temperatura === 'object' ? cg.temperatura : {};
+        const amb = Array.isArray(t.amb) ? t.amb : [];
+        const pulpa = Array.isArray(t.pulpa) ? t.pulpa : [];
+        const hum = Array.isArray(cg.humedad) ? cg.humedad : [];
+        for (let g = 0; g < PACKING_GAS_ETAPA_IDXS.length; g++) {
+            const i = PACKING_GAS_ETAPA_IDXS[g];
+            if (controlGlobalPackingTieneDato(amb[i])
+                || controlGlobalPackingTieneDato(pulpa[i])
+                || controlGlobalPackingTieneDato(hum[i])) {
+                return false;
+            }
+        }
+
+        const cards = Array.isArray(estado?.packingCards) ? estado.packingCards : [];
+        for (let c = 0; c < cards.length; c++) {
+            const p = cards[c]?.pesos || {};
+            if (pesoNumero(p.ingresoGas) > 0 || pesoNumero(p.salidaGas) > 0) return false;
+        }
+        return true;
+    }
+
+    async function confirmarEnvioSinGasificadoPacking_(estadoOEstados) {
+        if (PACKING_RC5_MODULE) return true;
+        const lista = Array.isArray(estadoOEstados) ? estadoOEstados : [estadoOEstados];
+        const sinGas = lista.some((e) => estadoSinDatosGasificadoPacking_(e));
+        if (!sinGas) return true;
+        return confirmarSwalPacking_({
+            icon: 'info',
+            title: 'Sin datos en gasificado',
+            html: '<p style="margin:0;font-size:14px;line-height:1.45;">'
+                + 'No se tiene ningún dato en gasificado.'
+                + '</p>'
+                + '<p style="margin:10px 0 0;font-size:13px;color:#64748b;line-height:1.4;">'
+                + 'Tiempos, pesos, temperatura, humedad y presión de gasificado quedarán vacíos. '
+                + '¿Confirmas y continúas con el envío?'
+                + '</p>',
+            showCancelButton: true,
+            confirmButtonText: 'Confirmado',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#1f4f82',
+            reverseButtons: true,
+            allowOutsideClick: false
+        });
     }
 
     function calcularPresionVaporAmbienteAshrae(tempC, humedadRelativa) {
@@ -3456,11 +3572,15 @@
             errores.push(msgErrorGlobalPacking('Cabecera', 'Completa Responsable.'));
         }
 
-        const ct = conteoTiemposMuestra();
-        if (ct.done < ct.total) {
+        const tiemposArr = getTiemposMuestra();
+        const faltanTiempos = faltanTiemposObligatoriosPacking_(tiemposArr);
+        if (faltanTiempos.length) {
+            const req = tiemposIndicesObligatoriosPacking_().length;
+            const done = req - faltanTiempos.length;
             errores.push(
                 msgErrorTiemposPacking(
-                    'Completa las ' + ct.total + ' etapas (' + ct.done + '/' + ct.total + ').'
+                    'Completa recepción e ingreso/salida prefrío (' + done + '/' + req
+                    + '). Gasificado es opcional.'
                 )
             );
         }
@@ -3480,26 +3600,29 @@
             );
         }
 
-        const cAmb = conteoPresionPacking(packingControlState.presionAmb);
-        const cFruta = conteoPresionPacking(packingControlState.presionFruta);
-        if (!faltanControl && cAmb.done < cAmb.total) {
+        const idxsPres = idxsPresionRequeridaPacking_();
+        const faltanAmb = faltanPresionesEnIdxsPacking_(packingControlState.presionAmb, idxsPres);
+        const faltanFruta = faltanPresionesEnIdxsPacking_(packingControlState.presionFruta, idxsPres);
+        if (!faltanControl && faltanAmb.length) {
             errores.push(
                 msgErrorGlobalPacking(
                     '☁️',
-                    'Revisa temperatura ambiente y humedad (' + cAmb.done + '/' + cAmb.total + ').'
+                    'Revisa temperatura ambiente y humedad ('
+                    + (idxsPres.length - faltanAmb.length) + '/' + idxsPres.length + ').'
                 )
             );
         }
-        if (!faltanControl && cFruta.done < cFruta.total) {
+        if (!faltanControl && faltanFruta.length) {
             errores.push(
                 msgErrorGlobalPacking(
                     '🍎',
-                    'Revisa temperatura pulpa (' + cFruta.done + '/' + cFruta.total + ').'
+                    'Revisa temperatura pulpa ('
+                    + (idxsPres.length - faltanFruta.length) + '/' + idxsPres.length + ').'
                 )
             );
         }
 
-        const pesoLabels = packingPesoLabelsUi_();
+        const pesoLabels = packingPesoLabelsObligatoriosUi_();
 
         packingCards.forEach((card) => {
             const p = card.pesos || pesosVaciosPacking();
@@ -3768,27 +3891,29 @@
         const txt = usarLabelCompleto ? etapa.label : (etapa.shortLabel || etapa.label);
         const valAttr = raw ? (' value="' + v + '"') : ' value="" placeholder="—"';
         return '<div class="form-group"><label>' + txt + '</label>'
-            + '<input type="text" class="packing-presion-inp" id="' + id + '"' + valAttr + ' disabled'
-            + ' title="Dato calculado automáticamente" aria-label="' + etapa.label + '"></div>';
+            + '<input type="text" class="presion-readonly-inp packing-presion-inp" id="' + id + '"' + valAttr + ' disabled readonly inputmode="none" tabindex="-1"'
+            + ' aria-label="' + etapa.label + '"></div>';
     }
 
     function htmlGridPresionModalPacking(valores) {
         const etapas = controlEtapasPackingUi_();
         if (etapas.length === 1) {
-            return celdaPresionModalPacking(etapas[0], valores, true);
+            return '<div class="presion-metric-grid metric-grid-4">'
+                + celdaPresionModalPacking(etapas[0], valores, true)
+                + '</div>';
         }
         const cuatro = etapas.filter((e) => e.idx < 4)
-            .map((e) => celdaPresionModalPacking(e, valores, true)).join('');
+            .map((e) => celdaPresionModalPacking(e, valores, false)).join('');
         const quinto = etapas.find((e) => e.idx === 4);
         const raw5 = String(valores[4] ?? '').trim();
         const v5 = raw5.replace(/"/g, '&quot;');
         const id5 = 'pk-presion-' + quinto.idPart;
         const val5Attr = raw5 ? (' value="' + v5 + '"') : ' value="" placeholder="—"';
-        return '<div class="packing-tiempos-grid packing-cg-grid-tiempos">' + cuatro + '</div>'
+        return '<div class="presion-metric-grid metric-grid-4">' + cuatro + '</div>'
             + '<div class="form-group packing-tiempo-row-full">'
             + '<label>' + quinto.label + '</label>'
-            + '<input type="text" class="packing-presion-inp" id="' + id5 + '"' + val5Attr + ' disabled'
-            + ' title="Dato calculado automáticamente" aria-label="' + quinto.label + '">'
+            + '<input type="text" class="presion-readonly-inp packing-presion-inp" id="' + id5 + '"' + val5Attr + ' disabled readonly inputmode="none" tabindex="-1"'
+            + ' aria-label="' + quinto.label + '">'
             + '</div>';
     }
 
@@ -4382,6 +4507,10 @@
             if (!opts?.sinToast) mostrarToastPacking('warning', 'Clamshells incompletos', cuota.error);
             return false;
         }
+        if (!opts?.omitirConfirmGasificado) {
+            const okGas = await confirmarEnvioSinGasificadoPacking_(cap.estado);
+            if (!okGas) return false;
+        }
         const fecha = normalizarFechaIso(elFecha?.value);
         const body = getMetaEnvioPackingDesdeEstado_(cap.estado, cap.raw, fecha);
         const cards = Array.isArray(cap.estado.packingCards) ? cap.estado.packingCards : [];
@@ -4458,6 +4587,8 @@
         if (elStatus?.dataset.pkCompletitudHint) {
             delete elStatus.dataset.pkCompletitudHint;
         }
+        const okGas = await confirmarEnvioSinGasificadoPacking_(capturarEstadoMuestraPacking());
+        if (!okGas) return false;
         const sel = ensayoSeleccionado();
         const body = getMetaEnvioPacking();
         logEnvioPackingConsola(body, packingCards);
@@ -4516,7 +4647,13 @@
             capturas.push({ item, cap });
         }
 
-        const optsLote = { sinUi: true, sinLoading: true, sinToast: true };
+        const okGas = await confirmarEnvioSinGasificadoPacking_(capturas.map((c) => c.cap.estado));
+        if (!okGas) {
+            await refrescarMuestraPackingActivaTrasLote_(rawActivo, ordenadasAsc);
+            return false;
+        }
+
+        const optsLote = { sinUi: true, sinLoading: true, sinToast: true, omitirConfirmGasificado: true };
         envioPackingEnCurso = true;
         setButtonLoadingPacking(elBtnEnviarPacking, true, 'Enviando muestras...');
         let enviados = 0;
@@ -4902,8 +5039,46 @@
     }
 
     /** Solo localStorage — nunca envía a planilla ni cola de sync. */
+    function modalPackingAbierto_(el) {
+        if (!el) return false;
+        if (el.style.display === 'none') return false;
+        return el.style.display === 'flex' || el.getAttribute('aria-hidden') === 'false';
+    }
+
+    function persistirModalesAbiertasPacking_() {
+        if (modalPackingAbierto_(elPesosModal)) {
+            if (!packingCards.length) ensureCardPorDefectoPacking();
+            const card = getCardPackingById(packingActiveCardId) || packingCards[0];
+            if (card) {
+                packingActiveCardId = card.id;
+                if (PACKING_RC5_MODULE) {
+                    PACKING_PESO_CAMPOS.forEach((c) => { card.pesos[c.key] = 0; });
+                }
+                packingPesoCamposUi_().forEach((c) => {
+                    const inp = document.getElementById(c.inpId);
+                    card.pesos[c.key] = pesoNumero(inp?.value);
+                });
+                normalizarPesosCardRc5_(card.pesos);
+            }
+        }
+        if (modalPackingAbierto_(elControlModalPacking) && packingControlState.tipo) {
+            leerControlGlobalPackingDesdeModal();
+            recalcularPresionesPacking();
+        }
+        if (modalPackingAbierto_(elObsModal) && packingObservationCardId != null) {
+            const card = getCardPackingById(packingObservationCardId);
+            if (card && elObsInput) card.observacion = String(elObsInput.value || '');
+        }
+        if (modalPackingAbierto_(elViajeModalPacking)) {
+            packingNViaje = normalizarNViajePackingInput_(elViajeInputPacking?.value);
+            actualizarBtnViajePackingTitulo_();
+        }
+        // Tiempos: los inputs viven en el DOM; getTiemposMuestra() los lee al capturar.
+    }
+
     function persistirSoloLocalPacking_() {
         cancelarGuardadoBorradorProgramadoPacking_();
+        persistirModalesAbiertasPacking_();
         guardarBorradorMuestraActivaInmediato_();
     }
 
@@ -5760,6 +5935,9 @@
         persistirSoloLocalPacking_();
     });
     window.addEventListener('pagehide', () => {
+        persistirSoloLocalPacking_();
+    });
+    window.addEventListener('freeze', () => {
         persistirSoloLocalPacking_();
     });
     function reafirmarBorradorPackingAlVolverVisible_() {

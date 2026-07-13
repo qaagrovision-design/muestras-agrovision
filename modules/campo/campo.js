@@ -217,6 +217,8 @@ const META_SAVE_IDS = [
         const SYNC_MAX_HISTORY = 80;
         const SYNC_MAX_ENVIADOS = 48;
         const NUM_MUESTRA_MAX_LEN = 8;
+        /** Pie OBSERVACIONES del PDF / input por clamshell. */
+        const OBSERVACION_CLAMSHELL_MAX_CHARS = 57;
         const REGISTRADOS_HOY_CACHE_KEY = 'tiempos-registrados-hoy-cache-v1';
         const ULTIMO_DIA_CAMP_KEY_PREFIX = 'muestras-ultimo-dia-campo-v1:';
         let campoInicioLimpioNuevoDia_ = false;
@@ -964,26 +966,25 @@ const META_SAVE_IDS = [
 
         function jarraVaciaItem_(jarra) {
             if (jarra === '' || jarra === null || jarra === undefined) return true;
-            const n = Number(jarra);
+            const s = String(jarra).trim();
+            if (s === '' || s === '-' || s === '—') return true;
+            const n = Number(s);
             return !Number.isFinite(n) || n < 1;
         }
 
+        /** '' = opción " - " (no aplica). null = valor inválido. número ≥ 1 = jarra. */
         function leerJarraSelectModal_(valorCrudo) {
             const raw = valorCrudo !== undefined
                 ? valorCrudo
                 : document.getElementById('visual-m-jarra')?.value;
-            if (!esModoRegistroAcopio_()) {
-                const n = Number(raw || 0);
-                return Number.isFinite(n) && n >= 1 ? n : null;
-            }
             const s = String(raw ?? '').trim();
-            if (s === '') return '';
+            if (s === '' || s === '-' || s === '—') return '';
             const n = Number(s);
             return Number.isFinite(n) && n >= 1 ? n : null;
         }
 
         function etiquetaJarraTarjeta_(item) {
-            if (esModoRegistroAcopio_() && jarraVaciaItem_(item?.jarra)) return '—';
+            if (jarraVaciaItem_(item?.jarra)) return '—';
             const n = String(item?.jarra ?? '').trim();
             return n ? `Jarra ${n}` : '—';
         }
@@ -1100,21 +1101,20 @@ const META_SAVE_IDS = [
             ];
         }
 
-        /** Sin huecos: si hay Peso 3 deben existir 1 y 2; si hay Peso 5 debe existir 4 (grupos separados). */
-        function validarSecuenciaCompletaPesosAcopio_(item, n) {
-            const prefijo = `Clamshell ${n}`;
-            const { grupo123, grupo45 } = cadenasPesoAcopioClamshell_(item, n);
-            return [
-                ...recolectarFaltantesCadenaPeso_(grupo123, prefijo),
-                ...recolectarFaltantesCadenaPeso_(grupo45, prefijo)
-            ];
+        /**
+         * Acopio: no exige huecos en modal; el orden solo aplica entre pesos con valor.
+         * P4/P5 obligatorios se exigen solo al enviar (no al Guardar del modal).
+         */
+        function validarSecuenciaCompletaPesosAcopio_(/* item, n */) {
+            return [];
         }
 
-        function validarSecuenciaCompletaPesosVisual_(item, n) {
-            return recolectarFaltantesCadenaPeso_(cadenaPesoVisualClamshell_(item, n), `Clamshell ${n}`);
+        /** Visual: no exige rellenar intermedios; solo orden entre valores capturados. */
+        function validarSecuenciaCompletaPesosVisual_(/* item, n */) {
+            return [];
         }
 
-        /** Visual: cada peso capturado debe ser ≤ al anterior en la cadena (P1→P2→Llegada→Despacho). */
+        /** Visual: cada peso con valor debe ser ≤ al anterior con valor (P1→P2→Llegada→Despacho). */
         function validarOrdenCadenaPesosVisual_(item, n) {
             const cadena = cadenaPesoVisualClamshell_(item, n);
             const vals = [];
@@ -1129,29 +1129,25 @@ const META_SAVE_IDS = [
             return '';
         }
 
+        function itemTieneAlgunPesoVisual_(item, n) {
+            return cadenaPesoVisualClamshell_(item, n).some((c) => !pesoVacio(c.valor));
+        }
+
         function erroresPesosVisualModal_(p1, p2, acopio, despacho, nro) {
             const item = { p1, p2, acopio, despacho };
-            const completitud = validarSecuenciaCompletaPesosVisual_(item, nro);
             const msgOrden = validarOrdenCadenaPesosVisual_(item, nro);
-            const orden = msgOrden ? [msgOrden] : [];
-            const vistos = new Set();
-            return [...completitud, ...orden].filter((msg) => {
-                if (vistos.has(msg)) return false;
-                vistos.add(msg);
-                return true;
-            });
+            return msgOrden ? [msgOrden] : [];
         }
 
         function validarPesosVisualClamshell_(item, n) {
             const errs = [];
             if (!item || esClamshellSinDatos_(item)) return errs;
             const label = `Clamshell ${n}`;
-            validarSecuenciaCompletaPesosVisual_(item, n).forEach((e) => errs.push(e));
+            if (!itemTieneAlgunPesoVisual_(item, n)) {
+                errs.push(`${label}: registra al menos un peso`);
+            }
             const msgOrden = validarOrdenCadenaPesosVisual_(item, n);
             if (msgOrden) errs.push(`${label}: ${msgOrden}`);
-            cadenaPesoVisualClamshell_(item, n).forEach((c) => {
-                if (pesoVacio(c.valor)) errs.push(`${label}: ${c.etiqueta}`);
-            });
             return errs;
         }
 
@@ -1179,16 +1175,9 @@ const META_SAVE_IDS = [
             return errores;
         }
 
+        /** Modal Acopio: solo orden entre inputs con data (sin exigir huecos). */
         function erroresPesosAcopioModal_(p1, p2, p3, p4, p5, nro) {
-            const item = { p1, p2, acopio: p3, p4, despacho: p5 };
-            const completitud = validarSecuenciaCompletaPesosAcopio_(item, nro);
-            const orden = erroresOrdenPesosAcopio_(p1, p2, p3, p4, p5, nro);
-            const vistos = new Set();
-            return [...completitud, ...orden].filter((msg) => {
-                if (vistos.has(msg)) return false;
-                vistos.add(msg);
-                return true;
-            });
+            return erroresOrdenPesosAcopio_(p1, p2, p3, p4, p5, nro);
         }
 
         function erroresOrdenPesosAcopio_(p1, p2, p3, p4, p5, nroClamshell) {
@@ -1254,17 +1243,16 @@ const META_SAVE_IDS = [
             }
         }
 
-        /** Validación de pesos Acopio por clamshell (envío). */
+        /** Validación de pesos Acopio por clamshell (envío): P4/P5 obligatorios; orden solo si hay data. */
         function validarPesosAcopioClamshell_(item, n) {
             const errs = [];
             const label = `Clamshell ${n}`;
-            validarSecuenciaCompletaPesosAcopio_(item, n).forEach((e) => errs.push(e));
             if (pesoVacio(item?.p4)) errs.push(`${label}: Peso 4 · Clamshell calibrado`);
             if (pesoVacio(item?.despacho)) errs.push(`${label}: Peso 5 · Despacho campo`);
             const msg45 = validarPesos45Acopio_(item?.p4, item?.despacho);
             if (msg45) errs.push(`${label}: ${msg45}`);
             const msgCadena = validarCadenaPesosOpcionalAcopio_(
-                peso1EfectivoCampo(item, n),
+                item?.p1,
                 item?.p2,
                 item?.acopio,
                 n
@@ -1470,9 +1458,8 @@ const META_SAVE_IDS = [
 
             items.forEach((item, idx) => {
                 const n = idx + 1;
-                if (campoVacio(item?.jarra) && !esModoRegistroAcopio_()) {
-                    faltantes.push(`Clamshell ${n}: N° jarra`);
-                } else if (esModoRegistroAcopio_() && jarraVaciaItem_(item?.jarra) && itemTienePesos123Acopio_(item, n)) {
+                // Jarra " - " es válida (sin data de llenado). Solo Acopio exige jarra si hay Pesos 1–3.
+                if (esModoRegistroAcopio_() && jarraVaciaItem_(item?.jarra) && itemTienePesos123Acopio_(item, n)) {
                     faltantes.push(`Clamshell ${n}: N° jarra`);
                 }
                 if (esModoRegistroAcopio_()) {
@@ -1802,6 +1789,8 @@ const META_SAVE_IDS = [
         let bloqueoMuestraCacheNums = null;
         /** N° asignado por muestra en esta sesión (no recalcular tras cada envío). */
         const numerosMuestraFijadosSesion = {};
+        /** Debe declararse antes de leerNumMuestraDesdePantalla (arranque temprano). */
+        let envioRegistroEnCurso = false;
 
         function logNumMuestra(etapa, extra) {
             if (!DEBUG_NUM_MUESTRA && !window.__DEBUG_NUM_MUESTRA_OVERRIDE__) return;
@@ -1840,16 +1829,19 @@ const META_SAVE_IDS = [
 
         function leerNumMuestraDesdePantalla(ensayo) {
             const e = String(ensayo || metaActivoEnsayo || ensayoDesdeFormulario() || 'Ensayo 1').trim() || 'Ensayo 1';
-            const fijado = numerosMuestraFijadosSesion[e];
-            if (fijado) return fijado;
+            // Solo durante envío se respeta el N° congelado (evita 94 “pegado” en UI/PDF).
+            if (envioRegistroEnCurso) {
+                const fijadoEnvio = numerosMuestraFijadosSesion[e];
+                if (fijadoEnvio) return fijadoEnvio;
+            }
+            const calc = calcularNumMuestraDesdeServidorParaEnsayo(e);
+            if (calc) return calc;
             const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
             if (e === activo) {
                 const dom = normalizarNumMuestraInput(document.getElementById('visual-num-muestra')?.value);
                 if (dom) return dom;
             }
-            const enMeta = normalizarNumMuestraInput(metaPorEnsayo[e]?.['visual-num-muestra']);
-            if (enMeta) return enMeta;
-            return calcularNumMuestraDesdeServidorParaEnsayo(e) || '';
+            return normalizarNumMuestraInput(metaPorEnsayo[e]?.['visual-num-muestra']) || '';
         }
 
         /** Solo pantalla: N° desde servidor (estado_operativo); nunca localStorage ni borrador. */
@@ -1860,9 +1852,14 @@ const META_SAVE_IDS = [
             const inp = document.getElementById('visual-num-muestra');
             if (!num) {
                 if (inp && navigator.onLine && API_URL && inp.value !== '') inp.value = '';
+                actualizarVistaCompacta();
                 return;
             }
-            if (inp && normalizarNumMuestraInput(inp.value) === num) return;
+            const actual = normalizarNumMuestraInput(inp?.value);
+            if (actual === num) {
+                actualizarVistaCompacta();
+                return;
+            }
             purgarTodosNumerosMuestraEnMeta();
             logNumMuestra('sincronizarNumMuestraPantallaDesdeServidor', { ensayo: activo, calculado: num });
             aplicarNumMuestraEnsayo(activo, num, false, 'sincronizarNumMuestraPantallaDesdeServidor');
@@ -2040,6 +2037,28 @@ const META_SAVE_IDS = [
         }
 
         function sincronizarMaxNumMuestraDesdeContextoLocal() {
+            // Online + planilla leída: no subir el max con basura local (causa saltos de N°).
+            if (numMuestraSincronizadoServidor && navigator.onLine && API_URL) {
+                const maxCola = (() => {
+                    let m = numMuestraMaxServidorCache;
+                    try {
+                        cargarColaSync().forEach((reg) => {
+                            const st = String(reg?.estado || '');
+                            if (st !== 'pendiente' && st !== 'bloqueado') return;
+                            const k = parseNumMuestraSoloDigitos(reg?.num_muestra);
+                            if (k > m) m = k;
+                        });
+                    } catch (_) { /* ignore */ }
+                    return m;
+                })();
+                if (maxCola > numMuestraMaxServidorCache) {
+                    numMuestraMaxServidorCache = maxCola;
+                }
+                proximoNumMuestraServidorCache = formatearNumMuestraAutoDesdeN(
+                    (Number(numMuestraMaxServidorCache) || 0) + 1
+                );
+                return;
+            }
             const maxCtx = leerMaxNumericoNumMuestraTodoContexto();
             if (maxCtx > numMuestraMaxServidorCache) {
                 logNumMuestra('sincronizarMaxNumMuestraDesdeContextoLocal', {
@@ -2743,7 +2762,9 @@ const META_SAVE_IDS = [
         const controlGlobalState = { tipo: null };
         const horasLlenadoModalState = { ensayo: '', idFila: null };
         const llenadoJarrasState = {
-            porEnsayo: {}
+            porEnsayo: {},
+            /** Ensayos donde el usuario borró todas las filas (no re-sembrar la fila 1). */
+            usuarioVacio: {}
         };
         let siguienteIdFilaJarras = 1;
         (function inicializarIdsFilaJarras() {
@@ -2759,7 +2780,6 @@ const META_SAVE_IDS = [
         let editingCardId = null;
         let guardandoModalTarjeta_ = false;
         let abrirModalTarjetaTs_ = 0;
-        let envioRegistroEnCurso = false;
         let omitirConfirmacionSalida = false;
 
         function setButtonLoading(btn, loading, loadingText) {
@@ -3245,43 +3265,28 @@ const META_SAVE_IDS = [
         }
 
         function validarSecuenciaTiempoMetrica(t) {
-            const inicioCosecha = String(t?.inicioCosecha || '').trim();
-            const terminoCosecha = String(t?.terminoCosecha || '').trim();
-            const llegadaAcopio = String(t?.llegadaAcopio || '').trim();
-            const despachoAcopio = String(t?.despachoAcopio || '').trim();
             const errores = [];
-            if (esModoRegistroAcopio_()) {
-                const acopioCalibrado = String(t?.acopioCalibrado || '').trim();
-                const terminoCalibrado = String(t?.terminoCalibrado || '').trim();
-                if (inicioCosecha && terminoCosecha && horarioFinalMenorQueInicio(inicioCosecha, terminoCosecha)) {
-                    errores.push('Término de cosecha debe ser mayor o igual a Inicio de cosecha.');
+            const cadena = esModoRegistroAcopio_()
+                ? [
+                    { k: 'Inicio de cosecha', v: String(t?.inicioCosecha || '').trim() },
+                    { k: 'Término de cosecha', v: String(t?.terminoCosecha || '').trim() },
+                    { k: 'Llegada acopio-campo', v: String(t?.llegadaAcopio || '').trim() },
+                    { k: 'Acopio calibrado', v: String(t?.acopioCalibrado || '').trim() },
+                    { k: 'Término de calibrado', v: String(t?.terminoCalibrado || '').trim() },
+                    { k: 'Despacho acopio-campo', v: String(t?.despachoAcopio || '').trim() }
+                ]
+                : [
+                    { k: 'Inicio de cosecha', v: String(t?.inicioCosecha || '').trim() },
+                    { k: 'Inicio pérdida de peso', v: String(t?.inicioPerdida || '').trim() },
+                    { k: 'Término de cosecha', v: String(t?.terminoCosecha || '').trim() },
+                    { k: 'Llegada acopio-campo', v: String(t?.llegadaAcopio || '').trim() },
+                    { k: 'Despacho acopio-campo', v: String(t?.despachoAcopio || '').trim() }
+                ];
+            const llenos = cadena.filter((c) => c.v);
+            for (let i = 1; i < llenos.length; i++) {
+                if (horarioFinalMenorQueInicio(llenos[i - 1].v, llenos[i].v)) {
+                    errores.push(llenos[i].k + ' debe ser mayor o igual a ' + llenos[i - 1].k + '.');
                 }
-                if (terminoCosecha && llegadaAcopio && horarioFinalMenorQueInicio(terminoCosecha, llegadaAcopio)) {
-                    errores.push('Llegada acopio-campo debe ser mayor o igual a Término de cosecha.');
-                }
-                if (llegadaAcopio && acopioCalibrado && horarioFinalMenorQueInicio(llegadaAcopio, acopioCalibrado)) {
-                    errores.push('Acopio calibrado debe ser mayor o igual a Llegada acopio-campo.');
-                }
-                if (acopioCalibrado && terminoCalibrado && horarioFinalMenorQueInicio(acopioCalibrado, terminoCalibrado)) {
-                    errores.push('Término de calibrado debe ser mayor o igual a Acopio calibrado.');
-                }
-                if (terminoCalibrado && despachoAcopio && horarioFinalMenorQueInicio(terminoCalibrado, despachoAcopio)) {
-                    errores.push('Despacho acopio-campo debe ser mayor o igual a Término de calibrado.');
-                }
-                return errores;
-            }
-            const inicioPerdida = String(t?.inicioPerdida || '').trim();
-            if (inicioCosecha && inicioPerdida && horarioFinalMenorQueInicio(inicioCosecha, inicioPerdida)) {
-                errores.push('Inicio pérdida de peso debe ser mayor o igual a Inicio de cosecha.');
-            }
-            if (inicioPerdida && terminoCosecha && horarioFinalMenorQueInicio(inicioPerdida, terminoCosecha)) {
-                errores.push('Término de cosecha debe ser mayor o igual a Inicio pérdida de peso.');
-            }
-            if (terminoCosecha && llegadaAcopio && horarioFinalMenorQueInicio(terminoCosecha, llegadaAcopio)) {
-                errores.push('Llegada acopio-campo debe ser mayor o igual a Término de cosecha.');
-            }
-            if (llegadaAcopio && despachoAcopio && horarioFinalMenorQueInicio(llegadaAcopio, despachoAcopio)) {
-                errores.push('Despacho acopio-campo debe ser mayor o igual a Llegada acopio-campo.');
             }
             return errores;
         }
@@ -4221,10 +4226,11 @@ const META_SAVE_IDS = [
             return { a, b, key: `${a}-${b}` };
         }
 
+        /** Si el usuario no vació el panel, deja al menos la fila inicial de cosecha. */
         function asegurarFilasInicialesEnsayo(ensayo) {
             const clave = String(ensayo || 'Ensayo 1');
             const filas = obtenerFilasLlenadoJarras(clave);
-            if (!filas.length) {
+            if (!filas.length && !llenadoJarrasState.usuarioVacio?.[clave]) {
                 filas.push({
                     id: siguienteIdFilaJarras++,
                     ensayo: clave,
@@ -4236,6 +4242,26 @@ const META_SAVE_IDS = [
                 });
             }
             return filas;
+        }
+
+        function ensayoSinFilasLlenadoJarras_(ensayo) {
+            return obtenerFilasLlenadoJarras(ensayo).length === 0;
+        }
+
+        function marcarLlenadoJarrasVacioPorUsuario_(ensayo, vacio) {
+            const clave = String(ensayo || 'Ensayo 1');
+            if (!llenadoJarrasState.usuarioVacio) llenadoJarrasState.usuarioVacio = {};
+            if (vacio) llenadoJarrasState.usuarioVacio[clave] = true;
+            else delete llenadoJarrasState.usuarioVacio[clave];
+        }
+
+        function limpiarJarraClamshellsSiSinLlenado_(ensayo) {
+            if (!ensayoSinFilasLlenadoJarras_(ensayo)) return;
+            const clave = String(ensayo || 'Ensayo 1');
+            data.forEach((it) => {
+                if (String(it?.ensayo || 'Ensayo 1') !== clave) return;
+                it.jarra = '';
+            });
         }
 
         function listaJarrasPesosPorEnsayo(ensayo) {
@@ -4615,10 +4641,9 @@ const META_SAVE_IDS = [
                                 <div class="lj-fila-top">
                                     <div class="lj-fila-hint">Traslado u otra observación</div>
                                     <div class="lj-fila-actions">
-                                        ${pos === 0 ? '' : `
                                         <button type="button" class="lj-mini-btn lj-mini-btn--danger lj-mini-btn--delete" title="Eliminar fila" aria-label="Eliminar fila" onclick="event.stopPropagation(); eliminarFilaLlenadoJarras('${ensayo}', ${fila.id})">
                                             <i data-lucide="trash-2"></i>
-                                        </button>`}
+                                        </button>
                                     </div>
                                 </div>
                                 <select class="lj-campo-tipo" onchange="actualizarFilaLlenadoJarras('${ensayo}', ${fila.id}, 'tipo', this.value)" onclick="event.stopPropagation()">
@@ -4710,11 +4735,19 @@ const META_SAVE_IDS = [
                 if (idsEliminar.has(Number(filas[i].id))) filas.splice(i, 1);
             }
 
+            if (!filas.length) marcarLlenadoJarrasVacioPorUsuario_(ensayo, true);
+            limpiarJarraClamshellsSiSinLlenado_(ensayo);
             sincronizarInicioCosechaDesdeAnterior(ensayo);
             sincronizarInicioTrasvasadoDesdeCosecha(ensayo);
             renderizarPanelLlenadoJarras();
             sincronizarTiempoPorJarra(ensayo);
             renderizarTarjetas();
+            if (modalCampoEstaAbierto_('modal-overlay')) {
+                const itemEdit = editingCardId != null
+                    ? data.find((entry) => entry.id === editingCardId)
+                    : null;
+                poblarSelectJarraModal(ensayo, itemEdit ? itemEdit.jarra : null);
+            }
             programarGuardadoDraftCompleto();
         }
 
@@ -4818,6 +4851,7 @@ const META_SAVE_IDS = [
         function agregarFilaLlenadoJarras(ensayo) {
             const clave = String(ensayo || 'Ensayo 1');
             const filas = obtenerFilasLlenadoJarras(clave);
+            marcarLlenadoJarrasVacioPorUsuario_(clave, false);
             const incompleta = filas.find((f) => !String(f.inicio || '').trim() || !String(f.termino || '').trim());
             if (incompleta) {
                 mostrarAlertaRegla('Completa horas primero', 'Para agregar otro registro debes completar Inicio y Final de las filas actuales.');
@@ -5003,7 +5037,7 @@ const META_SAVE_IDS = [
         }
 
         function numColsRegistroCampo_() {
-            return esModoRegistroAcopio_() ? 50 : 48;
+            return esModoRegistroAcopio_() ? 51 : 49;
         }
 
         function registroPostExpandedLenCampo_() {
@@ -5048,7 +5082,7 @@ const META_SAVE_IDS = [
             ];
 
             return [
-                // Visual: 48 cols (4 pesos + 5 tiempos). Acopio: 50 cols (5 pesos + 6 tiempos).
+                // Visual: 49 cols. Acopio: 51 cols. TRAZ_ACOPIO (Acopio 1–25) tras PLACA.
                 hoyIsoLocal(),
                 strOrEmpty(ensayoNombre),
                 numMuestraUnica,
@@ -5062,6 +5096,7 @@ const META_SAVE_IDS = [
                 strOrEmpty(meta['visual-meta-variedad'] || meta['meta-variedad']),
                 strOrEmpty(item?.guiaRemision || document.getElementById('visual-guia-acopio')?.value),
                 strOrEmpty(item?.placaVehiculo || document.getElementById('visual-placa-vehiculo')?.value).toUpperCase(),
+                strOrEmpty(meta['visual-traz-acopio'] || document.getElementById('visual-traz-acopio')?.value),
                 ensayoNumero,
                 String(idx + 1),
                 strOrEmpty(item?.jarra),
@@ -5087,7 +5122,7 @@ const META_SAVE_IDS = [
                 presionStrParaEnvio(temp.presionFrutaTermino),
                 presionStrParaEnvio(temp.presionFrutaLlegada),
                 presionStrParaEnvio(temp.presionFrutaDespacho),
-                strOrEmpty(item?.observacion),
+                strOrEmpty(limitarObservacionClamshell_(item?.observacion)),
                 strOrEmpty(meta['visual-observacion-formato'] || document.getElementById('visual-observacion-formato')?.value),
                 strOrEmpty(horaRegistro)
             ];
@@ -5128,8 +5163,8 @@ const META_SAVE_IDS = [
             ];
         }
 
-        /** POST expandido: 21 + hueco Hoja2 (6) + cierre → 54 Visual / 56 Acopio. */
-        const REGISTRO_PRE_JARRA_COLS = 21;
+        /** POST expandido: 22 + hueco Hoja2 (6) + cierre → 55 Visual / 57 Acopio. */
+        const REGISTRO_PRE_JARRA_COLS = 22;
 
         function construirFilaPostExpandidaConHoja2(item, idx, totalEnLote, horaRegistro) {
             const nCols = numColsRegistroCampo_();
@@ -5345,7 +5380,9 @@ const META_SAVE_IDS = [
 
         function persistirModalTarjetaAbiertaCampo_() {
             if (!modalCampoEstaAbierto_('modal-overlay')) return;
-            const jarraSel = Number(document.getElementById('visual-m-jarra')?.value) || 1;
+            const jarraLeida = leerJarraSelectModal_();
+            if (jarraLeida === null) return;
+            let jarraSel = jarraLeida;
             let p1Val = Number(elInputPesoModalCampo_('p1')?.value || 0);
             let p2Val = Number(elInputPesoModalCampo_('p2')?.value || 0);
             let acopioVal = Number(elInputPesoModalCampo_('acopio')?.value || 0);
@@ -5358,6 +5395,11 @@ const META_SAVE_IDS = [
             if (editingCardId == null) return;
             const item = data.find((entry) => entry.id === editingCardId);
             if (!item) return;
+            if (esModoRegistroAcopio_() && jarraSel === '') {
+                p1Val = 0;
+                p2Val = 0;
+                acopioVal = 0;
+            }
             aplicarDatosModalAClamshell_(item, jarraSel, p1Val, p2Val, acopioVal, p4Val, despachoVal);
         }
 
@@ -5400,7 +5442,8 @@ const META_SAVE_IDS = [
                 metaActivoEnsayo: metaActivoEnsayo,
                 metaPorEnsayo: clonarMetaPorEnsayoSinNumeros(metaPorEnsayo),
                 inputsCriticos: leerInputsCriticosActuales(),
-                numMuestraPorEnsayo: capturarNumMuestraBorradorPorEnsayo_()
+                // N° muestra no se guarda en borrador (evita 94 pegado entre Visual/Acopio).
+                numMuestraPorEnsayo: {}
             };
         }
 
@@ -5863,6 +5906,7 @@ const META_SAVE_IDS = [
             if (d.llenadoJarrasState && typeof d.llenadoJarrasState === 'object') {
                 if (!llenadoJarrasState.porEnsayo) llenadoJarrasState.porEnsayo = {};
                 llenadoJarrasState.porEnsayo = d.llenadoJarrasState.porEnsayo || {};
+                llenadoJarrasState.usuarioVacio = d.llenadoJarrasState.usuarioVacio || {};
             }
             if (Number.isFinite(Number(d.siguienteIdFilaJarras))) {
                 siguienteIdFilaJarras = Number(d.siguienteIdFilaJarras);
@@ -5879,10 +5923,8 @@ const META_SAVE_IDS = [
                 metaActivoEnsayo = String(d.metaActivoEnsayo).trim() || metaActivoEnsayo;
             }
             if (d.numMuestraPorEnsayo && typeof d.numMuestraPorEnsayo === 'object') {
-                Object.keys(d.numMuestraPorEnsayo).forEach((k) => {
-                    const num = normalizarNumMuestraInput(d.numMuestraPorEnsayo[k]);
-                    if (num) numerosMuestraFijadosSesion[k] = num;
-                });
+                // N° muestra NO se restaura del borrador (quedaba “pegado” p.ej. 94 vs planilla 93).
+                // Se recalcula siempre desde el servidor / contexto al sincronizar.
             }
             if (d.inputsCriticos && typeof d.inputsCriticos === 'object') {
                 delete d.inputsCriticos['visual-num-muestra'];
@@ -5897,10 +5939,6 @@ const META_SAVE_IDS = [
                 d.inputsCriticos?.['visual-traz-acopio']
                 || metaPorEnsayo[ensayoDraft]?.['visual-traz-acopio']
             );
-            const numBorrador = numerosMuestraFijadosSesion[ensayoDraft];
-            if (numBorrador) {
-                aplicarNumMuestraEnsayo(ensayoDraft, numBorrador, false, 'restaurarDraft');
-            }
             sincronizarTrazabilidadCompuesta();
             return true;
         }
@@ -6134,6 +6172,7 @@ const META_SAVE_IDS = [
             metaActivoEnsayo = '';
             ensayoActivo = '';
             llenadoJarrasState.porEnsayo = {};
+            llenadoJarrasState.usuarioVacio = {};
             siguienteIdFilaJarras = 1;
             editingCardId = null;
             metricModalState.itemId = null;
@@ -6227,6 +6266,7 @@ const META_SAVE_IDS = [
             delete metaPorEnsayo[enviado];
             delete numerosMuestraFijadosSesion[enviado];
             if (llenadoJarrasState.porEnsayo) delete llenadoJarrasState.porEnsayo[enviado];
+            if (llenadoJarrasState.usuarioVacio) delete llenadoJarrasState.usuarioVacio[enviado];
 
             if (!navigator.onLine || !API_URL) {
                 sincronizarMaxNumMuestraDesdeContextoLocal();
@@ -6269,6 +6309,7 @@ const META_SAVE_IDS = [
             data.splice(0, data.length);
             Object.keys(ensayoMeta).forEach((k) => delete ensayoMeta[k]);
             llenadoJarrasState.porEnsayo = {};
+            llenadoJarrasState.usuarioVacio = {};
             siguienteIdFilaJarras = 1;
             editingCardId = null;
             metricModalState.itemId = null;
@@ -6695,8 +6736,11 @@ const META_SAVE_IDS = [
 
             const preservarBorrador = debePreservarBorradorCampoEnSync_();
 
-            if (!preservarBorrador && (opts.invalidarFijados || maxCambio || cambioFirma || opts.forzarUi)) {
-                Object.keys(numerosMuestraFijadosSesion).forEach((k) => delete numerosMuestraFijadosSesion[k]);
+            // N° muestra siempre sigue la planilla; el borrador no debe congelarlo (Acopio 93 / Visual 94).
+            if (!envioRegistroEnCurso && (opts.invalidarFijados || maxCambio || cambioFirma || opts.forzarUi || opts.alinearNumMuestra !== false)) {
+                Object.keys(numerosMuestraFijadosSesion).forEach((k) => {
+                    if (!ensayoEstaRegistradoHoy(k)) delete numerosMuestraFijadosSesion[k];
+                });
             }
 
             const alinearInicio = necesitaReposicionarAPrimeraLibre();
@@ -6706,11 +6750,8 @@ const META_SAVE_IDS = [
                 reposicionarPantallaPrimeraMuestraLibre('propagarPlanilla');
             } else {
                 const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
-                if (activo && !ensayoEstaRegistradoHoy(activo)) {
-                    const yaFijado = String(numerosMuestraFijadosSesion[activo] || '').trim();
-                    if (!preservarBorrador || !yaFijado) {
-                        aplicarNumMuestraParaEnsayoActivo('syncPlanilla');
-                    }
+                if (activo && !ensayoEstaRegistradoHoy(activo) && !envioRegistroEnCurso) {
+                    aplicarNumMuestraParaEnsayoActivo('syncPlanilla');
                 }
                 aplicarBloqueoMuestrasCacheLocal();
                 actualizarVistaCompacta();
@@ -6824,6 +6865,7 @@ const META_SAVE_IDS = [
             }
             numMuestraSincronizadoServidor = true;
             ultimoMaxPlanillaConocido = numMuestraMaxServidorCache;
+            purgarUsadosLocalTrasSyncPlanilla_();
             sincronizarNumMuestraPantallaDesdeServidor();
         }
 
@@ -7226,16 +7268,43 @@ const META_SAVE_IDS = [
                     subir(reg?.num_muestra);
                 });
             } catch (_) { /* ignore */ }
-            try {
-                const mapUsados = cargarNumMuestraUsadosLocal();
-                Object.keys(mapUsados).forEach((clave) => {
-                    const det = mapUsados[clave];
-                    const st = String(det?.estado || '').toLowerCase();
-                    if (st === 'cancelado') return;
-                    subir(clave);
-                });
-            } catch (_) { /* ignore */ }
+            // Con planilla sincronizada NO usar mapa local de “usados”:
+            // ahí quedaban N° fantasma y el siguiente saltaba (053 → 058).
+            // Offline / sin sync: solo cuentan reservas reales (pendiente/bloqueado).
+            const confiarSoloPlanilla = numMuestraSincronizadoServidor && navigator.onLine && !!API_URL;
+            if (!confiarSoloPlanilla) {
+                try {
+                    const mapUsados = cargarNumMuestraUsadosLocal();
+                    Object.keys(mapUsados).forEach((clave) => {
+                        const det = mapUsados[clave];
+                        const st = String(det?.estado || '').toLowerCase();
+                        if (st === 'cancelado') return;
+                        if (st !== 'pendiente' && st !== 'bloqueado') return;
+                        subir(clave);
+                    });
+                } catch (_) { /* ignore */ }
+            }
             return maxN;
+        }
+
+        /** Tras leer planilla: limpia N° locales ya “registrados” (evita inflar el siguiente). */
+        function purgarUsadosLocalTrasSyncPlanilla_() {
+            if (!numMuestraSincronizadoServidor) return;
+            try {
+                const map = cargarNumMuestraUsadosLocal();
+                let changed = false;
+                Object.keys(map).forEach((clave) => {
+                    const st = String(map[clave]?.estado || '').toLowerCase();
+                    if (st === 'registrado' || st === 'subido' || st === 'cancelado') {
+                        delete map[clave];
+                        changed = true;
+                    }
+                });
+                if (changed) {
+                    guardarNumMuestraUsadosLocal(map);
+                    logNumMuestra('purgarUsadosLocalTrasSyncPlanilla_', { quedan: Object.keys(map).length });
+                }
+            } catch (_) { /* ignore */ }
         }
 
         function numMuestraDuplicadoEnMeta(ensayo, mn) {
@@ -7264,8 +7333,8 @@ const META_SAVE_IDS = [
 
         function necesitaReasignarNumMuestra(ensayo, mn) {
             if (ensayoEstaRegistradoHoy(ensayo)) return false;
-            if (numerosMuestraFijadosSesion[String(ensayo || '').trim()]) return false;
-            const esperadoSeq = parseNumMuestraSoloDigitos(calcularNumMuestraDesdeServidorParaEnsayo(ensayo));
+            if (envioRegistroEnCurso && numerosMuestraFijadosSesion[String(ensayo || '').trim()]) return false;
+            const esperadoSeq = parseNumMuestraSoloDigitos(calcularNumMuestraBaseDesdeContexto(ensayo));
             const actualSeq = parseNumMuestraSoloDigitos(mn);
             if (!actualSeq) return true;
             return actualSeq !== esperadoSeq;
@@ -7289,8 +7358,11 @@ const META_SAVE_IDS = [
             const inpAntes = document.getElementById('visual-num-muestra')?.value;
             delete metaPorEnsayo[e]['visual-num-muestra'];
             delete metaPorEnsayo[e]._num_muestra_fijo;
-            if (t && !ensayoEstaRegistradoHoy(e)) {
+            // Solo "congelar" al fijar=true (p. ej. precongelar envío). fijar=false = pantalla desde planilla.
+            if (fijar === true && t && !ensayoEstaRegistradoHoy(e)) {
                 numerosMuestraFijadosSesion[e] = t;
+            } else if (fijar === false) {
+                delete numerosMuestraFijadosSesion[e];
             }
             if (fijar !== false && t) {
                 metaPorEnsayo[e]['visual-num-muestra'] = t;
@@ -7307,8 +7379,13 @@ const META_SAVE_IDS = [
                     ensayo: e,
                     valor_antes: inpAntes,
                     valor_nuevo: t,
-                    fijar: fijar !== false
+                    fijar: fijar === true
                 });
+                // Tiempo real: chips, tarjetas y PDF leen el mismo N°.
+                try {
+                    actualizarVistaCompacta();
+                    renderizarTarjetas();
+                } catch (_) { /* ignore */ }
             }
         }
 
@@ -7475,11 +7552,11 @@ const META_SAVE_IDS = [
             rows.forEach((row) => {
                 if (!row || row.length < 3 || faltante) return;
                 const ensayoNombre = String(row[1] || '').trim()
-                    || ensayoNombreDesdeNumero(String(row[13] || '').trim());
+                    || ensayoNombreDesdeNumero(String(row[14] || '').trim());
                 let num = mapa ? String(mapa[ensayoNombre] || '').trim() : '';
                 if (!num && ensayoNombre) num = String(leerNumMuestraDesdePantalla(ensayoNombre) || '').trim();
                 if (!num) {
-                    faltante = ensayoNombre || ('ensayo ' + String(row[13] || ''));
+                    faltante = ensayoNombre || ('ensayo ' + String(row[14] || ''));
                     return;
                 }
                 row[2] = num;
@@ -7507,7 +7584,13 @@ const META_SAVE_IDS = [
             ensayos.forEach((ensayo) => {
                 const e = String(ensayo || '').trim();
                 if (!e) return;
-                const num = String(leerNumMuestraDesdePantalla(e) || '').trim();
+                // Stamp siempre desde cálculo/planilla (o fijado solo si hay envío en curso).
+                const num = String(
+                    (envioRegistroEnCurso && numerosMuestraFijadosSesion[e])
+                    || calcularNumMuestraDesdeServidorParaEnsayo(e)
+                    || leerNumMuestraDesdePantalla(e)
+                    || ''
+                ).trim();
                 if (num) nums[e] = num;
             });
             const stamp = stampNumMuestraEnFilasRegistro_(payload.rows, nums);
@@ -7521,35 +7604,35 @@ const META_SAVE_IDS = [
         function resumenFilasParaLog_(rows) {
             const arr = Array.isArray(rows) ? rows : [];
             const esAcopio = esModoRegistroAcopio_();
-            const idxHum = esAcopio ? 35 : 33;
+            const idxHum = esAcopio ? 36 : 34;
             return arr.map((r, i) => ({
                 i,
                 fecha: String(r?.[0] || ''),
-                ensayo: String(r?.[13] || ''),
+                ensayo: String(r?.[14] || ''),
                 num_muestra: String(r?.[2] || ''),
-                n_clamshell: Number(r?.[14] || 0),
-                n_jarra: Number(r?.[15] || 0),
+                n_clamshell: Number(r?.[15] || 0),
+                n_jarra: Number(r?.[16] || 0),
                 pesos: esAcopio ? {
-                    p1: Number(r?.[16] || 0),
-                    p2: Number(r?.[17] || 0),
-                    p3: Number(r?.[18] || 0),
-                    p4: Number(r?.[19] || 0),
-                    p5: Number(r?.[20] || 0)
+                    p1: Number(r?.[17] || 0),
+                    p2: Number(r?.[18] || 0),
+                    p3: Number(r?.[19] || 0),
+                    p4: Number(r?.[20] || 0),
+                    p5: Number(r?.[21] || 0)
                 } : {
-                    p1: Number(r?.[16] || 0),
-                    p2: Number(r?.[17] || 0),
-                    llegada_acopio: Number(r?.[18] || 0),
-                    despacho_acopio: Number(r?.[19] || 0)
+                    p1: Number(r?.[17] || 0),
+                    p2: Number(r?.[18] || 0),
+                    llegada_acopio: Number(r?.[19] || 0),
+                    despacho_acopio: Number(r?.[20] || 0)
                 },
                 temperatura: {
-                    inicio_amb: String(r?.[21] || ''),
-                    inicio_pulpa: String(r?.[22] || ''),
-                    termino_amb: String(r?.[23] || ''),
-                    termino_pulpa: String(r?.[24] || ''),
-                    llegada_amb: String(r?.[25] || ''),
-                    llegada_pulpa: String(r?.[26] || ''),
-                    despacho_amb: String(r?.[27] || ''),
-                    despacho_pulpa: String(r?.[28] || '')
+                    inicio_amb: String(r?.[22] || ''),
+                    inicio_pulpa: String(r?.[23] || ''),
+                    termino_amb: String(r?.[24] || ''),
+                    termino_pulpa: String(r?.[25] || ''),
+                    llegada_amb: String(r?.[26] || ''),
+                    llegada_pulpa: String(r?.[27] || ''),
+                    despacho_amb: String(r?.[28] || ''),
+                    despacho_pulpa: String(r?.[29] || '')
                 },
                 humedad: {
                     inicio: String(r?.[idxHum] || ''),
@@ -7573,7 +7656,7 @@ const META_SAVE_IDS = [
             const ensNum = String(payload?.ensayo_numero || numeroDesdeEnsayoTexto(ens) || '').trim();
             const row = rows.find((r) => {
                 const nom = String(r?.[1] || '').trim();
-                const numEn = String(r?.[13] || '').trim();
+                const numEn = String(r?.[14] || '').trim();
                 if (ens && nom === ens) return true;
                 if (ensNum && numEn === ensNum) return true;
                 return false;
@@ -8474,6 +8557,10 @@ const META_SAVE_IDS = [
         function construirOpcionesJarraModal(ensayo, jarraActual = null) {
             const clave = String(ensayo || 'Ensayo 1');
             const setJarras = new Set();
+            const sinFilasLlenado = ensayoSinFilasLlenadoJarras_(clave);
+
+            // Sin filas de llenado: no inventar n° 1; el select usa solo " - ".
+            if (sinFilasLlenado) return [];
 
             if (esModoRegistroAcopio_()) {
                 data
@@ -8494,33 +8581,47 @@ const META_SAVE_IDS = [
                 });
             } else {
                 // Visual: habilitar jarras con trasvasado (T) completo.
-            const filas = obtenerFilasLlenadoJarras(clave);
-            filas.forEach((f) => {
-                if (String(f.tipo || '').trim() !== 'T') return;
-                const ini = String(f.inicio || '').trim();
-                const fin = String(f.termino || '').trim();
-                if (!ini || !fin) return;
-                const txt = String(f.jarra ?? '').trim();
-                const r = parseRangoJarraLlenado(txt);
-                if (r) {
-                    setJarras.add(r.a);
-                    setJarras.add(r.b);
-                    return;
-                }
-                const n = Number(txt);
-                if (Number.isFinite(n) && n >= 1) setJarras.add(n);
-            });
-            if (!setJarras.size) {
-                data
-                    .filter((it) => String(it.ensayo || 'Ensayo 1') === clave)
-                    .map((it) => Number(it.jarra))
-                    .filter((n) => Number.isFinite(n) && n >= 1)
-                    .forEach((n) => setJarras.add(n));
+                const filas = obtenerFilasLlenadoJarras(clave);
+                filas.forEach((f) => {
+                    if (String(f.tipo || '').trim() !== 'T') return;
+                    const ini = String(f.inicio || '').trim();
+                    const fin = String(f.termino || '').trim();
+                    if (!ini || !fin) return;
+                    const txt = String(f.jarra ?? '').trim();
+                    const r = parseRangoJarraLlenado(txt);
+                    if (r) {
+                        setJarras.add(r.a);
+                        setJarras.add(r.b);
+                        return;
+                    }
+                    const n = Number(txt);
+                    if (Number.isFinite(n) && n >= 1) setJarras.add(n);
+                });
+                if (!setJarras.size) {
+                    data
+                        .filter((it) => String(it.ensayo || 'Ensayo 1') === clave)
+                        .map((it) => Number(it.jarra))
+                        .filter((n) => Number.isFinite(n) && n >= 1)
+                        .forEach((n) => setJarras.add(n));
                 }
             }
 
             const actualNum = Number(jarraActual);
             if (Number.isFinite(actualNum) && actualNum >= 1) setJarras.add(actualNum);
+            if (!setJarras.size) {
+                // Hay filas de llenado pero aún sin T completo: ofrecer jarras de las filas o 1.
+                obtenerFilasLlenadoJarras(clave).forEach((f) => {
+                    const txt = String(f.jarra ?? '').trim();
+                    const r = parseRangoJarraLlenado(txt);
+                    if (r) {
+                        setJarras.add(r.a);
+                        setJarras.add(r.b);
+                        return;
+                    }
+                    const n = Number(txt);
+                    if (Number.isFinite(n) && n >= 1) setJarras.add(n);
+                });
+            }
             if (!setJarras.size) setJarras.add(1);
             return [...setJarras].sort((a, b) => a - b);
         }
@@ -8528,19 +8629,20 @@ const META_SAVE_IDS = [
         function poblarSelectJarraModal(ensayo, jarraActual = null) {
             const select = document.getElementById('visual-m-jarra');
             if (!select) return;
+            const sinFilasLlenado = ensayoSinFilasLlenadoJarras_(ensayo);
             const opciones = construirOpcionesJarraModal(ensayo, jarraActual);
             const opcionesHtml = opciones.map((n) => `<option value="${n}">n° ${n}</option>`).join('');
-            if (esModoRegistroAcopio_()) {
-                select.innerHTML = `<option value=""> - </option>${opcionesHtml}`;
-            } else {
-                select.innerHTML = opcionesHtml;
-            }
-            if (esModoRegistroAcopio_() && jarraVaciaItem_(jarraActual)) {
+            // " - " solo cuando no hay ninguna fila de tiempo de llenado de jarras.
+            const dashOpt = sinFilasLlenado ? '<option value=""> - </option>' : '';
+            select.innerHTML = `${dashOpt}${opcionesHtml}`;
+            if (sinFilasLlenado) {
                 select.value = '';
+            } else if (jarraVaciaItem_(jarraActual)) {
+                select.value = String(opciones[0] ?? '1');
             } else {
-            const preferida = Number(jarraActual);
-            const valor = Number.isFinite(preferida) && preferida >= 1 ? preferida : opciones[0];
-            select.value = String(valor);
+                const preferida = Number(jarraActual);
+                const valor = Number.isFinite(preferida) && preferida >= 1 ? preferida : opciones[0];
+                select.value = String(valor);
             }
         }
 
@@ -8617,15 +8719,14 @@ const META_SAVE_IDS = [
                 const p4Val = Number(elInputPesoModalCampo_('p4')?.value || 0);
                 const despachoVal = Number(elInputPesoModalCampo_('despacho')?.value || 0);
                 const jarraSel = leerJarraSelectModal_();
-                if (!esModoRegistroAcopio_()) {
-                    if (jarraSel === null) {
-                mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido para continuar.');
-                return;
-            }
-                } else if (jarraSel === null) {
-                    mostrarAlertaRegla('Falta jarra', 'Selecciona un N° de jarra válido o " - " si no aplica.');
+                if (jarraSel === null) {
+                    mostrarAlertaRegla(
+                        'Falta jarra',
+                        'Selecciona un N° de jarra válido o " - " si no aplica.'
+                    );
                     return;
-                } else if (jarraSel === '' && itemTienePesos123Acopio_(
+                }
+                if (jarraSel === '' && esModoRegistroAcopio_() && itemTienePesos123Acopio_(
                     { p1: p1Val, p2: p2Val, acopio: acopioVal },
                     nroModal
                 )) {
@@ -8642,33 +8743,37 @@ const META_SAVE_IDS = [
                         p2Val = 0;
                         acopioVal = 0;
                     }
-                    if (!(Number.isFinite(p4Val) && p4Val > 0)) {
-                        mostrarAlertaRegla('Falta Peso 4', 'Registra Peso 4 · Clamshell calibrado (obligatorio en Acopio).');
-                        return;
-                    }
-                    if (!(Number.isFinite(despachoVal) && despachoVal > 0)) {
-                        mostrarAlertaRegla('Falta Peso 5', 'Registra Peso 5 · Despacho campo (obligatorio en Acopio).');
+                    // Guardar parcial: basta un peso. P4/P5 se exigen solo al enviar.
+                    const hayAlgunoAcopio = !pesoVacio(p1Val) || !pesoVacio(p2Val)
+                        || !pesoVacio(acopioVal) || !pesoVacio(p4Val) || !pesoVacio(despachoVal);
+                    if (!hayAlgunoAcopio) {
+                        mostrarAlertaRegla('Falta peso', 'Registra al menos un peso para guardar.');
                         return;
                     }
                     const erroresPesos = erroresPesosAcopioModal_(
                         p1Val, p2Val, acopioVal, p4Val, despachoVal, nroModal
                     );
                     if (erroresPesos.length) {
-                        mostrarAlertaRegla('Pesos incompletos', erroresPesos[0]);
+                        mostrarAlertaRegla('Pesos inválidos', erroresPesos[0]);
                         return;
                     }
                     if (esAutoP1 && !pesoVacio(p2Val)) p1Val = p2Val;
                     else if (pesoVacio(p1Val)) p1Val = 0;
                 } else if (esAutoP1) {
-                    if (!(Number.isFinite(p2Val) && p2Val > 0)) {
-                        mostrarAlertaRegla('Falta Peso 2', 'Debes registrar Peso 2 para guardar.');
+                    const hayAlguno = !pesoVacio(p2Val) || !pesoVacio(acopioVal) || !pesoVacio(despachoVal);
+                    if (!hayAlguno) {
+                        mostrarAlertaRegla('Falta peso', 'Registra al menos un peso para guardar.');
                         return;
                     }
-                    p1Val = p2Val;
-                } else if (!(Number.isFinite(p1Val) && p1Val > 0)) {
-                mostrarAlertaRegla('Falta Peso 1', 'Debes registrar al menos Peso 1 para guardar.');
-                return;
-            }
+                    p1Val = !pesoVacio(p2Val) ? p2Val : 0;
+                } else {
+                    const hayAlguno = !pesoVacio(p1Val) || !pesoVacio(p2Val)
+                        || !pesoVacio(acopioVal) || !pesoVacio(despachoVal);
+                    if (!hayAlguno) {
+                        mostrarAlertaRegla('Falta peso', 'Registra al menos un peso para guardar.');
+                        return;
+                    }
+                }
                 if (!esModoRegistroAcopio_()) {
                     const erroresPesosVisual = erroresPesosVisualModal_(
                         p1Val, p2Val, acopioVal, despachoVal, nroModal
@@ -8787,9 +8892,12 @@ const META_SAVE_IDS = [
             const obsInp = document.getElementById('visual-observation');
             if (obsInp && obsInp.dataset.draftPersistBound !== '1') {
                 obsInp.dataset.draftPersistBound = '1';
+                obsInp.setAttribute('maxlength', String(OBSERVACION_CLAMSHELL_MAX_CHARS));
                 const persistObs = () => {
+                    const limpio = limitarObservacionClamshell_(obsInp.value);
+                    if (obsInp.value !== limpio) obsInp.value = limpio;
                     const item = data.find((entry) => entry.id === observationModalState.itemId);
-                    if (item) item.observacion = obsInp.value;
+                    if (item) item.observacion = limpio;
                     programarGuardadoDraftCompleto();
                 };
                 obsInp.addEventListener('input', persistObs);
@@ -8810,7 +8918,9 @@ const META_SAVE_IDS = [
                 cerrarModalObservacion();
                 return;
             }
-            item.observacion = document.getElementById('visual-observation').value.trim();
+            item.observacion = limitarObservacionClamshell_(
+                document.getElementById('visual-observation')?.value
+            );
             cerrarModalObservacion();
             renderizarTarjetas();
             programarGuardadoDraftCompleto();
@@ -8925,7 +9035,8 @@ const META_SAVE_IDS = [
             return {
                 ensayo: clave,
                 muestraLabel: mostrarMuestra(clave),
-                numMuestra: valorCampoMetaEnsayo_(clave, 'visual-num-muestra'),
+                numMuestra: valorCampoMetaEnsayo_(clave, 'visual-num-muestra')
+                    || String(calcularNumMuestraDesdeServidorParaEnsayo(clave) || '').trim(),
                 trazabilidad: trazabilidadTextoMostrar(metaSnap),
                 trazabilidadArchivo: trazabilidadBaseDesdeMeta(metaSnap),
                 responsable: valorCampoMetaEnsayo_(clave, 'visual-responsable'),
@@ -9394,10 +9505,10 @@ const META_SAVE_IDS = [
                         <summary>Presión de vapor ambiente (Kpa)</summary>
                         <div class="pressure-accordion-body">
                             <div class="metric-grid-4">
-                                <div class="form-group"><label>Inicio</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambienteinicio-1" data-metric="presionAmbienteInicio" value="${metric.temperatura.presionAmbienteInicio || ''}" disabled title="Dato calculado automáticamente"></div>
-                                <div class="form-group"><label>Término</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambientetermino-2" data-metric="presionAmbienteTermino" value="${metric.temperatura.presionAmbienteTermino || ''}" disabled title="Dato calculado automáticamente"></div>
-                                <div class="form-group"><label>Llegada</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambientellegada-3" data-metric="presionAmbienteLlegada" value="${metric.temperatura.presionAmbienteLlegada || ''}" disabled title="Dato calculado automáticamente"></div>
-                                <div class="form-group"><label>Despacho</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambientedespacho-4" data-metric="presionAmbienteDespacho" value="${metric.temperatura.presionAmbienteDespacho || ''}" disabled title="Dato calculado automáticamente"></div>
+                                <div class="form-group"><label>Inicio</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambienteinicio-1" data-metric="presionAmbienteInicio" value="${metric.temperatura.presionAmbienteInicio || ''}" disabled readonly tabindex="-1"></div>
+                                <div class="form-group"><label>Término</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambientetermino-2" data-metric="presionAmbienteTermino" value="${metric.temperatura.presionAmbienteTermino || ''}" disabled readonly tabindex="-1"></div>
+                                <div class="form-group"><label>Llegada</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambientellegada-3" data-metric="presionAmbienteLlegada" value="${metric.temperatura.presionAmbienteLlegada || ''}" disabled readonly tabindex="-1"></div>
+                                <div class="form-group"><label>Despacho</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambientedespacho-4" data-metric="presionAmbienteDespacho" value="${metric.temperatura.presionAmbienteDespacho || ''}" disabled readonly tabindex="-1"></div>
                             </div>
                         </div>
                     </details>
@@ -9405,10 +9516,10 @@ const META_SAVE_IDS = [
                         <summary>Presión de vapor fruta (Kpa)</summary>
                         <div class="pressure-accordion-body">
                             <div class="metric-grid-4">
-                                <div class="form-group"><label>Inicio</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutainicio-1" data-metric="presionFrutaInicio" value="${metric.temperatura.presionFrutaInicio || ''}" disabled title="Dato calculado automáticamente"></div>
-                                <div class="form-group"><label>Término</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutatermino-2" data-metric="presionFrutaTermino" value="${metric.temperatura.presionFrutaTermino || ''}" disabled title="Dato calculado automáticamente"></div>
-                                <div class="form-group"><label>Llegada</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutallegada-3" data-metric="presionFrutaLlegada" value="${metric.temperatura.presionFrutaLlegada || ''}" disabled title="Dato calculado automáticamente"></div>
-                                <div class="form-group"><label>Despacho</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutadespacho-4" data-metric="presionFrutaDespacho" value="${metric.temperatura.presionFrutaDespacho || ''}" disabled title="Dato calculado automáticamente"></div>
+                                <div class="form-group"><label>Inicio</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutainicio-1" data-metric="presionFrutaInicio" value="${metric.temperatura.presionFrutaInicio || ''}" disabled readonly tabindex="-1"></div>
+                                <div class="form-group"><label>Término</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutatermino-2" data-metric="presionFrutaTermino" value="${metric.temperatura.presionFrutaTermino || ''}" disabled readonly tabindex="-1"></div>
+                                <div class="form-group"><label>Llegada</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutallegada-3" data-metric="presionFrutaLlegada" value="${metric.temperatura.presionFrutaLlegada || ''}" disabled readonly tabindex="-1"></div>
+                                <div class="form-group"><label>Despacho</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutadespacho-4" data-metric="presionFrutaDespacho" value="${metric.temperatura.presionFrutaDespacho || ''}" disabled readonly tabindex="-1"></div>
                             </div>
                         </div>
                     </details>
@@ -9427,20 +9538,20 @@ const META_SAVE_IDS = [
                 title.textContent = 'Presión de vapor ambiente (Kpa) · Clamshell #' + nroClamshell;
                 body.innerHTML = `
                     <div class="metric-grid-4">
-                        <div class="form-group"><label>Inicio</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambienteinicio-1" data-metric="presionAmbienteInicio" value="${metric.temperatura.presionAmbienteInicio || ''}" disabled title="Dato calculado automáticamente"></div>
-                        <div class="form-group"><label>Término</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambientetermino-2" data-metric="presionAmbienteTermino" value="${metric.temperatura.presionAmbienteTermino || ''}" disabled title="Dato calculado automáticamente"></div>
-                        <div class="form-group"><label>Llegada</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambientellegada-3" data-metric="presionAmbienteLlegada" value="${metric.temperatura.presionAmbienteLlegada || ''}" disabled title="Dato calculado automáticamente"></div>
-                        <div class="form-group"><label>Despacho</label><input type="number" step="0.1" id="visual-presionambiente-1-presionambientedespacho-4" data-metric="presionAmbienteDespacho" value="${metric.temperatura.presionAmbienteDespacho || ''}" disabled title="Dato calculado automáticamente"></div>
+                        <div class="form-group"><label>Inicio</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambienteinicio-1" data-metric="presionAmbienteInicio" value="${metric.temperatura.presionAmbienteInicio || ''}" disabled readonly tabindex="-1"></div>
+                        <div class="form-group"><label>Término</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambientetermino-2" data-metric="presionAmbienteTermino" value="${metric.temperatura.presionAmbienteTermino || ''}" disabled readonly tabindex="-1"></div>
+                        <div class="form-group"><label>Llegada</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambientellegada-3" data-metric="presionAmbienteLlegada" value="${metric.temperatura.presionAmbienteLlegada || ''}" disabled readonly tabindex="-1"></div>
+                        <div class="form-group"><label>Despacho</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionambiente-1-presionambientedespacho-4" data-metric="presionAmbienteDespacho" value="${metric.temperatura.presionAmbienteDespacho || ''}" disabled readonly tabindex="-1"></div>
                     </div>
                 `;
             } else if (kind === 'presionFruta') {
                 title.textContent = 'Presión de vapor fruta (Kpa) · Clamshell #' + nroClamshell;
                 body.innerHTML = `
                     <div class="metric-grid-4">
-                        <div class="form-group"><label>Inicio</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutainicio-1" data-metric="presionFrutaInicio" value="${metric.temperatura.presionFrutaInicio || ''}" disabled title="Dato calculado automáticamente"></div>
-                        <div class="form-group"><label>Término</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutatermino-2" data-metric="presionFrutaTermino" value="${metric.temperatura.presionFrutaTermino || ''}" disabled title="Dato calculado automáticamente"></div>
-                        <div class="form-group"><label>Llegada</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutallegada-3" data-metric="presionFrutaLlegada" value="${metric.temperatura.presionFrutaLlegada || ''}" disabled title="Dato calculado automáticamente"></div>
-                        <div class="form-group"><label>Despacho</label><input type="number" step="0.1" id="visual-presionfruta-1-presionfrutadespacho-4" data-metric="presionFrutaDespacho" value="${metric.temperatura.presionFrutaDespacho || ''}" disabled title="Dato calculado automáticamente"></div>
+                        <div class="form-group"><label>Inicio</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutainicio-1" data-metric="presionFrutaInicio" value="${metric.temperatura.presionFrutaInicio || ''}" disabled readonly tabindex="-1"></div>
+                        <div class="form-group"><label>Término</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutatermino-2" data-metric="presionFrutaTermino" value="${metric.temperatura.presionFrutaTermino || ''}" disabled readonly tabindex="-1"></div>
+                        <div class="form-group"><label>Llegada</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutallegada-3" data-metric="presionFrutaLlegada" value="${metric.temperatura.presionFrutaLlegada || ''}" disabled readonly tabindex="-1"></div>
+                        <div class="form-group"><label>Despacho</label><input type="text" inputmode="none" class="presion-readonly-inp" id="visual-presionfruta-1-presionfrutadespacho-4" data-metric="presionFrutaDespacho" value="${metric.temperatura.presionFrutaDespacho || ''}" disabled readonly tabindex="-1"></div>
                     </div>
                 `;
             }
@@ -9809,6 +9920,10 @@ const META_SAVE_IDS = [
             persistirSoloLocalCampo_();
             void flushDraftCampoAIdb_();
         });
+        window.addEventListener('freeze', () => {
+            persistirSoloLocalCampo_();
+            void flushDraftCampoAIdb_();
+        });
         window.addEventListener('storage', (e) => {
             if (!e) return;
             if (e.key === SYNC_QUEUE_KEY || e.key === SYNC_HISTORY_KEY) actualizarBarraHeaderEstado();
@@ -9908,13 +10023,11 @@ const META_SAVE_IDS = [
                 && pesoVacio(item.acopio);
         }
 
-        /** Acopio PDF: sin jarra o sin Pesos 1–3 no se imprime N° jarra. */
+        /** PDF: " - " / sin jarra → vacío; Acopio además oculta jarra si no hay Pesos 1–3. */
         function jarraNumeroPdfDesdeItem_(item, nClam) {
             if (!item) return '';
-            if (esModoRegistroAcopio_()) {
-                if (jarraVaciaItem_(item.jarra)) return '';
-                if (acopioSinPesos123EnItem_(item, nClam)) return '';
-            }
+            if (jarraVaciaItem_(item.jarra)) return '';
+            if (esModoRegistroAcopio_() && acopioSinPesos123EnItem_(item, nClam)) return '';
             return strOrEmpty(item.jarra);
         }
 
@@ -9947,8 +10060,8 @@ const META_SAVE_IDS = [
                 p3: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.acopio) : '',
                 p4: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.p4) : '',
                 p5: esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.despacho) : '',
-                llegada: !esModoRegistroAcopio_() && item ? strOrEmpty(item.acopio) : '',
-                despacho: !esModoRegistroAcopio_() && item ? strOrEmpty(item.despacho) : '',
+                llegada: !esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.acopio) : '',
+                despacho: !esModoRegistroAcopio_() && item ? pesoStrOrEmpty(item.despacho) : '',
                 tInicioCosecha: strOrEmpty(t.inicioCosecha),
                 tPerdida: esModoRegistroAcopio_() ? '' : strOrEmpty(t.inicioPerdida),
                 tTermino: strOrEmpty(t.terminoCosecha),
@@ -9957,7 +10070,7 @@ const META_SAVE_IDS = [
                 tTerminoCalibrado: esModoRegistroAcopio_() ? strOrEmpty(t.terminoCalibrado) : '',
                 tDespacho: strOrEmpty(t.despachoAcopio),
                 ...temps,
-                observacion: item ? strOrEmpty(item.observacion) : ''
+                observacion: item ? limitarObservacionClamshell_(item.observacion) : ''
             };
         }
 
@@ -10006,10 +10119,22 @@ const META_SAVE_IDS = [
             return strOrEmpty(presion);
         }
 
+        function limitarObservacionClamshell_(v) {
+            return String(v ?? '').trim().slice(0, OBSERVACION_CLAMSHELL_MAX_CHARS);
+        }
+
+        function textoObservacionesPiePdfDesdeItems_(items) {
+            return (items || []).map((it, idx) => {
+                const o = limitarObservacionClamshell_(it?.observacion);
+                if (!o) return '';
+                return `C${idx + 1}: ${o}`;
+            }).filter(Boolean).join(' · ');
+        }
+
         function construirPagina2PdfCampo_(ml, items) {
             const tempL = ml?.temperatura || {};
             const humL = ml?.humedad || {};
-            const obsPartes = (items || []).map((it) => strOrEmpty(it.observacion)).filter(Boolean);
+            const obsLista = (items || []).map((it) => limitarObservacionClamshell_(it.observacion));
             return {
                 humedad: [
                     strOrEmpty(humL.inicio),
@@ -10035,8 +10160,8 @@ const META_SAVE_IDS = [
                     presionFrutaPdfCampo_(tempL.llegadaPulpa, tempL.presionFrutaLlegada),
                     presionFrutaPdfCampo_(tempL.despachoPulpa, tempL.presionFrutaDespacho)
                 ],
-                observaciones: obsPartes.join(' · '),
-                observacionesLista: (items || []).map((it) => strOrEmpty(it.observacion))
+                observaciones: textoObservacionesPiePdfDesdeItems_(items),
+                observacionesLista: obsLista
             };
         }
 
@@ -10098,11 +10223,19 @@ const META_SAVE_IDS = [
                     variedad: strOrEmpty(meta['visual-meta-variedad'] || meta['meta-variedad']),
                     precosecha: strOrEmpty(meta['visual-guia-precosecha']),
                     horaInicio: strOrEmpty(meta['visual-hora']),
-                    numMuestra: strOrEmpty(leerNumMuestraDesdePantalla(clave))
+                    numMuestra: strOrEmpty(
+                        leerNumMuestraDesdePantalla(clave)
+                        || calcularNumMuestraDesdeServidorParaEnsayo(clave)
+                    )
                 },
                 filas,
                 pagina2: construirPagina2PdfCampo_(ml, items),
-                observacionesFormato: strOrEmpty(meta['visual-observacion-formato']),
+                // Pie OBSERVACIONES: por clamshell (no solo observación formato global).
+                observacionesFormato: textoObservacionesPiePdfDesdeItems_(items)
+                    || limitarObservacionClamshell_(
+                        meta['visual-observacion-formato']
+                        || document.getElementById('visual-observacion-formato')?.value
+                    ),
                 horaPesado: ''
             };
         }

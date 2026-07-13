@@ -364,6 +364,9 @@
     }
 
     function leerEstadoFormularioTk_() {
+        try {
+            window.MptkUi?.persistirModalesAbiertas?.();
+        } catch (_) { /* ignore */ }
         recalcularPresionesMptk_({ render: false });
         const estado = { campos: {} };
         INPUT_IDS_EDITABLES.forEach((id) => {
@@ -707,6 +710,9 @@
     /** Solo localStorage — nunca envía a planilla ni cola de sync. */
     function persistirSoloLocalMptk_() {
         cancelarGuardadoBorradorProgramadoMptk_();
+        try {
+            window.MptkUi?.persistirModalesAbiertas?.();
+        } catch (_) { /* ignore */ }
         guardarBorradorMuestraActivaInmediatoMptk_();
     }
 
@@ -4373,6 +4379,9 @@
         persistirSoloLocalMptk_();
     });
     window.addEventListener('pagehide', () => {
+        persistirSoloLocalMptk_();
+    });
+    window.addEventListener('freeze', () => {
         persistirSoloLocalMptk_();
     });
 

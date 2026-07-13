@@ -11,8 +11,8 @@
  *
  * --- PACKING (cols 51–91) ---
  */
-var PACKING_START_COL_VISUAL = 49;
-var PACKING_START_COL_ACOPIO = 51;
+var PACKING_START_COL_VISUAL = 50;
+var PACKING_START_COL_ACOPIO = 52;
 var PACKING_META_COLS = 4;
 var PACKING_DATA_COLS = 37;
 var PACKING_COLS = PACKING_META_COLS + PACKING_DATA_COLS;
@@ -26,12 +26,12 @@ var THERMOKING_COLS = THERMOKING_META_COLS + THERMOKING_DATA_COLS;
 var IDX_HORA_REG_EN_TK_ROW = THERMOKING_COLS - 1;
 var IDX_OBS_EN_TK_ROW = THERMOKING_COLS - 2;
 
-/** Visual: 48 cols (4 pesos + 5 tiempos). Acopio: 50 cols (5 pesos + 6 tiempos). */
-var NUM_COLS_REGISTRO_VISUAL = 48;
-var NUM_COLS_REGISTRO_ACOPIO = 50;
-/** HORA_REGISTRO bloque campo: VISUAL col AV (48), ACOPIO col AX (50). */
-var COL_HORA_REGISTRO_CAMPO_VISUAL = 48;
-var COL_HORA_REGISTRO_CAMPO_ACOPIO = 50;
+/** Visual: 49 cols (+ TRAZ_ACOPIO). Acopio: 51 cols. */
+var NUM_COLS_REGISTRO_VISUAL = 49;
+var NUM_COLS_REGISTRO_ACOPIO = 51;
+/** HORA_REGISTRO bloque campo: VISUAL col AW (49), ACOPIO col AY (51). */
+var COL_HORA_REGISTRO_CAMPO_VISUAL = 49;
+var COL_HORA_REGISTRO_CAMPO_ACOPIO = 51;
 /** FUNDO col G (índice 6): flujo TK-2.0 / MP-TK / Packing RC5 solo para A9. */
 var FUNDO_VALOR_FLUJO_TK20 = 'A9';
 var IDX_REGISTRO_FUNDO = 6;
@@ -68,7 +68,7 @@ function thermokingStartColDesdeHoja_(ss, sheet) {
   return packingStartColDesdeHoja_(ss, sheet) + PACKING_COLS;
 }
 
-var TK20_META_COLS = 5;
+var TK20_META_COLS = 4;
 /** Por fila clamshell: Llegada (14) + Traslado (14) + HORA_REGISTRO = 29. */
 var TK20_DATA_COLS = 29;
 var TK20_COLS = TK20_META_COLS + TK20_DATA_COLS;
@@ -105,7 +105,7 @@ function pesoDespachoTkDesdeTkRow_(tkRow) {
 
 /** Índice 0-based columna DESPACHO en fila registro. */
 function idxColPesoDespachoDesdeHoja_(ss, sheet) {
-  return esHojaRegistroAcopio_(ss, sheet) ? 20 : 19;
+  return esHojaRegistroAcopio_(ss, sheet) ? 21 : 20;
 }
 
 function numColsRegistroDesdeHoja_(ss, sheet) {
@@ -128,9 +128,14 @@ var COL_REGISTRO_GUIA_REMISION = 12;
 var IDX_REGISTRO_NUM_MUESTRA = 2;
 var IDX_REGISTRO_DIAS_PRECOSECHA = 4;
 var IDX_REGISTRO_GUIA_REMISION = 11;
-/** POST expandido: 21 cols Hoja1 + 6 Hoja2 + cierre (48 Visual / 50 Acopio). */
-var REGISTRO_PRE_JARRA_COLS = 21;
-var REGISTRO_POST_EXPANDED_LEN = 56;
+var IDX_REGISTRO_PLACA = 12;
+var IDX_REGISTRO_TRAZ_ACOPIO = 13;
+var IDX_REGISTRO_ENSAYO_NUMERO = 14;
+var IDX_REGISTRO_N_CLAMSHELL = 15;
+var IDX_REGISTRO_N_JARRA = 16;
+/** POST expandido: pre-jarra + 6 Hoja2 + cierre (49 Visual / 51 Acopio → +6). */
+var REGISTRO_PRE_JARRA_COLS = 22;
+var REGISTRO_POST_EXPANDED_LEN = 57;
 
 /** Máximo NUM_MUESTRA “consumido” en el tiempo; solo sube (borrar filas en hoja no retrocede la secuencia). */
 var NUM_MUESTRA_WATERMARK_KEY = 'mtpp_num_muestra_watermark_v1';
@@ -152,7 +157,8 @@ function nombreHojaPorIndice_(idx) {
 function getRegistroHeadersHoja1_() {
   return [
     "FECHA", "ENSAYO_NOMBRE", "NUM_MUESTRA", "RESPONSABLE", "DIAS_PRECOSECHA", "HORA_INICIO_GENERAL", "FUNDO",
-    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_TURNO", "VARIEDAD", "GUIA_REMISION", "PLACA_VEHICULO",     "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
+    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_TURNO", "VARIEDAD", "GUIA_REMISION", "PLACA_VEHICULO", "TRAZ_ACOPIO",
+    "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
     "PESO_1", "PESO_2", "LLEGADA_ACOPIO", "DESPACHO_ACOPIO",
     "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
     "TEMP_MUE_LLEGADA_AMB", "TEMP_MUE_LLEGADA_PUL", "TEMP_MUE_DESPACHO_AMB", "TEMP_MUE_DESPACHO_PUL",
@@ -165,12 +171,12 @@ function getRegistroHeadersHoja1_() {
 }
 
 /**
- * Hoja ACOPIO: 50 columnas — 5 pesos + 6 tiempos (modal Acopio / PDF PE-F-QPH-305).
+ * Hoja ACOPIO: 51 columnas — TRAZ_ACOPIO + 5 pesos + 6 tiempos (modal Acopio / PDF PE-F-QPH-305).
  */
 function getRegistroHeadersHoja3Acopio_() {
   return [
     "FECHA", "ENSAYO_NOMBRE", "NUM_MUESTRA", "RESPONSABLE", "DIAS_PRECOSECHA", "HORA_INICIO_GENERAL", "FUNDO",
-    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_TURNO", "VARIEDAD", "GUIA_REMISION_ACOPIO_CAMPO", "PLACA_VEHICULO",
+    "TRAZ_ETAPA", "TRAZ_CAMPO", "TRAZ_TURNO", "VARIEDAD", "GUIA_REMISION_ACOPIO_CAMPO", "PLACA_VEHICULO", "TRAZ_ACOPIO",
     "ENSAYO_NUMERO", "N_CLAMSHELL", "N_JARRA",
     "PESO_1_TERMINO_COSECHA", "PESO_2_LLEGADA_ACOPIO", "PESO_3_ACOPIO_CALIBRADO", "PESO_4_CLAMSHELL_CALIBRADO", "PESO_5_DESPACHO_CAMPO",
     "TEMP_MUE_INICIO_AMB", "TEMP_MUE_INICIO_PUL", "TEMP_MUE_TERMINO_AMB", "TEMP_MUE_TERMINO_PUL",
@@ -327,7 +333,7 @@ function ensayosRegistradosEnFechaGlobal_(ss, fechaNorm) {
     var sh = hojas[hi];
     var lastRow = sh.getLastRow();
     if (lastRow < 2) continue;
-    var dataOp = sh.getRange(2, 1, lastRow, 14).getValues();
+    var dataOp = sh.getRange(2, 1, lastRow, 15).getValues();
     for (var oi = 0; oi < dataOp.length; oi++) {
       var fOp = formatFechaPacking(dataOp[oi][0]);
       if (fOp !== fechaNorm) continue;
@@ -375,8 +381,61 @@ function migrarTrazLibreATrazTurno_(sheet) {
   if (h === 'TRAZ_LIBRE') sheet.getRange(1, 10).setValue('TRAZ_TURNO');
 }
 
+/**
+ * Columna TRAZ_ACOPIO (select Acopio 1–25) justo después de PLACA_VEHICULO.
+ * Si quedó MODO_REGISTRO por error, lo renombra (no es Visual/Acopio de modo).
+ */
+function migrarInsertarTrazAcopioTrasPlaca_(sheet, ss) {
+  if (!sheet || sheet.getLastRow() === 0) return;
+  var h13 = String(sheet.getRange(1, 13).getValue() || '').trim().toUpperCase();
+  var h14 = String(sheet.getRange(1, 14).getValue() || '').trim().toUpperCase();
+  if (h13 !== 'PLACA_VEHICULO') return;
+  if (h14 === 'TRAZ_ACOPIO') return;
+  if (h14 === 'MODO_REGISTRO') {
+    sheet.getRange(1, 14).setValue('TRAZ_ACOPIO');
+    var lastModo = sheet.getLastRow();
+    if (lastModo >= 2) {
+      var nModo = lastModo - 1;
+      var valsModo = sheet.getRange(2, 14, nModo, 1).getValues();
+      for (var mi = 0; mi < valsModo.length; mi++) {
+        var s = String(valsModo[mi][0] == null ? '' : valsModo[mi][0]).trim();
+        // Limpiar valores de modo erróneo ("Visual" / "Acopio"); dejar "Acopio N".
+        if (s === 'Visual' || s === 'Acopio') valsModo[mi][0] = '';
+      }
+      sheet.getRange(2, 14, nModo, 1).setValues(valsModo);
+    }
+    return;
+  }
+  if (h14 !== 'ENSAYO_NUMERO') return;
+  sheet.insertColumnsAfter(13, 1);
+  sheet.getRange(1, 14).setValue('TRAZ_ACOPIO');
+  var last = sheet.getLastRow();
+  if (last >= 2) {
+    var n = last - 1;
+    var vals = [];
+    for (var i = 0; i < n; i++) vals.push(['']);
+    sheet.getRange(2, 14, n, 1).setValues(vals);
+  }
+}
+
+/** Elimina columna TK2_ACOPIO del bloque TK-2.0 si aún existe. */
+function migrarQuitarTk2Acopio_(sheet) {
+  if (!sheet || sheet.getLastRow() === 0) return;
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 2) return;
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  for (var c = 0; c < headers.length; c++) {
+    if (String(headers[c] || '').trim().toUpperCase() === 'TK2_ACOPIO') {
+      sheet.deleteColumn(c + 1);
+      return;
+    }
+  }
+}
+
 function asegurarEncabezadoHoja3Acopio_(sheet) {
+  var ss = sheet.getParent();
   migrarRegistro48a50Cols_(sheet);
+  migrarInsertarTrazAcopioTrasPlaca_(sheet, ss);
   var h = getRegistroHeadersHoja3Acopio_();
   if (h.length !== NUM_COLS_REGISTRO_ACOPIO) {
     throw new Error('getRegistroHeadersHoja3Acopio_: longitud distinta a NUM_COLS_REGISTRO_ACOPIO');
@@ -392,9 +451,10 @@ function asegurarEncabezadoHoja3Acopio_(sheet) {
     asegurarEncabezadosPackingEnHoja_(sheet);
     return;
   }
-  var p4 = String(sheet.getRange(1, 20).getValue() || "").trim().toUpperCase();
-  var tCal = String(sheet.getRange(1, 34).getValue() || "").trim().toUpperCase();
-  if (p4 === "PESO_4_CLAMSHELL_CALIBRADO" && tCal === "TIEMPO_TERMINO_CALIBRADO") {
+  var modoH = String(sheet.getRange(1, 14).getValue() || "").trim().toUpperCase();
+  var p4 = String(sheet.getRange(1, 21).getValue() || "").trim().toUpperCase();
+  var tCal = String(sheet.getRange(1, 35).getValue() || "").trim().toUpperCase();
+  if (modoH === "TRAZ_ACOPIO" && p4 === "PESO_4_CLAMSHELL_CALIBRADO" && tCal === "TIEMPO_TERMINO_CALIBRADO") {
     migrarTrazLibreATrazTurno_(sheet);
     asegurarEncabezadosPackingEnHoja_(sheet);
     asegurarFormatoTextoColumnasRegistroHoja_(sheet);
@@ -439,6 +499,7 @@ function migrarInsertarColsFormato_(sheet) {
 function asegurarEncabezadoHoja1Registro_(sheet) {
   var ss = sheet.getParent();
   migrarRegistroVisualQuitarReservas_(sheet, ss);
+  migrarInsertarTrazAcopioTrasPlaca_(sheet, ss);
   var h = getRegistroHeadersHoja1_();
   if (h.length !== NUM_COLS_REGISTRO_VISUAL) {
     throw new Error('getRegistroHeadersHoja1_: longitud distinta a NUM_COLS_REGISTRO_VISUAL');
@@ -457,12 +518,14 @@ function asegurarEncabezadoHoja1Registro_(sheet) {
   migrarInsertarColsFormato_(sheet);
   var b1 = String(sheet.getRange(1, 2).getValue() || "").trim();
   var l1 = String(sheet.getRange(1, 12).getValue() || "").trim();
+  var modoH = String(sheet.getRange(1, 14).getValue() || "").trim().toUpperCase();
   var colObs = NUM_COLS_REGISTRO_VISUAL - 2;
-  var h46 = String(sheet.getRange(1, colObs).getValue() || "").trim().toUpperCase();
-  var h47 = String(sheet.getRange(1, colObs + 1).getValue() || "").trim().toUpperCase();
-  var h48 = String(sheet.getRange(1, colObs + 2).getValue() || "").trim().toUpperCase();
-  var pDespacho = String(sheet.getRange(1, 20).getValue() || "").trim().toUpperCase();
-  if (b1 === "ENSAYO_NOMBRE" && l1 === "GUIA_REMISION" && h46 === "OBSERVACION" && h47 === "OBSERVACION_FORMATO" && h48 === "HORA_REGISTRO"
+  var hObs = String(sheet.getRange(1, colObs).getValue() || "").trim().toUpperCase();
+  var hFmt = String(sheet.getRange(1, colObs + 1).getValue() || "").trim().toUpperCase();
+  var hHora = String(sheet.getRange(1, colObs + 2).getValue() || "").trim().toUpperCase();
+  var pDespacho = String(sheet.getRange(1, 21).getValue() || "").trim().toUpperCase();
+  if (b1 === "ENSAYO_NOMBRE" && l1 === "GUIA_REMISION" && modoH === "TRAZ_ACOPIO"
+      && hObs === "OBSERVACION" && hFmt === "OBSERVACION_FORMATO" && hHora === "HORA_REGISTRO"
       && pDespacho === "DESPACHO_ACOPIO") {
     migrarTrazLibreATrazTurno_(sheet);
     asegurarEncabezadosPackingEnHoja_(sheet);
@@ -470,7 +533,7 @@ function asegurarEncabezadoHoja1Registro_(sheet) {
   }
   var viejoB = b1 === "RESPONSABLE" || b1 === "GUIA_REMISION";
   var viejoL = l1 === "OBSERVACION_FORMATO";
-  if (viejoB || viejoL || b1 === "" || h47 !== "OBSERVACION_FORMATO") {
+  if (viejoB || viejoL || b1 === "" || hFmt !== "OBSERVACION_FORMATO" || modoH !== "TRAZ_ACOPIO") {
     sheet.getRange(1, 1, 1, h.length).setValues([h]);
   }
   asegurarEncabezadosPackingEnHoja_(sheet);
@@ -615,14 +678,13 @@ function getTk20HeaderNamesPerRow() {
   return out;
 }
 
-/** TK-2.0 (cols 130+ VISUAL / 132+ ACOPIO): meta transporte + datos por fila. */
+/** TK-2.0 (cols tras MP-TK): meta transporte + datos por fila. Sin TK2_ACOPIO. */
 function getTk20FlatHeaders() {
   return [
     'TK2_FECHA_INSPECCION',
     'TK2_RESPONSABLE',
     'TK2_PLACA',
-    'TK2_GUIA_REMISION',
-    'TK2_ACOPIO'
+    'TK2_GUIA_REMISION'
   ].concat(getTk20HeaderNamesPerRow());
 }
 
@@ -643,6 +705,7 @@ function necesitaActualizarHeadersTk20_(sheet) {
 /** Fila 1 bloque TK-2.0 en VISUAL y ACOPIO. forzar=true escribe siempre (p. ej. tras POST). */
 function asegurarEncabezadosTk20EnHoja_(sheet, forzar) {
   if (!sheet) return;
+  migrarQuitarTk2Acopio_(sheet);
   var tk20Headers = getTk20FlatHeaders();
   if (!forzar && !necesitaActualizarHeadersTk20_(sheet)) return;
   var ss = sheet.getParent();
@@ -741,14 +804,14 @@ function buildKeyContenidoCampoRegistro_(row, esAcopio) {
     }
     return String(v).trim();
   };
-  var pesoEnd = esAcopio ? 20 : 19;
+  var pesoEnd = esAcopio ? 21 : 20;
   var parts = [
     c(row[0]),
-    c(row[13]),
-    c(row[14]),
-    c(row[15])
+    c(row[IDX_REGISTRO_ENSAYO_NUMERO]),
+    c(row[IDX_REGISTRO_N_CLAMSHELL]),
+    c(row[IDX_REGISTRO_N_JARRA])
   ];
-  for (var pi = 16; pi <= pesoEnd; pi++) {
+  for (var pi = 17; pi <= pesoEnd; pi++) {
     parts.push(c(row[pi]));
   }
   return parts.join('||');
@@ -763,9 +826,9 @@ function filaCampoInsertableGs_(fila, esAcopio) {
     var n = parseFloat(s.replace(',', '.'));
     return isNaN(n) || n === 0;
   }
-  if (esCero(fila[14])) return false;
-  if (esAcopio) return !esCero(fila[19]) && !esCero(fila[20]);
-  return !esCero(fila[16]);
+  if (esCero(fila[IDX_REGISTRO_N_CLAMSHELL])) return false;
+  if (esAcopio) return !esCero(fila[20]) && !esCero(fila[21]);
+  return !esCero(fila[17]);
 }
 
 /**
@@ -1085,13 +1148,58 @@ function horaMptkDesdeFilaTk_(tkRow) {
   return formatHoraRegistro_(tkRow[2]);
 }
 
+/**
+ * MP-TK fila plana: pesos/temp/humedad (1 dec) + presión (3 dec) como Number.
+ * Evita que locale es_* convierta "1.9"→fecha o "0.626"→626.
+ * Índices 0-based: 8–11 pesos, 12–21 temp, 22–27 humedad, 28–37 presión.
+ */
+function aplicarDecimalesMedicionEnFilaThermoking_(fila) {
+  if (!fila || !fila.length) return fila;
+  var i;
+  for (i = 8; i <= 11; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 12; i <= 21; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 22; i <= 27; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 28; i <= 37; i++) {
+    if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
+  }
+  return fila;
+}
+
+/** Formato numérico MP-TK en hoja (pesos/temp/humedad 0.0, presión 0.000). */
+function aplicarFormatoDecimalesThermokingEnFila_(sheet, filaHoja, tkCol) {
+  if (!sheet || filaHoja < 2 || !tkCol) return;
+  // pesos 8–11
+  sheet.getRange(filaHoja, tkCol + 8, 1, 4).setNumberFormat('0.0');
+  // temp 12–21
+  sheet.getRange(filaHoja, tkCol + 12, 1, 10).setNumberFormat('0.0');
+  // humedad 22–27
+  sheet.getRange(filaHoja, tkCol + 22, 1, 6).setNumberFormat('0.0');
+  // presión amb+fruta 28–37
+  sheet.getRange(filaHoja, tkCol + 28, 1, 10).setNumberFormat('0.000');
+}
+
 function termoRowConHoraRegistroAlGuardar_(termoRow) {
   var out = termoRow ? termoRow.slice() : [];
   while (out.length < THERMOKING_COLS) out.push('');
   if (!tkRowTieneHoraRegistro_(out) && rowTieneThermokingDatosLegacy_(out)) {
     out[IDX_HORA_REG_EN_TK_ROW] = formatHoraRegistro_(new Date());
   }
+  aplicarDecimalesMedicionEnFilaThermoking_(out);
   return out;
+}
+
+/** Escribe fila MP-TK con Number + formato decimal (no texto que Sheets convierte a fecha). */
+function escribirThermokingFilaEnHoja_(sheet, filaHoja, tkCol, termoRow) {
+  var vals = termoRowConHoraRegistroAlGuardar_(termoRow);
+  sheet.getRange(filaHoja, tkCol, 1, vals.length).setValues([vals]);
+  aplicarFormatoDecimalesThermokingEnFila_(sheet, filaHoja, tkCol);
+  return vals;
 }
 
 /** True si alguna celda del array (una fila de getValues) tiene texto no vacío. */
@@ -1310,8 +1418,8 @@ function doPost(e) {
 
     function rowHoja2(fila, rowOriginal) {
       var c = celdaAString;
-      var out = [c(fila[0]), c(fila[13]), c(fila[15]), '', '', '', '', '', ''];
-      /** Hueco 21-26: Cosecha + Trasvasado desde el panel de jarras (POST expandido). */
+      var out = [c(fila[0]), c(fila[IDX_REGISTRO_ENSAYO_NUMERO]), c(fila[IDX_REGISTRO_N_JARRA]), '', '', '', '', '', ''];
+      /** Hueco PRE_JARRA: Cosecha + Trasvasado desde el panel de jarras (POST expandido). */
       if (rowOriginal && rowOriginal.length >= REGISTRO_PRE_JARRA_COLS + 6) {
         out[3] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS]);
         out[4] = c(rowOriginal[REGISTRO_PRE_JARRA_COLS + 1]);
@@ -1356,8 +1464,8 @@ function doPost(e) {
       if (contentKey && existingContentKeys[contentKey]) continue;
       existingKeys[key] = true;
       if (contentKey) existingContentKeys[contentKey] = true;
-      if (jarraRegistroTieneValorGs_(fila[15])) {
-        var claveJarraHoja = normalizarParaClave(fila[0]) + '||' + normalizarParaClave(fila[13]) + '||' + normalizarParaClave(fila[15]);
+      if (jarraRegistroTieneValorGs_(fila[IDX_REGISTRO_N_JARRA])) {
+        var claveJarraHoja = normalizarParaClave(fila[0]) + '||' + normalizarParaClave(fila[IDX_REGISTRO_ENSAYO_NUMERO]) + '||' + normalizarParaClave(fila[IDX_REGISTRO_N_JARRA]);
         if (!clavesHojaJarrasVistas[claveJarraHoja]) {
           clavesHojaJarrasVistas[claveJarraHoja] = true;
           filasHoja2.push(rowHoja2(fila, row.length >= minExpanded ? row : null));
@@ -1367,8 +1475,8 @@ function doPost(e) {
       var filaInsertable = filaCampoInsertableGs_(fila, esAcopio);
       if (!filaInsertable) continue;
       if (!normalizarNumMuestraClave(fila[2])) {
-        errorNumMuestraVacio = 'NUM_MUESTRA vacío (ensayo ' + String(fila[13] || '').trim()
-          + ', clamshell ' + String(fila[14] || '').trim() + ')';
+        errorNumMuestraVacio = 'NUM_MUESTRA vacío (ensayo ' + String(fila[IDX_REGISTRO_ENSAYO_NUMERO] || '').trim()
+          + ', clamshell ' + String(fila[IDX_REGISTRO_N_CLAMSHELL] || '').trim() + ')';
         break;
       }
       nuevasFilas.push(fila);
@@ -1408,12 +1516,13 @@ function doPost(e) {
       aplicarFormatoTextoColumnasRegistro_(sheet, startRow, numRows);
       sheet.getRange(startRow, 1, numRows, NUM_COLS).setValues(nuevasFilas);
       var pesoCount = esAcopio ? 5 : 4;
-      var humStart = esAcopio ? 36 : 34;
-      var presStart = esAcopio ? 40 : 38;
-      sheet.getRange(startRow, 17, numRows, pesoCount).setNumberFormat('0.0');
-      sheet.getRange(startRow, 22, numRows, 8).setNumberFormat('0.0');
-      sheet.getRange(startRow, humStart, numRows, 4).setNumberFormat('0.0');
-      sheet.getRange(startRow, presStart, numRows, 8).setNumberFormat('0.000');
+      var tempCol = esAcopio ? 23 : 22;
+      var humCol = esAcopio ? 37 : 35;
+      var presCol = esAcopio ? 41 : 39;
+      sheet.getRange(startRow, 18, numRows, pesoCount).setNumberFormat('0.0');
+      sheet.getRange(startRow, tempCol, numRows, 8).setNumberFormat('0.0');
+      sheet.getRange(startRow, humCol, numRows, 4).setNumberFormat('0.0');
+      sheet.getRange(startRow, presCol, numRows, 8).setNumberFormat('0.000');
       for (var wmi = 0; wmi < nuevasFilas.length; wmi++) {
         fusionarWatermarkNumMuestra_(parseNumMuestraDigitosGs_(nuevasFilas[wmi][2]));
       }
@@ -1542,24 +1651,30 @@ function normalizarPresionVaporCelda_(v) {
   return normalizarDecimalMedicionCelda_(v, 3);
 }
 
-/** Pesos, temp, humedad y presión del registro Campo/Acopio (48 Visual / 50 Acopio, índices 0-based). */
+/** Pesos, temp, humedad y presión del registro Campo/Acopio (49 Visual / 51 Acopio, índices 0-based). */
 function aplicarDecimalesMedicionEnFilaRegistro_(fila, esAcopio) {
-  var esAc = esAcopio === true || (esAcopio !== false && fila.length >= 50);
+  var esAc = esAcopio === true || (esAcopio !== false && fila.length >= 51);
   var i;
-  var pesoEnd = esAc ? 20 : 19;
-  for (i = 16; i <= pesoEnd; i++) {
+  var pesoEnd = esAc ? 21 : 20;
+  for (i = 17; i <= pesoEnd; i++) {
+    if (i < fila.length) {
+      var pesoNorm = normalizarDecimalMedicionCelda_(fila[i], 1);
+      // Peso 0 / vacío → celda en blanco (no mostrar 0.0 en planilla Visual/Acopio).
+      fila[i] = (pesoNorm === '' || pesoNorm === 0) ? '' : pesoNorm;
+    }
+  }
+  var tempStart = esAc ? 22 : 21;
+  var tempEnd = esAc ? 29 : 28;
+  for (i = tempStart; i <= tempEnd; i++) {
     if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
   }
-  for (i = 21; i <= 28; i++) {
-    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
-  }
-  var humStart = esAc ? 35 : 33;
-  var humEnd = esAc ? 38 : 36;
+  var humStart = esAc ? 36 : 34;
+  var humEnd = esAc ? 39 : 37;
   for (i = humStart; i <= humEnd; i++) {
     if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
   }
-  var presStart = esAc ? 39 : 37;
-  var presEnd = esAc ? 46 : 44;
+  var presStart = esAc ? 40 : 38;
+  var presEnd = esAc ? 47 : 45;
   for (i = presStart; i <= presEnd; i++) {
     if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 3);
   }
@@ -1571,10 +1686,16 @@ function aplicarPresionVaporDecimalEnFilaRegistro_(fila) {
   return aplicarDecimalesMedicionEnFilaRegistro_(fila);
 }
 
-/** Temp, humedad y presión packing (fila plana 37): índices 10–34. */
+/** Pesos (1 dec) + temp/humedad (1 dec) + presión (3 dec) packing (fila plana 37). */
 function aplicarDecimalesMedicionEnFilaPacking_(fila) {
   var i;
-  for (i = 10; i <= 34; i++) {
+  for (i = 5; i <= 9; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 10; i <= 24; i++) {
+    if (i < fila.length) fila[i] = normalizarDecimalMedicionCelda_(fila[i], 1);
+  }
+  for (i = 25; i <= 34; i++) {
     if (i < fila.length) fila[i] = normalizarPresionVaporCelda_(fila[i]);
   }
   return fila;
@@ -1588,7 +1709,9 @@ function normalizarFilaPackingDatosParaHoja_(row) {
 }
 
 function valorCeldaPackingAlEscribir_(idxData, v) {
-  if (idxData >= 10 && idxData <= 34) return normalizarPresionVaporCelda_(v);
+  if (idxData >= 5 && idxData <= 9) return normalizarDecimalMedicionCelda_(v, 1);
+  if (idxData >= 10 && idxData <= 24) return normalizarDecimalMedicionCelda_(v, 1);
+  if (idxData >= 25 && idxData <= 34) return normalizarPresionVaporCelda_(v);
   return (v != null && v !== '') ? v : '';
 }
 
@@ -1600,10 +1723,14 @@ function pesoSalidaPrefrioDesdePackRow_(packRow) {
   return (!isNaN(n) && n > 0) ? n : null;
 }
 
-/** Formato 0.000 en temp/humedad/presión para que la barra muestre el decimal correcto. */
+/** Formato packing: pesos/temp/humedad 0.0, presión 0.000 (evita fecha/miles en locale es_*). */
 function aplicarFormatoDecimalesPackingEnFila_(sheet, filaHoja, startCol) {
-  var colBase = startCol + PACKING_META_COLS + 10;
-  sheet.getRange(filaHoja, colBase, 1, 25).setNumberFormat('0.000');
+  var colPeso = startCol + PACKING_META_COLS + 5;
+  sheet.getRange(filaHoja, colPeso, 1, 5).setNumberFormat('0.0');
+  var colTempHum = startCol + PACKING_META_COLS + 10;
+  sheet.getRange(filaHoja, colTempHum, 1, 15).setNumberFormat('0.0');
+  var colPres = startCol + PACKING_META_COLS + 25;
+  sheet.getRange(filaHoja, colPres, 1, 10).setNumberFormat('0.000');
 }
 
 function getPackingHeaderNamesPerRow() {
@@ -1729,8 +1856,10 @@ function rowHasPackingRc5Data_(rc5Row) {
 }
 
 function aplicarFormatoDecimalesPackingRc5EnFila_(sheet, filaHoja, startCol) {
-  var colBase = startCol + PACKING_RC5_META_COLS + 2;
-  sheet.getRange(filaHoja, colBase, 1, 5).setNumberFormat('0.000');
+  // META+1 = peso, +2/+3 = temp, +4 = humedad, +5/+6 = presión
+  sheet.getRange(filaHoja, startCol + PACKING_RC5_META_COLS + 1, 1, 1).setNumberFormat('0.0');
+  sheet.getRange(filaHoja, startCol + PACKING_RC5_META_COLS + 2, 1, 3).setNumberFormat('0.0');
+  sheet.getRange(filaHoja, startCol + PACKING_RC5_META_COLS + 5, 1, 2).setNumberFormat('0.000');
 }
 
 function escribirPackingRc5RowsEnBloque_(sheet, rowIndices, cfg) {
@@ -1784,12 +1913,12 @@ function doPostPackingRc5(sheet, data) {
       return { ok: false, error: 'No hay datos en la hoja' };
     }
 
-    var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
+    var dataRows = sheet.getRange(2, 1, lastRow, 15).getValues();
     var rowIndices = [];
     for (var k = 0; k < dataRows.length; k++) {
       var r = dataRows[k];
       var rowFechaStr = formatFechaPacking(r[0]);
-      var rowEn = (r[13] != null && r[13] !== '') ? String(r[13]).trim() : '';
+      var rowEn = (r[IDX_REGISTRO_ENSAYO_NUMERO] != null && r[IDX_REGISTRO_ENSAYO_NUMERO] !== '') ? String(r[IDX_REGISTRO_ENSAYO_NUMERO]).trim() : '';
       if (rowFechaStr === fecha && rowEn === ensayoNumero) {
         rowIndices.push(2 + k);
       }
@@ -1854,12 +1983,12 @@ function doPostPacking(sheet, data) {
       return { ok: false, error: 'No hay datos en la hoja' };
     }
 
-    var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
+    var dataRows = sheet.getRange(2, 1, lastRow, 15).getValues();
     var rowIndices = [];
     for (var k = 0; k < dataRows.length; k++) {
       var r = dataRows[k];
       var rowFechaStr = formatFechaPacking(r[0]);
-      var rowEn = (r[13] != null && r[13] !== '') ? String(r[13]).trim() : '';
+      var rowEn = (r[IDX_REGISTRO_ENSAYO_NUMERO] != null && r[IDX_REGISTRO_ENSAYO_NUMERO] !== '') ? String(r[IDX_REGISTRO_ENSAYO_NUMERO]).trim() : '';
       if (rowFechaStr === fecha && rowEn === ensayoNumero) {
         rowIndices.push(2 + k);
       }
@@ -1939,8 +2068,12 @@ function doPostPacking(sheet, data) {
       if (guardarThermoking) {
         asegurarEncabezadosThermokingEnHojasRegistro_(sheet.getParent());
         for (var tix = 0; tix < rowIndices.length; tix++) {
-          var termoMerge = termoRowConHoraRegistroAlGuardar_(buildThermokingFlatRow(data, tix));
-          sheet.getRange(rowIndices[tix], tkCol, 1, termoMerge.length).setValues([termoMerge]);
+          escribirThermokingFilaEnHoja_(
+            sheet,
+            rowIndices[tix],
+            tkCol,
+            buildThermokingFlatRow(data, tix)
+          );
         }
       }
       if (!guardarThermoking && !(guardarPacking && packingRows.length)) {
@@ -1984,8 +2117,12 @@ function doPostPacking(sheet, data) {
     if (guardarThermoking) {
       asegurarEncabezadosThermokingEnHojasRegistro_(sheet.getParent());
       for (var ti = 0; ti < rowIndices.length; ti++) {
-        var termoVals = termoRowConHoraRegistroAlGuardar_(buildThermokingFlatRow(data, ti));
-        sheet.getRange(rowIndices[ti], tkCol, 1, termoVals.length).setValues([termoVals]);
+        escribirThermokingFilaEnHoja_(
+          sheet,
+          rowIndices[ti],
+          tkCol,
+          buildThermokingFlatRow(data, ti)
+        );
       }
     }
 
@@ -2046,12 +2183,25 @@ function buildTk20FlatRow(data, rowIdx) {
   var resp = strCell_(data.responsable || '');
   var placa = strCell_(data.placa || '');
   var guia = strCell_(data.guia_remision || '');
-  var acopio = strCell_(data.acopio || '');
   var llegada = buildTk20EtapaValues_(data, 'llegada', rowIdx);
   var traslado = buildTk20EtapaValues_(data, 'traslado', rowIdx);
   var horaReg = strCell_(data.hora_registro || '');
   if (!horaReg) horaReg = formatHoraRegistro_(new Date());
-  return [fi, resp, placa, guia, acopio].concat(llegada).concat(traslado).concat([horaReg]);
+  return [fi, resp, placa, guia].concat(llegada).concat(traslado).concat([horaReg]);
+}
+
+/** Formato numérico TK-2.0: temp/HR/peso 0.0, presión 0.000 (por etapa Llegada/Traslado). */
+function aplicarFormatoDecimalesTk20EnFila_(sheet, filaHoja, tk20Col) {
+  if (!sheet || filaHoja < 2 || !tk20Col) return;
+  // Meta = 5 cols. Cada etapa = 14 cols: [hora][T×4][HR×3][PV×4][peso][obs]
+  var etapas = [0, 1];
+  for (var e = 0; e < etapas.length; e++) {
+    var base = tk20Col + TK20_META_COLS + (e * 14);
+    sheet.getRange(filaHoja, base + 1, 1, 4).setNumberFormat('0.0');   // T
+    sheet.getRange(filaHoja, base + 5, 1, 3).setNumberFormat('0.0');   // HR
+    sheet.getRange(filaHoja, base + 8, 1, 4).setNumberFormat('0.000'); // PV
+    sheet.getRange(filaHoja, base + 12, 1, 1).setNumberFormat('0.0');  // peso
+  }
 }
 
 function doPostTk20(sheet, data) {
@@ -2069,12 +2219,12 @@ function doPostTk20(sheet, data) {
     }
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return { ok: false, error: 'No hay datos en la hoja' };
-    var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
+    var dataRows = sheet.getRange(2, 1, lastRow, 15).getValues();
     var rowIndices = [];
     for (var k = 0; k < dataRows.length; k++) {
       var r = dataRows[k];
       var rowFechaStr = formatFechaPacking(r[0]);
-      var rowEn = normalizarEnsayoNumeroGs_(r[13]);
+      var rowEn = normalizarEnsayoNumeroGs_(r[IDX_REGISTRO_ENSAYO_NUMERO]);
       if (rowFechaStr === fechaNorm && rowEn === ensayoNumero) rowIndices.push(2 + k);
     }
     if (rowIndices.length === 0) {
@@ -2090,6 +2240,7 @@ function doPostTk20(sheet, data) {
         return { ok: false, error: 'Datos TK-2.0 incompletos (fila ' + (i + 1) + ')' };
       }
       sheet.getRange(rowIndices[i], tk20Col, 1, rowVals.length).setValues([rowVals]);
+      aplicarFormatoDecimalesTk20EnFila_(sheet, rowIndices[i], tk20Col);
     }
     return {
       ok: true,
@@ -2114,7 +2265,7 @@ function contarFilasFechaEnsayoEnHoja_(sheet, fecha, ensayoNumero) {
   if (lastRow < 2) return 0;
   var fechaNorm = formatFechaPacking(fecha) || fecha;
   var enNorm = normalizarEnsayoNumeroGs_(ensayoNumero);
-  var dataRows = sheet.getRange(2, 1, lastRow, 14).getValues();
+  var dataRows = sheet.getRange(2, 1, lastRow, 15).getValues();
   var n = 0;
   for (var k = 0; k < dataRows.length; k++) {
     var rowFechaStr = formatFechaPacking(dataRows[k][0]);
@@ -2215,7 +2366,7 @@ function resumenEnsayosFechaPlanilla_(ss, fechaLm) {
       var r = data[i];
       var fl = formatFechaPacking(r[0]);
       if (fl !== fechaLm) continue;
-      var enStr = normalizarEnsayoNumeroGs_(r[13]);
+      var enStr = normalizarEnsayoNumeroGs_(r[IDX_REGISTRO_ENSAYO_NUMERO]);
       if (!enStr) continue;
       var numStr = (r.length > idxNum && r[idxNum] != null && r[idxNum] !== undefined)
         ? String(r[idxNum]).trim()
@@ -2242,7 +2393,7 @@ function resumenEnsayosFechaPlanilla_(ss, fechaLm) {
         var fndRs = strCell_(r[IDX_REGISTRO_FUNDO]);
         if (fndRs) g.fundo = fndRs;
       }
-      var nClRaw = r[14];
+      var nClRaw = r[IDX_REGISTRO_N_CLAMSHELL];
       if (nClRaw !== null && nClRaw !== undefined && String(nClRaw).trim() !== '') {
         var nCl = parseInt(String(nClRaw).trim(), 10);
         if (!isNaN(nCl) && nCl > 0) g.maxClamshell = Math.max(g.maxClamshell, nCl);
@@ -2433,7 +2584,7 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw, params) {
   for (var k = 0; k < data.length; k++) {
     var r = data[k];
     var rowFechaStr = formatFechaPacking(r[0]);
-    var rowEnStr = normalizarEnsayoNumeroGs_(r[13]);
+    var rowEnStr = normalizarEnsayoNumeroGs_(r[IDX_REGISTRO_ENSAYO_NUMERO]);
     if (rowFechaStr !== fecha || rowEnStr !== enNorm) continue;
     var packRow = packBlock[k] || [];
     if (row == null) {
@@ -2482,7 +2633,7 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw, params) {
     return { ok: false, error: 'No hay registro para esa fecha y ensayo', data: null };
   }
 
-  var nClamshellRaw = row[14];
+  var nClamshellRaw = row[IDX_REGISTRO_N_CLAMSHELL];
   var maxClamshell = 0;
   if (nClamshellRaw !== null && nClamshellRaw !== undefined && String(nClamshellRaw).trim() !== '') {
     var nCl = parseInt(String(nClamshellRaw).trim(), 10);
@@ -2541,7 +2692,7 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw, params) {
   var placaTk20 = tk20MetaPrimera ? strCell_(tk20MetaPrimera[2]) : '';
   var placaTkMp = tkMetaPrimera ? strCell_(tkMetaPrimera[3]) : '';
   var guiaTk20 = tk20MetaPrimera ? strCell_(tk20MetaPrimera[3]) : '';
-  var acopioTk20 = tk20MetaPrimera ? strCell_(tk20MetaPrimera[4]) : '';
+  var trazAcopioCelda = strCell_(row[IDX_REGISTRO_TRAZ_ACOPIO]);
   var metaHojaDet = metaHojaRegistro_(ss, sheet);
 
   return {
@@ -2592,13 +2743,13 @@ function obtenerDetalleRegistroCampoPacking_(ss, fechaRaw, ensayoRaw, params) {
         : '',
       RESPONSABLE: row[3],
       RESPONSABLE_TK: respTk20 || row[3],
-      ENSAYO_NUMERO: row[13],
+      ENSAYO_NUMERO: row[IDX_REGISTRO_ENSAYO_NUMERO],
       TRAZ_ETAPA: row[7],
       TRAZ_CAMPO: row[8],
       TRAZ_TURNO: row[9],
-      TRAZ_ACOPIO: acopioTk20,
+      TRAZ_ACOPIO: trazAcopioCelda,
       VARIEDAD: row[10],
-      PLACA_VEHICULO: placaTk20 || row[12],
+      PLACA_VEHICULO: placaTk20 || row[IDX_REGISTRO_PLACA],
       PLACA_TK: placaTkMp,
       FUNDO: fundoRegistro,
       GUIA_REMISION: guiaTk20 || row[11],
@@ -2733,11 +2884,11 @@ function listadoRegistradosHistorial_(ss, params) {
       var r = dataHist[i];
       var f = formatFechaHistorialGet_(r[0]);
       if (!fechaEnRangoHistorialGet_(f, fechaDesdeHist, fechaHastaHist)) continue;
-      var en = r[13];
+      var en = r[IDX_REGISTRO_ENSAYO_NUMERO];
       var enStr = (en !== null && en !== undefined && en !== '') ? (Number(en) === Math.floor(Number(en)) ? String(Number(en)) : String(en).trim()) : '';
       var nom = (r[1] != null && r[1] !== undefined && String(r[1]).trim() !== '') ? String(r[1]).trim() : ('Ensayo ' + enStr);
       var numMuestra = (r.length > idxNumHist && r[idxNumHist] != null && r[idxNumHist] !== undefined) ? String(r[idxNumHist]).trim() : '';
-      var nClamshell = (r[14] != null && r[14] !== undefined) ? String(r[14]).trim() : '';
+      var nClamshell = (r[IDX_REGISTRO_N_CLAMSHELL] != null && r[IDX_REGISTRO_N_CLAMSHELL] !== undefined) ? String(r[IDX_REGISTRO_N_CLAMSHELL]).trim() : '';
       if (!f || enStr === '') continue;
       var horaRegistro = (r.length > idxHoraReg) ? formatHoraRegistro_(r[idxHoraReg]) : '';
       var packingSlice = packBlock[i] || [];
@@ -3002,7 +3153,7 @@ function doGet(e) {
         var shF = hojasF[hfi];
         var lrF = shF.getLastRow();
         if (lrF < 2) continue;
-        var dataF = shF.getRange(2, 1, lrF, 14).getValues();
+        var dataF = shF.getRange(2, 1, lrF, 15).getValues();
         for (var i = 0; i < dataF.length; i++) {
           var f = formatFecha(dataF[i][0]);
           if (f) fechasSet[f] = true;
@@ -3025,7 +3176,7 @@ function doGet(e) {
         if (lrEns < 2) continue;
         var packColEns = packingStartColDesdeHoja_(ssGet, shEns);
         var tkColEns = thermokingStartColDesdeHoja_(ssGet, shEns);
-        var dataEns = shEns.getRange(2, 1, lrEns, 14).getValues();
+        var dataEns = shEns.getRange(2, 1, lrEns, 15).getValues();
         var packingBlock = shEns.getRange(2, packColEns, lrEns, PACKING_COLS).getValues();
         var tkBlock = shEns.getRange(2, tkColEns, lrEns, THERMOKING_COLS).getValues();
         for (var j = 0; j < dataEns.length; j++) {
@@ -3061,7 +3212,7 @@ function doGet(e) {
       for (var i = 0; i < data.length; i++) {
         var r = data[i];
         var rowFechaStr = formatFecha(r[0]);
-        var rowEn = r[13];
+        var rowEn = r[IDX_REGISTRO_ENSAYO_NUMERO];
         var rowEnStr = (rowEn !== null && rowEn !== undefined) ? (Number(rowEn) === Math.floor(Number(rowEn)) ? String(Number(rowEn)) : String(rowEn).trim()) : '';
         if (rowFechaStr === fecha && rowEnStr === enNorm) {
           result.ok = true;
@@ -3101,7 +3252,7 @@ function doGet(e) {
     for (var k = 0; k < data.length; k++) {
       var r = data[k];
       var rowFechaStr = formatFecha(r[0]);
-      var rowEn = r[13];
+      var rowEn = r[IDX_REGISTRO_ENSAYO_NUMERO];
       var rowEnStr = (rowEn !== null && rowEn !== undefined && rowEn !== '') ? (function () {
         var n = Number(rowEn);
         return (!isNaN(n) && n === Math.floor(n)) ? String(n) : String(rowEn).trim();
@@ -3134,7 +3285,7 @@ function doGet(e) {
       return returnOutput(result);
     }
 
-    var nClamshellRaw = row[14];
+    var nClamshellRaw = row[IDX_REGISTRO_N_CLAMSHELL];
     var maxClamshell = 0;
     if (nClamshellRaw !== null && nClamshellRaw !== undefined && String(nClamshellRaw).trim() !== '') {
       var nCl = parseInt(String(nClamshellRaw).trim(), 10);
@@ -3175,12 +3326,12 @@ function doGet(e) {
       ENSAYO_NOMBRE: row[1],
       NUM_MUESTRA: (row.length > idxNumRow && row[idxNumRow] != null && row[idxNumRow] !== undefined) ? String(row[idxNumRow]).trim() : '',
       RESPONSABLE: row[3],
-      ENSAYO_NUMERO: row[13],
+      ENSAYO_NUMERO: row[IDX_REGISTRO_ENSAYO_NUMERO],
       TRAZ_ETAPA: row[7],
       TRAZ_CAMPO: row[8],
       TRAZ_TURNO: row[9],
       VARIEDAD: row[10],
-      PLACA_VEHICULO: row[12],
+      PLACA_VEHICULO: row[IDX_REGISTRO_PLACA],
       FUNDO: strCell_(row[IDX_REGISTRO_FUNDO]),
       GUIA_REMISION: row[11]
     };

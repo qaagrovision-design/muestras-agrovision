@@ -5124,7 +5124,7 @@
             font-weight: 700;
         }
 
-        /* TK-2.0 modales control/presión — mismo look que Packing */
+        /* TK-2.0 modales control — look Packing; presión usa .presion-metric-grid (abajo) */
         #tk2_control_modal .tk20-modal-title,
         #tk2_presion_modal .tk20-modal-title {
             margin: 0 0 9px;
@@ -5142,14 +5142,12 @@
             margin-bottom: 0;
         }
 
-        #tk2_control_modal .metric-modal-body > .metric-mini-title:first-child,
-        #tk2_presion_modal .metric-modal-body > .metric-mini-title:first-child {
+        #tk2_control_modal .metric-modal-body > .metric-mini-title:first-child {
             margin-top: 0;
             margin-bottom: 16px;
         }
 
-        #tk2_control_modal .tk20-control-hint,
-        #tk2_presion_modal .tk20-control-hint {
+        #tk2_control_modal .tk20-control-hint {
             margin: 14px 0;
             font-size: 9.5px;
             line-height: 1.15;
@@ -5160,8 +5158,7 @@
         }
 
         #tk2_control_modal .packing-cg-grid-3,
-        #tk2_control_modal .packing-cg-grid-4,
-        #tk2_presion_modal .packing-cg-grid-4 {
+        #tk2_control_modal .packing-cg-grid-4 {
             display: grid;
             gap: 6px;
             margin-bottom: 0;
@@ -5171,21 +5168,18 @@
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
-        #tk2_control_modal .packing-cg-grid-4,
-        #tk2_presion_modal .packing-cg-grid-4 {
+        #tk2_control_modal .packing-cg-grid-4 {
             grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
         #tk2_control_modal .packing-cg-grid-3 .form-group,
-        #tk2_control_modal .packing-cg-grid-4 .form-group,
-        #tk2_presion_modal .packing-cg-grid-4 .form-group {
+        #tk2_control_modal .packing-cg-grid-4 .form-group {
             margin-bottom: 0;
             min-width: 0;
         }
 
         #tk2_control_modal .packing-cg-grid-3 .form-group label,
-        #tk2_control_modal .packing-cg-grid-4 .form-group label,
-        #tk2_presion_modal .packing-cg-grid-4 .form-group label {
+        #tk2_control_modal .packing-cg-grid-4 .form-group label {
             display: block;
             font-size: 9px;
             font-weight: 800;
@@ -5200,9 +5194,7 @@
         }
 
         #tk2_control_modal input.control-equitativo-inp,
-        #tk2_control_modal input.packing-cg-inp.control-equitativo-inp,
-        #tk2_presion_modal input.control-equitativo-inp,
-        #tk2_presion_modal input.packing-cg-inp.control-equitativo-inp {
+        #tk2_control_modal input.packing-cg-inp.control-equitativo-inp {
             width: 100%;
             padding: 14px;
             font-size: 16px;
@@ -5220,14 +5212,126 @@
         }
 
         #tk2_control_modal input.control-equitativo-inp:focus,
-        #tk2_control_modal input.packing-cg-inp.control-equitativo-inp:focus,
-        #tk2_presion_modal input.control-equitativo-inp:focus,
-        #tk2_presion_modal input.packing-cg-inp.control-equitativo-inp:focus {
+        #tk2_control_modal input.packing-cg-inp.control-equitativo-inp:focus {
             outline: none;
             border-color: rgba(22, 76, 124, 0.45);
             background: #fff;
             color: var(--primary);
             -webkit-text-fill-color: var(--primary);
+        }
+
+        /* Presión readonly unificada (Campo / Packing / Packing-RC5 / TK-2.0 / MP-TK) */
+        .presion-metric-grid,
+        #packing-presion-modal-overlay .presion-metric-grid,
+        #tk2_presion_modal .presion-metric-grid,
+        #metric-modal-overlay .metric-grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .presion-metric-grid .form-group,
+        #packing-presion-modal-overlay .presion-metric-grid .form-group,
+        #tk2_presion_modal .presion-metric-grid .form-group,
+        #packing-presion-modal-overlay .packing-tiempo-row-full {
+            margin-bottom: 0;
+            min-width: 0;
+        }
+
+        .presion-metric-grid .form-group label,
+        #packing-presion-modal-overlay .presion-metric-grid .form-group label,
+        #tk2_presion_modal .presion-metric-grid .form-group label,
+        #packing-presion-modal-overlay .packing-tiempo-row-full label {
+            display: block;
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.25;
+            margin-bottom: 5px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #packing-presion-modal-overlay #packing-presion-modal-title,
+        #tk2_presion_modal #tk2_presion_modal_title {
+            margin-bottom: 16px;
+            color: var(--primary);
+        }
+
+        input.presion-readonly-inp,
+        #packing-presion-modal-overlay input.presion-readonly-inp,
+        #packing-presion-modal-overlay .packing-tiempo-row-full input.presion-readonly-inp,
+        #tk2_presion_modal input.presion-readonly-inp,
+        #metric-modal-overlay input[data-metric^="presion"],
+        #metric-modal-overlay input.presion-readonly-inp,
+        #mptk-presion-amb-modal-overlay input.mptk-presion-readonly-inp,
+        #mptk-presion-fruta-modal-overlay input.mptk-presion-fruta-inp {
+            width: 100%;
+            min-width: 0;
+            padding: 14px;
+            border: 2px solid #d8e0ea;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            outline: none;
+            text-align: center;
+            box-sizing: border-box;
+            background: #eef2f7;
+            /* color: #334155; */
+            -webkit-text-fill-color: #475569;
+            opacity: 1;
+            cursor: default;
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        input.presion-readonly-inp:disabled,
+        input.presion-readonly-inp[readonly],
+        #packing-presion-modal-overlay input.presion-readonly-inp:disabled,
+        #tk2_presion_modal input.presion-readonly-inp:disabled,
+        #metric-modal-overlay input[data-metric^="presion"]:disabled,
+        #metric-modal-overlay input.presion-readonly-inp:disabled,
+        #mptk-presion-amb-modal-overlay input.mptk-presion-readonly-inp:disabled,
+        #mptk-presion-amb-modal-overlay input.mptk-presion-readonly-inp[readonly],
+        #mptk-presion-fruta-modal-overlay input.mptk-presion-fruta-inp:disabled,
+        #mptk-presion-fruta-modal-overlay input.mptk-presion-fruta-inp[readonly] {
+            opacity: 1;
+            cursor: default;
+            pointer-events: none;
+            background: #eef2f7;
+            /* color: #334155; */
+            -webkit-text-fill-color: #475569;
+            font-weight: 700;
+        }
+
+        @media (max-width: 400px) {
+            .presion-metric-grid,
+            #packing-presion-modal-overlay .presion-metric-grid,
+            #tk2_presion_modal .presion-metric-grid,
+            #metric-modal-overlay .metric-grid-4 {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 6px;
+            }
+
+            .presion-metric-grid .form-group label,
+            #packing-presion-modal-overlay .presion-metric-grid .form-group label,
+            #tk2_presion_modal .presion-metric-grid .form-group label {
+                font-size: 10px;
+            }
+
+            input.presion-readonly-inp,
+            #packing-presion-modal-overlay input.presion-readonly-inp,
+            #tk2_presion_modal input.presion-readonly-inp,
+            #metric-modal-overlay input[data-metric^="presion"] {
+                padding: 12px 6px;
+                font-size: 14px;
+            }
         }
 
         @media (max-width: 380px) {
@@ -5583,40 +5687,9 @@
             margin-bottom: 0;
         }
 
-        /* MP-TK presión readonly: mismos inputs que packing-presion-modal */
-        #mptk-presion-amb-modal-overlay input.mptk-presion-readonly-inp,
-        #mptk-presion-amb-modal-overlay .mptk-temp-muestra-grid .form-group input.mptk-presion-readonly-inp,
-        #mptk-presion-amb-modal-overlay .mptk-control-paired-inp input.mptk-presion-readonly-inp,
-        #mptk-presion-fruta-modal-overlay input.mptk-presion-fruta-inp,
-        #mptk-presion-fruta-modal-overlay .mptk-presion-fruta-grid .form-group input.mptk-presion-fruta-inp {
-            width: 100%;
+        /* MP-TK presión readonly: hereda .presion-readonly-inp (look Campo) */
+        #mptk-presion-amb-modal-overlay .mptk-temp-muestra-grid {
             min-width: 0;
-            padding: 14px;
-            border: 2px solid var(--border);
-            border-radius: 12px;
-            font-size: 16px;
-            outline: none;
-            text-align: center;
-            box-sizing: border-box;
-            background: #eceff3;
-            color: var(--text);
-            -webkit-text-fill-color: var(--text);
-            font-weight: 400;
-            opacity: 1;
-            cursor: default;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-
-        #mptk-presion-amb-modal-overlay input.mptk-presion-readonly-inp:disabled,
-        #mptk-presion-amb-modal-overlay input.mptk-presion-readonly-inp[readonly],
-        #mptk-presion-fruta-modal-overlay input.mptk-presion-fruta-inp:disabled,
-        #mptk-presion-fruta-modal-overlay input.mptk-presion-fruta-inp[readonly] {
-            opacity: 1;
-            cursor: default;
-            background: #eceff3;
-            color: var(--text);
-            -webkit-text-fill-color: var(--text);
         }
 
         #control_global_modal_overlay_mptk .metric-modal-body,
@@ -5634,37 +5707,42 @@
 
         #mptk-presion-amb-modal-overlay .metric-grid-4 .form-group input,
         #mptk-presion-amb-modal-overlay .metric-grid-6 .form-group input,
-        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input {
+        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input,
+        #mptk-presion-fruta-modal-overlay .mptk-presion-fruta-grid .form-group input {
             width: 100%;
             min-width: 0;
             padding: 14px;
             border: 2px solid var(--border);
             border-radius: 12px;
             font-size: 16px;
+            font-weight: 700;
             outline: none;
             text-align: center;
             box-sizing: border-box;
-            background: #eceff3;
-            color: var(--text);
-            -webkit-text-fill-color: var(--text);
+            background: #fff;
+            color: var(--primary);
+            -webkit-text-fill-color: var(--primary);
         }
 
         #mptk-presion-amb-modal-overlay .metric-grid-4 .form-group input:disabled,
         #mptk-presion-amb-modal-overlay .metric-grid-6 .form-group input:disabled,
-        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input:disabled {
+        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input:disabled,
+        #mptk-presion-fruta-modal-overlay .mptk-presion-fruta-grid .form-group input:disabled {
             opacity: 1;
             cursor: default;
-            background: #eceff3;
-            color: var(--text);
-            -webkit-text-fill-color: var(--text);
+            background: #fff;
+            color: var(--primary);
+            -webkit-text-fill-color: var(--primary);
+            font-weight: 700;
         }
 
         #mptk-presion-amb-modal-overlay .metric-grid-4 .form-group input:disabled:focus,
         #mptk-presion-amb-modal-overlay .metric-grid-6 .form-group input:disabled:focus,
-        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input:disabled:focus {
+        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input:disabled:focus,
+        #mptk-presion-fruta-modal-overlay .mptk-presion-fruta-grid .form-group input:disabled:focus {
             outline: none;
             border-color: var(--border);
-            background: #eceff3;
+            background: #fff;
         }
 
         #mptk-presion-amb-modal-overlay .metric-grid-6 .form-group {
@@ -5673,12 +5751,13 @@
         }
 
         #mptk-presion-amb-modal-overlay .metric-grid-6 .form-group label,
-        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group label {
+        #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group label,
+        #mptk-presion-fruta-modal-overlay .mptk-presion-fruta-grid .form-group label {
             display: block;
             font-size: 11.5px;
             font-weight: 700;
             line-height: 1.25;
-            text-align: center;
+            text-align: left;
             color: var(--text);
             margin-bottom: 5px;
             white-space: nowrap;
@@ -5698,9 +5777,10 @@
             }
             #mptk-presion-amb-modal-overlay .metric-grid-6 .form-group input,
             #mptk-presion-amb-modal-overlay .metric-grid-4 .form-group input,
-            #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input {
+            #mptk-presion-fruta-modal-overlay .metric-grid-4 .form-group input,
+            #mptk-presion-fruta-modal-overlay .mptk-presion-fruta-grid .form-group input {
                 padding: 12px 6px;
-                font-size: 15px;
+                font-size: 14px;
             }
         }
 
@@ -7399,53 +7479,11 @@
             }
         }
 
-        #packing-presion-modal-overlay .packing-tiempos-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            grid-template-rows: auto auto;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        #packing-presion-modal-overlay .packing-tiempos-grid .form-group,
         #packing-presion-modal-overlay .packing-tiempo-row-full {
-            margin-bottom: 0;
-            min-width: 0;
+            margin-top: 10px;
         }
 
-        #packing-presion-modal-overlay .packing-tiempos-grid .form-group label,
-        #packing-presion-modal-overlay .packing-tiempo-row-full label {
-            display: block;
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--text);
-            line-height: 1.25;
-            margin-bottom: 5px;
-        }
-
-        #packing-presion-modal-overlay #packing-presion-modal-title {
-            margin-bottom: 16px;
-            color: var(--primary);
-        }
-
-        #packing-presion-modal-overlay .form-group input,
-        #packing-presion-modal-overlay .form-group select {
-            width: 100%;
-            padding: 14px;
-            border: 2px solid var(--border);
-            border-radius: 12px;
-            font-size: 16px;
-            outline: none;
-            text-align: center;
-            background: #eceff3;
-            box-sizing: border-box;
-        }
-
-        #packing-presion-modal-overlay .form-group input:disabled {
-            opacity: 1;
-            cursor: default;
-            background: #eceff3;
-        }
+        /* (presión: estilos unificados en .presion-metric-grid / input.presion-readonly-inp) */
 
         /* MP-TK presión editables (ambiente / int. vehículo) */
         #mptk-presion-amb-modal-overlay .form-group input:not(.mptk-presion-readonly-inp),

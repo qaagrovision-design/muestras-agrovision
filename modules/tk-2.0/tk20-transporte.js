@@ -227,16 +227,29 @@
     elGuardar?.addEventListener('click', guardarModal);
     bindCerrarFuera(elModal, cerrarModal);
     [elPlaca, elGuia, elAcopio].forEach((el) => {
-        el?.addEventListener('input', () => window.Tk20Draft?.programarGuardado?.());
-        el?.addEventListener('change', () => window.Tk20Draft?.programarGuardado?.());
+        el?.addEventListener('input', () => {
+            leerInputs();
+            window.Tk20Draft?.programarGuardado?.();
+        });
+        el?.addEventListener('change', () => {
+            leerInputs();
+            window.Tk20Draft?.programarGuardado?.();
+        });
     });
 
     poblarSelectAcopio();
     actualizarBotonTransporte();
 
     window.Tk20Transporte = {
-        getValores: () => ({ ...valores }),
-        getPlaca: () => valores.placa,
+        getValores: () => {
+            if (elModal && elModal.style.display === 'flex') leerInputs();
+            return { ...valores };
+        },
+        getPlaca: () => {
+            if (elModal && elModal.style.display === 'flex') leerInputs();
+            return valores.placa;
+        },
+        persistirInputs: persistirInputsTransporte,
         getGuia: () => valores.guia,
         getAcopio: () => valores.acopio,
         aplicarValores,

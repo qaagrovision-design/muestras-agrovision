@@ -272,24 +272,23 @@
 
     <div class="modal-overlay" id="mptk-presion-fruta-modal-overlay" aria-hidden="true">
         <div class="modal-content">
-            <h2 id="mptk-presion-fruta-modal-title" style="margin-bottom: 4px; color: var(--primary);">Presión de vapor fruta (Kpa) · TK #1</h2>
-            <p class="mptk-pesos-modal-sub" style="margin: 0 0 14px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: #64748b; text-transform: uppercase;">Presión de vapor fruta (Kpa)</p>
-            <div class="packing-pesos-grid mptk-pesos-grid mptk-presion-fruta-grid">
+            <h2 id="mptk-presion-fruta-modal-title" style="margin-bottom: 16px; color: var(--primary);">Presión de vapor fruta (Kpa) · TK #1</h2>
+            <div class="presion-metric-grid metric-grid-4 mptk-presion-fruta-grid">
                 <div class="form-group">
-                    <label for="mptk-inp-vapor-ic">Ingreso · cámara materia prima (Kpa)</label>
-                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-ic" data-field="vapor_ic_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                    <label for="mptk-inp-vapor-ic">Ingreso MP</label>
+                    <input type="text" class="mptk-presion-fruta-inp presion-readonly-inp" id="mptk-inp-vapor-ic" data-field="vapor_ic_tk" disabled readonly inputmode="none" aria-label="Ingreso cámara materia prima">
                 </div>
                 <div class="form-group">
-                    <label for="mptk-inp-vapor-st">Salida · cámara materia prima (Kpa)</label>
-                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-st" data-field="vapor_scm_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                    <label for="mptk-inp-vapor-st">Salida MP</label>
+                    <input type="text" class="mptk-presion-fruta-inp presion-readonly-inp" id="mptk-inp-vapor-st" data-field="vapor_scm_tk" disabled readonly inputmode="none" aria-label="Salida cámara materia prima">
                 </div>
                 <div class="form-group">
-                    <label for="mptk-inp-vapor-it">Inicio traslado TK. (Kpa)</label>
-                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-it" data-field="vapor_it_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                    <label for="mptk-inp-vapor-it">Ingreso TK</label>
+                    <input type="text" class="mptk-presion-fruta-inp presion-readonly-inp" id="mptk-inp-vapor-it" data-field="vapor_it_tk" disabled readonly inputmode="none" aria-label="Inicio traslado TK">
                 </div>
                 <div class="form-group">
-                    <label for="mptk-inp-vapor-dp">Despacho TK. (Kpa)</label>
-                    <input type="text" class="mptk-presion-fruta-inp" id="mptk-inp-vapor-dp" data-field="vapor_st_tk" disabled readonly inputmode="none" title="Dato calculado automáticamente">
+                    <label for="mptk-inp-vapor-dp">Despacho</label>
+                    <input type="text" class="mptk-presion-fruta-inp presion-readonly-inp" id="mptk-inp-vapor-dp" data-field="vapor_st_tk" disabled readonly inputmode="none" aria-label="Despacho TK">
                 </div>
             </div>
             <div class="metric-modal-foot">

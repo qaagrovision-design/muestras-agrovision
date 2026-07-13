@@ -137,8 +137,7 @@
 
     function htmlPresionGrid(campos, valores) {
         const vals = valores || {};
-        return '<p class="metric-mini-title">Presión de vapor (Kpa) — calculada automáticamente</p>'
-            + '<div class="packing-cg-grid-4">'
+        return '<div class="presion-metric-grid metric-grid-4">'
             + campos.map((c) => {
                 const raw = String(vals[c.key] ?? '').trim();
                 const v = raw.replace(/"/g, '&quot;');
@@ -146,27 +145,16 @@
                 const aria = String(c.label || '').replace(/"/g, '&quot;');
                 return '<div class="form-group"><label>' + txt + '</label>'
                     + '<input type="text" inputmode="decimal" maxlength="6"'
-                    + ' class="packing-cg-inp control-equitativo-inp" id="' + c.key + '" name="' + c.key + '"'
+                    + ' class="presion-readonly-inp" id="' + c.key + '" name="' + c.key + '"'
                     + ' data-field="' + c.key + '" value="' + v + '" aria-label="' + aria + '"'
-                    + ' disabled readonly title="Se calcula desde temperatura y humedad"></div>';
+                    + ' disabled readonly inputmode="none" tabindex="-1"></div>';
             }).join('')
             + '</div>';
     }
 
     function enlazarInputsPresion(root) {
-        const colorPrimary = (function () {
-            try {
-                return getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || 'rgb(22, 76, 124)';
-            } catch (_) {
-                return 'rgb(22, 76, 124)';
-            }
-        })();
-        root?.querySelectorAll('.packing-cg-inp').forEach((input) => {
-            input.classList.add('control-equitativo-inp');
-            input.style.setProperty('color', colorPrimary, 'important');
-            input.style.setProperty('-webkit-text-fill-color', colorPrimary, 'important');
-            input.style.setProperty('font-weight', '700', 'important');
-            input.style.setProperty('text-align', 'center', 'important');
+        root?.querySelectorAll('.presion-readonly-inp').forEach((input) => {
+            input.classList.add('presion-readonly-inp');
         });
     }
 
@@ -186,7 +174,7 @@
             card.presion = F.presionVaciosEtapa(etapaKey);
         }
         if (elPresionTitle) {
-            elPresionTitle.textContent = 'Control equitativo · Presión';
+            elPresionTitle.textContent = 'Presión de vapor (Kpa) · ' + etapaTitulo;
         }
         elPresionBody.innerHTML = htmlPresionGrid(campos, card.presion);
         enlazarInputsPresion(elPresionBody);
@@ -314,6 +302,18 @@
         }
     });
 
+    function modalTk20Abierto_(el) {
+        return !!(el && el.style.display === 'flex');
+    }
+
+    function persistirModalesAbiertasTk20_() {
+        if (modalTk20Abierto_(elPesosModal)) persistirModalPesos();
+        if (modalTk20Abierto_(elObsModal)) persistirModalObservacion();
+        if (modalTk20Abierto_(elPresionModal)) persistirModalPresion();
+        window.Tk20Control?.persistirAbierto?.();
+        window.Tk20Transporte?.persistirInputs?.();
+    }
+
     elPesosCancel?.addEventListener('click', cerrarModalPesos);
     elPesosGuardar?.addEventListener('click', guardarModalPesos);
     bindCerrarFuera(elPesosModal, cerrarModalPesos);
@@ -326,5 +326,7 @@
     elObsGuardar?.addEventListener('click', guardarModalObservacion);
     bindCerrarFuera(elObsModal, cerrarModalObservacion);
 
-    window.Tk20Modals = {};
+    window.Tk20Modals = {
+        persistirAbiertas: persistirModalesAbiertasTk20_
+    };
 }());

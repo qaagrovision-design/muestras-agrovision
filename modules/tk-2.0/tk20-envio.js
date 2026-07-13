@@ -778,7 +778,6 @@
             responsable: String(estado.responsable || '').trim(),
             placa: String(t.placa || '').trim(),
             guia_remision: String(t.guia || '').trim(),
-            acopio: String(t.acopio || '').trim(),
             control: estado.control || {},
             etapas: estado.etapas || {}
         };

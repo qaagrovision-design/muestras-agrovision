@@ -82,6 +82,7 @@
     }
 
     function capturarEstadoUi() {
+        window.Tk20Modals?.persistirAbiertas?.();
         window.Tk20Presion?.recalcularTodas?.({ render: false });
         return {
             responsable: window.Tk20Envio?.getResponsable?.() || '',
@@ -220,6 +221,7 @@
 
     function persistirSoloLocal() {
         cancelarGuardadoProgramado();
+        window.Tk20Modals?.persistirAbiertas?.();
         guardarMuestraActivaInmediato();
     }
 
@@ -314,6 +316,7 @@
         });
         window.addEventListener('beforeunload', persistirSoloLocal);
         window.addEventListener('pagehide', persistirSoloLocal);
+        window.addEventListener('freeze', persistirSoloLocal);
         const TK20_DRAFT_AUTOSAVE_MS = 3000;
         setInterval(() => {
             if (document.visibilityState === 'hidden') return;
@@ -326,6 +329,7 @@
     function notificarCambio() {
         if (!restaurandoBorrador) {
             window.dispatchEvent(new CustomEvent('tk20:estado-cambiado'));
+            notificarPdfVivoTk20_();
         }
     }
 

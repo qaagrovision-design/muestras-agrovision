@@ -1,10 +1,10 @@
-/** Pesos 1–N por etapa (grilla 4×2, N según filas de campo) en TK-2.0. */
+/** Pesos 1–8 por etapa (grilla fija; cuota Campo solo para contador/envío). */
 (function initTk20PesosConfig(global) {
     const F = global.Tk20Fields;
 
     function pesosVisuales(etapa) {
         if (!F) return [];
-        const n = F.getNumPesosEfectivos?.() || F.NUM_CLAMSHELLS || 8;
+        const n = F.NUM_CLAMSHELLS || 8;
         const list = [];
         for (let i = 1; i <= n; i++) {
             const c = F.pesoCampo(etapa, i);

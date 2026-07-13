@@ -61,6 +61,7 @@
         return max > 0 ? max : 0;
     }
 
+    /** Cuota Campo (envío/contador). La grilla UI siempre muestra 8. */
     function getNumPesosEfectivos() {
         return numPesosEfectivos > 0 ? numPesosEfectivos : NUM_CLAMSHELLS;
     }

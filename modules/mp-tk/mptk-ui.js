@@ -1166,8 +1166,8 @@
         return '<div class="mptk-control-paired-col">'
             + '<p class="mptk-temp-muestra-section-title">' + esc(campo.columnTitle || '') + '</p>'
             + '<div class="form-group mptk-control-paired-inp">'
-            + '<input type="text" class="mptk-presion-readonly-inp" data-field="' + campo.key + '"' + valAttr
-            + ' disabled readonly inputmode="none" aria-label="' + esc(aria) + '" title="Dato calculado automáticamente">'
+            + '<input type="text" class="mptk-presion-readonly-inp presion-readonly-inp" data-field="' + campo.key + '"' + valAttr
+            + ' disabled readonly inputmode="none" aria-label="' + esc(aria) + '">'
             + '</div></div>';
     }
 
@@ -1178,8 +1178,8 @@
         const lbl = usarLabelCompleto ? campo.label : (campo.shortLabel || campo.label);
         const aria = campo.aria || campo.label;
         return '<div class="form-group"><label>' + esc(lbl) + '</label>'
-            + '<input type="text" class="mptk-presion-readonly-inp" data-field="' + campo.key + '"' + valAttr
-            + ' disabled readonly inputmode="none" aria-label="' + esc(aria) + '" title="Dato calculado automáticamente">'
+            + '<input type="text" class="mptk-presion-readonly-inp presion-readonly-inp" data-field="' + campo.key + '"' + valAttr
+            + ' disabled readonly inputmode="none" aria-label="' + esc(aria) + '">'
             + '</div>';
     }
 
@@ -1543,6 +1543,55 @@
         };
     }
 
+    function modalMptkAbierto_(el) {
+        return !!(el && el.style.display === 'flex');
+    }
+
+    function persistirModalesAbiertasMptk_() {
+        if (modalMptkAbierto_(elPesosModal)) {
+            const card = getActiveCardMptk_();
+            if (card) {
+                PESO_MODAL.forEach((c) => {
+                    const inp = document.getElementById(c.inpId);
+                    if (inp) card.pesos[c.cardKey] = String(inp.value || '').trim();
+                });
+                syncCardToFormMptk_(card);
+            }
+        }
+        if (modalMptkAbierto_(elTiemposModal) && !tiemposModalSoloLecturaMptk_) {
+            const refCard = primerCardMptk_();
+            if (refCard) {
+                TIEMPO_MODAL.forEach((c) => {
+                    const inp = document.getElementById(c.inpId);
+                    if (inp) refCard.tiempos[c.cardKey] = String(inp.value || '').trim();
+                });
+                propagarTiemposATodosMptk_(refCard.tiempos);
+                syncCardToFormMptk_(getActiveCardMptk_());
+            }
+        }
+        if (modalMptkAbierto_(elCtrlModal) && elCtrlBody) {
+            elCtrlBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
+                formatearInputControlGlobalMptk_(inp, true);
+            });
+            elCtrlBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
+                const k = inp.getAttribute('data-field');
+                if (k) setVal(k, inp.value);
+            });
+        }
+        if (modalMptkAbierto_(elObsModal)) {
+            const card = getActiveCardMptk_();
+            if (card && elObsInput) {
+                card.observacion = String(elObsInput.value || '').trim();
+                syncCardToFormMptk_(card);
+            }
+        }
+        if (modalMptkAbierto_(document.getElementById('mptk-placa-modal-overlay'))) {
+            const inp = document.getElementById('mptk-placa-inp');
+            const dest = document.getElementById('placa_thermoking_tk');
+            if (inp && dest) dest.value = String(inp.value || '').trim().toUpperCase();
+        }
+    }
+
     global.MptkUi = {
         init(opts) {
             hooks = { ...hooks, ...(opts || {}) };
@@ -1571,6 +1620,7 @@
         mpHumKeys: () => MPTK_MP_HUM_KEYS.slice(),
         tkHumKeys: () => MPTK_TK_HUM_KEYS.slice(),
         revalidarTiemposModalEnVivo: validarTiemposModalMptkEnVivo,
+        persistirModalesAbiertas: persistirModalesAbiertasMptk_,
         resetPreview() {
             render();
         }

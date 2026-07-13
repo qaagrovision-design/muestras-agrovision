@@ -1,7 +1,7 @@
 /**
- * Nombre PDF: "240626 Ensayo 1 - E07C03T4 - Sekoya Beauty - A9 - Campo.pdf"
- * Varios ensayos en un PDF: "240626 Ensayo (1, 2, 3 y 4) - … - Packing.pdf"
- * Campo (Visual o Acopio) siempre termina en "Campo".
+ * Nombre PDF Campo:
+ * "120726 - Ensayo (1 y 2) - E02C03T1 - Sekoya Pop Orgánica - LN - Campo Visual.pdf"
+ * Acopio: "… - Campo Acopio.pdf" | Un ensayo: "… - Ensayo 1 - …"
  */
 (function pdfNombreModule() {
     function txt(v) {
@@ -145,14 +145,20 @@
         const fromOpts = txt(opts?.modo);
         if (fromOpts) {
             const low = fromOpts.toLowerCase();
-            if (low === 'acopio' || low === 'visual' || low === 'campo') return 'Campo';
+            if (low === 'acopio' || low === 'campo acopio') return 'Campo Acopio';
+            if (low === 'visual' || low === 'campo' || low === 'campo visual') return 'Campo Visual';
+            if (low === 'packing' || low === 'packing-rc5') return 'Packing';
+            if (low === 'mptk' || low === 'mp-tk') return 'MP-TK';
+            if (low === 'tk20' || low === 'tk-2.0' || low === 'tk-2') return 'TK-2.0';
             return fromOpts;
         }
-        const mr = txt(item?.modoRegistro).toLowerCase();
+        const mr = txt(item?.modoRegistro || item?.modo_registro).toLowerCase();
+        if (mr === 'acopio') return 'Campo Acopio';
+        if (mr === 'visual' || mr === 'campo') return 'Campo Visual';
         if (mr === 'packing' || mr === 'packing-rc5') return 'Packing';
         if (mr === 'mptk' || mr === 'mp-tk') return 'MP-TK';
         if (mr === 'tk20' || mr === 'tk-2.0' || mr === 'tk-2') return 'TK-2.0';
-        return 'Campo';
+        return 'Campo Visual';
     }
 
     function partesNombrePdfMuestra_(item, opts, ensayoOverride) {
