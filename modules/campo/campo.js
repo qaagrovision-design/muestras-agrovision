@@ -5296,7 +5296,8 @@ const META_SAVE_IDS = [
             return fila.slice(0, pre).concat(h6, fila.slice(pre, nCols));
         }
 
-        // Filas para POST: solo clamshells (0..N-1). TIEMPOS V./A. van en el hueco de cada fila con N° jarra.
+        // Filas POST: clamshells + jarras del panel que no van en ningún clamshell
+        // (solo-TIEMPOS → TIEMPOS V./A., igual visual y acopio).
         function construirRowsRegistroBasePorEnsayo(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
             sincronizarInicioCosechaDesdeAnterior(ensayo);
@@ -5309,7 +5310,29 @@ const META_SAVE_IDS = [
                 .sort((a, b) => Number(a.id) - Number(b.id));
             const n = items.length;
             const horaRegistro = horaLocalActual();
-            return items.map((item, idx) => construirFilaPostExpandidaConHoja2(item, idx, n, horaRegistro));
+            const rows = items.map((item, idx) => construirFilaPostExpandidaConHoja2(item, idx, n, horaRegistro));
+
+            const jarrasEnClamshell = new Set();
+            items.forEach((it) => {
+                if (jarraVaciaItem_(it?.jarra)) return;
+                const r = parseRangoJarraLlenado(String(it.jarra).trim());
+                if (r) {
+                    jarrasEnClamshell.add(r.a);
+                    jarrasEnClamshell.add(r.b);
+                    return;
+                }
+                const num = Number(String(it.jarra).trim());
+                if (Number.isFinite(num) && num >= 1) jarrasEnClamshell.add(num);
+            });
+
+            jarrasDelPanelLlenado_(ensayo).forEach((nJarra) => {
+                if (jarrasEnClamshell.has(nJarra)) return;
+                const h6 = seisCeldasHoja2DesdeLlenadoJarras(ensayo, nJarra);
+                const hayTiempo = h6.some((v) => String(v || '').trim() !== '');
+                if (!hayTiempo) return;
+                rows.push(construirFilaPostSoloTiemposJarra_(ensayo, nJarra, horaRegistro));
+            });
+            return rows;
         }
         function construirRowsRegistroBase() {
             return construirRowsRegistroBasePorEnsayo(obtenerEnsayoActivo());
@@ -7912,27 +7935,22 @@ const META_SAVE_IDS = [
             const datosPdfEnvio = typeof window.obtenerDatosPdfCampoParaEnsayos === 'function'
                 ? window.obtenerDatosPdfCampoParaEnsayos([ensayoPdf])
                 : null;
-            const pdfOk = await asegurarPdfCampoHistorialTrasEnvio_(
-                [ensayoPdf],
-                payload.fecha,
-                { num_muestra: payload.num_muestra, datos: datosPdfEnvio, payload }
-            );
-
             const regConfirm = {
                 uid: payload.uid,
                 num_muestra: payload.num_muestra,
                 fecha: payload.fecha,
                 ensayo_numero: payload.ensayo_numero
             };
-            let confirmacion = await confirmarRegistroServidorConReintentos(regConfirm);
-            if (confirmacion?.estado === 'pendiente') {
-                await sleepMs(900);
-                confirmacion = await confirmarRegistroServidorConReintentos(regConfirm);
-            }
-            if (confirmacion?.estado === 'pendiente') {
-                await sleepMs(1400);
-                confirmacion = await confirmarRegistroServidorConReintentos(regConfirm);
-            }
+            // PDF local + confirmación del servidor en paralelo (antes era secuencial y sumaba esperas).
+            const [pdfOk, confirmacion] = await Promise.all([
+                asegurarPdfCampoHistorialTrasEnvio_(
+                    [ensayoPdf],
+                    payload.fecha,
+                    { num_muestra: payload.num_muestra, datos: datosPdfEnvio, payload }
+                ),
+                confirmarRegistroServidorTrasPost_(regConfirm)
+            ]);
+
             if (confirmacion?.estado === 'confirmado') {
                 registrarNumMuestraUsadoLocal(payload.num_muestra, {
                     fecha: payload.fecha,
@@ -7968,6 +7986,19 @@ const META_SAVE_IDS = [
                 if (numInfo && numInfo.existe === true) return { estado: 'duplicado_codigo', detalle: numInfo };
             }
             return { estado: 'pendiente' };
+        }
+
+        /** Tras POST: sondea confirmación con esperas cortas (misma lógica, menos idle). */
+        async function confirmarRegistroServidorTrasPost_(reg) {
+            let confirmacion = await confirmarRegistroServidorConReintentos(reg);
+            if (confirmacion?.estado !== 'pendiente') return confirmacion;
+            const esperas = [450, 700, 1100];
+            for (let i = 0; i < esperas.length; i++) {
+                await sleepMs(esperas[i]);
+                confirmacion = await confirmarRegistroServidorConReintentos(reg);
+                if (confirmacion?.estado !== 'pendiente') return confirmacion;
+            }
+            return confirmacion;
         }
 
         async function confirmarNumMuestraUnicoAntesDeGuardar(ensayoObjetivo) {
@@ -8205,28 +8236,22 @@ const META_SAVE_IDS = [
             const datosPdfLote = typeof window.obtenerDatosPdfCampoParaEnsayos === 'function'
                 ? window.obtenerDatosPdfCampoParaEnsayos(lista)
                 : null;
-            const pdfOk = await asegurarPdfCampoHistorialTrasEnvio_(lista, payload.fecha, {
-                num_muestra: payload.num_muestra,
-                nums_por_ensayo: payload.nums_por_ensayo,
-                datos: datosPdfLote,
-                payload
-            });
-
             const regConfirm = {
                 uid: payload.uid,
                 num_muestra: payload.num_muestra,
                 fecha: payload.fecha,
                 ensayo_numero: payload.ensayo_numero
             };
-            let confirmacion = await confirmarRegistroServidorConReintentos(regConfirm);
-            if (confirmacion?.estado === 'pendiente') {
-                await sleepMs(900);
-                confirmacion = await confirmarRegistroServidorConReintentos(regConfirm);
-            }
-            if (confirmacion?.estado === 'pendiente') {
-                await sleepMs(1400);
-                confirmacion = await confirmarRegistroServidorConReintentos(regConfirm);
-            }
+            const [pdfOk, confirmacion] = await Promise.all([
+                asegurarPdfCampoHistorialTrasEnvio_(lista, payload.fecha, {
+                    num_muestra: payload.num_muestra,
+                    nums_por_ensayo: payload.nums_por_ensayo,
+                    datos: datosPdfLote,
+                    payload
+                }),
+                confirmarRegistroServidorTrasPost_(regConfirm)
+            ]);
+
             if (confirmacion?.estado === 'confirmado') {
                 lista.forEach((ensayo) => {
                     const num = payload.nums_por_ensayo?.[ensayo] || '';

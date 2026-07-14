@@ -496,8 +496,7 @@
     var tCal = String(sheet.getRange(1, 35).getValue() || "").trim().toUpperCase();
     if (modoH === "TRAZ_ACOPIO" && p4 === "PESO_4_CLAMSHELL_CALIBRADO" && tCal === "TIEMPO_TERMINO_CALIBRADO") {
       migrarTrazLibreATrazTurno_(sheet);
-      asegurarEncabezadosPackingEnHoja_(sheet);
-      asegurarFormatoTextoColumnasRegistroHoja_(sheet);
+      // Formato texto ya se aplica a filas nuevas al insertar; Packing/TK en sus doPost.
       return;
     }
     sheet.getRange(1, 1, 1, h.length).setValues([h]);
@@ -568,7 +567,7 @@
         && hObs === "OBSERVACION" && hFmt === "OBSERVACION_FORMATO" && hHora === "HORA_REGISTRO"
         && pDespacho === "DESPACHO_ACOPIO") {
       migrarTrazLibreATrazTurno_(sheet);
-      asegurarEncabezadosPackingEnHoja_(sheet);
+      // Encabezados Packing/TK/TK20/RC5: solo en sus doPost (no en cada POST de Campo).
       return;
     }
     var viejoB = b1 === "RESPONSABLE" || b1 === "GUIA_REMISION";
