@@ -196,78 +196,9 @@
     }
 
     /** Coherencia entre pesos, tiempos, T° y HR — solo al enviar registro. */
-    function validarCoherenciaRutasEnvioMptk_(estado, cards) {
-        const errores = [];
-        const campos = estado?.campos || {};
-        const leer = (id) => campos[id];
-        const lista = Array.isArray(cards) ? cards : [];
-        const cardTiemposRef = lista.slice().sort((a, b) => Number(a.clamshellNum) - Number(b.clamshellNum))[0];
-        const tiempos = cardTiemposRef?.tiempos || {};
-
-        const mpPesos = lista.some((c) => MPTK_MP_PESO_KEYS.some((k) => pesoNum(c.pesos?.[k]) > 0));
-        const tkPesos = lista.some((c) => MPTK_TK_PESO_KEYS.some((k) => pesoNum(c.pesos?.[k]) > 0));
-        const mpTemp = grupoTieneDataNumericaMptk_(leer, MPTK_MP_TEMP_KEYS);
-        const tkTemp = grupoTieneDataNumericaMptk_(leer, MPTK_TK_TEMP_KEYS);
-        const mpHum = grupoTieneDataNumericaMptk_(leer, MPTK_MP_HUM_KEYS);
-        const tkHum = grupoTieneDataNumericaMptk_(leer, MPTK_TK_HUM_KEYS);
-
-        const mpActiva = mpPesos || mpTemp || mpHum;
-        const tkActiva = tkPesos || tkTemp || tkHum;
-
-        if (mpTemp && !grupoCompletoNumericoMptk_(leer, MPTK_MP_HUM_KEYS)) {
-            errores.push('Si registras temperatura cámara MP, completa humedad cámara MP (Ing. y Sal.).');
-        }
-        if (mpHum && !grupoCompletoNumericoMptk_(leer, MPTK_MP_TEMP_KEYS)) {
-            errores.push('Si registras humedad cámara MP, completa temperatura cámara MP (4 campos).');
-        }
-        if (tkTemp && !grupoCompletoNumericoMptk_(leer, MPTK_TK_HUM_KEYS)) {
-            errores.push('Si registras temperatura traslado/despacho TK, completa humedad traslado/despacho TK.');
-        }
-        if (tkHum && !grupoCompletoNumericoMptk_(leer, MPTK_TK_TEMP_KEYS)) {
-            errores.push('Si registras humedad traslado/despacho TK, completa temperatura traslado TK (6 campos).');
-        }
-
-        if (mpActiva) {
-            if (!grupoCompletoNumericoMptk_(leer, MPTK_MP_TEMP_KEYS)) {
-                errores.push('Completa temperatura cámara MP (Ing. y Sal. · cámara y pulpa).');
-            }
-            if (!grupoCompletoNumericoMptk_(leer, MPTK_MP_HUM_KEYS)) {
-                errores.push('Completa humedad cámara MP (Ing. y Sal.).');
-            }
-            if (!evaluarRutaTiemposMptk_(tiempos).mpOk) {
-                errores.push('Completa tiempos cámara MP (Ing. y Sal.) — deben coincidir con la ruta MP.');
-            }
-            lista.forEach((c) => {
-                const n = c.clamshellNum || '';
-                if (!evaluarRutaPesosMptk_(c.pesos || {}).mpOk) {
-                    errores.push('Thermo-King #' + n + ': completa pesos cámara MP (Ing. y Sal.).');
-                }
-            });
-        }
-
-        if (tkActiva) {
-            if (!grupoCompletoNumericoMptk_(leer, MPTK_TK_TEMP_KEYS)) {
-                errores.push('Completa temperatura traslado/despacho TK (6 campos).');
-            }
-            if (!grupoCompletoNumericoMptk_(leer, MPTK_TK_HUM_KEYS)) {
-                errores.push('Completa humedad traslado/despacho TK (4 campos).');
-            }
-            if (!evaluarRutaTiemposMptk_(tiempos).tkOk) {
-                errores.push('Completa tiempos traslado/despacho TK (Inicio y Despacho).');
-            }
-            lista.forEach((c) => {
-                const n = c.clamshellNum || '';
-                if (!evaluarRutaPesosMptk_(c.pesos || {}).tkOk) {
-                    errores.push('Thermo-King #' + n + ': completa pesos traslado/despacho TK (Inicio y Despacho).');
-                }
-            });
-        }
-
-        if (!mpActiva && !tkActiva) {
-            errores.push('Registra datos en cámara MP o en traslado/despacho TK.');
-        }
-
-        return [...new Set(errores)];
+    /** Enviar progresivo: solo coherencia entre campos capturados (sin exigir ruta completa). */
+    function validarCoherenciaRutasEnvioMptk_(/* estado, cards */) {
+        return [];
     }
 
     const PRES_AMB_FILAS_MPTK = [
@@ -495,7 +426,7 @@
         return null;
     }
 
-    /** Solo coherencia entre campos ya capturados (guardado progresivo en modales). */
+    /** Solo coherencia entre campos ya capturados (guardado progresivo uno a uno). */
     function validarSecuenciaPesosProgresivoMptk_(p) {
         const ic = pesoNum(p?.ic);
         const st = pesoNum(p?.st);
@@ -511,12 +442,6 @@
         }
         if (it > 0 && st > 0 && it > st + tol) {
             errores.push('Inicio traslado TK.: debe ser igual o menor que Sal. cám. MP.');
-        }
-        if (st > 0 && ic <= 0) {
-            errores.push('Completa Ing. cám. MP antes de Sal. cám. MP.');
-        }
-        if (dp > 0 && it <= 0) {
-            errores.push('Completa Inicio traslado TK. antes de Despacho TK.');
         }
         return errores;
     }
@@ -600,7 +525,7 @@
                 alertEl.style.display = 'none';
             }
         }
-        if (btnGuardar) btnGuardar.disabled = errores.length > 0;
+        if (btnGuardar) btnGuardar.disabled = false;
         return errores;
     }
 
@@ -712,7 +637,7 @@
                 alertEl.style.display = 'none';
             }
         }
-        if (btnGuardar) btnGuardar.disabled = errores.length > 0;
+        if (btnGuardar) btnGuardar.disabled = false;
         return errores;
     }
 
@@ -1246,8 +1171,13 @@
     }
 
     function normalizarValorControlGlobalMptk_(raw) {
-        const live = sanitizarValorControlGlobalMptk_(raw);
+        let live = sanitizarValorControlGlobalMptk_(raw);
         if (!live) return '';
+        if (live === '.') return '';
+        if (live.endsWith('.')) {
+            const base = live.slice(0, -1);
+            return base ? (base + '.0') : '';
+        }
         if (live.includes('.')) return live;
         if (live.length >= 3) return live.slice(0, 2) + '.' + live.slice(2, 3);
         return live;
@@ -1373,12 +1303,6 @@
         elCtrlBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
             formatearInputControlGlobalMptk_(inp, true);
         });
-        const incompleto = [...elCtrlBody.querySelectorAll('input')]
-            .some((inp) => String(inp.value || '').trim().endsWith('.'));
-        if (incompleto) {
-            toastUi('warning', 'Decimal incompleto', 'Ejemplo: 11.2 (no 11.).');
-            return;
-        }
         elCtrlBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
             const k = inp.getAttribute('data-field');
             if (k) setVal(k, inp.value);
@@ -1609,8 +1533,8 @@
         exportCardsState: exportCardsStateMptk_,
         importCardsState: importCardsStateMptk_,
         buildThermokingArrays: buildThermokingArraysMptk_,
-        validarSecuenciaTiempos: validarSecuenciaTiemposMptk_,
-        validarSecuenciaPesos: validarSecuenciaPesosEstrictoMptk_,
+        validarSecuenciaTiempos: validarSecuenciaTiemposProgresivoMptk_,
+        validarSecuenciaPesos: (p, clamshellNum) => validarSecuenciaPesosConCardMptk_(p, clamshellNum, { estricto: false }),
         evaluarRutaMpTk: evaluarRutaMpTkMptk_,
         evaluarRutaPesos: evaluarRutaPesosMptk_,
         evaluarRutaTiempos: evaluarRutaTiemposMptk_,

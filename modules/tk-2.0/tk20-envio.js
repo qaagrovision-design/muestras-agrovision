@@ -230,14 +230,9 @@
         const placa = String(estado?.transporte?.placa || '').trim();
         if (!resp) errores.push('Falta responsable.');
         if (!placa) errores.push('Falta placa del vehículo.');
-        const restLlegada = restantesPesosEtapaDesdeEstado_('llegada', estado);
-        const restTraslado = restantesPesosEtapaDesdeEstado_('traslado', estado);
-        if (restLlegada > 0) errores.push('Faltan pesos en Llegada (' + restLlegada + ').');
-        if (restTraslado > 0) errores.push('Faltan pesos en Traslado (' + restTraslado + ').');
-        if (detalleSnap && !campoListoDesdeDetalleSnap(detalleSnap)) {
-            errores.push(window.MensajesFlujo?.campoIncompletoCorto?.(detalleSnap)
-                || 'Termina y envía Campo o Acopio en esta muestra.');
-        }
+        // Enviar progresivo: solo coherencia entre lo capturado (sin exigir 6+6 pesos).
+        const pesoErr = window.Tk20Pesos?.validarPesosEstado?.(estado, detalleSnap) || [];
+        if (pesoErr.length) errores.push(...pesoErr);
         return { ok: errores.length === 0, errores };
     }
 
@@ -1222,12 +1217,12 @@
         const placa = String(transporte()?.getPlaca?.() || '').trim();
         if (!resp) errores.push('Falta responsable.');
         if (!placa) errores.push('Falta placa del vehículo.');
-        if (restantesPesosEtapa('llegada') > 0) {
-            errores.push('Faltan pesos en Llegada (' + restantesPesosEtapa('llegada') + ').');
-        }
-        if (restantesPesosEtapa('traslado') > 0) {
-            errores.push('Faltan pesos en Traslado (' + restantesPesosEtapa('traslado') + ').');
-        }
+        // Enviar progresivo: no exige completar los 6 pesos de cada etapa.
+        const pesoErr = window.Tk20Pesos?.validarPesosEstado?.(
+            window.Tk20Draft?.capturarEstadoUi?.() || {},
+            lastDetalle
+        ) || [];
+        if (pesoErr.length) errores.push(...pesoErr);
         return { ok: errores.length === 0, errores };
     }
 
@@ -1237,13 +1232,24 @@
     }
 
     async function guardarPdfTk20HistorialTrasEnvio_(capturas, fechaIso) {
-        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarTk20 !== 'function') return;
+        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarTk20 !== 'function') return false;
         const lista = (Array.isArray(capturas) ? capturas : []).filter(capturaTk20ElegibleHistorialPdf_);
-        if (!lista.length) return;
+        if (!lista.length) return false;
         try {
-            await window.HistPdfEnvio.guardarTk20(lista, fechaIso);
+            const ok = await window.HistPdfEnvio.guardarTk20(lista, fechaIso);
+            if (!ok) {
+                console.warn('[HistPDF] PDF TK-2.0 no verificado; reintento…');
+                return !!(await window.HistPdfEnvio.guardarTk20(lista, fechaIso));
+            }
+            return true;
         } catch (err) {
             console.warn('[HistPDF] No se pudo guardar PDF TK-2.0:', err);
+            try {
+                return !!(await window.HistPdfEnvio.guardarTk20(lista, fechaIso));
+            } catch (err2) {
+                console.warn('[HistPDF] Reintento PDF TK-2.0 falló:', err2);
+                return false;
+            }
         }
     }
 

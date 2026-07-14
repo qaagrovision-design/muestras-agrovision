@@ -64,8 +64,13 @@
     }
 
     function normalizarValor(raw) {
-        const live = sanitizarValor(raw);
+        let live = sanitizarValor(raw);
         if (!live) return '';
+        if (live === '.') return '';
+        if (live.endsWith('.')) {
+            const base = live.slice(0, -1);
+            return base ? (base + '.0') : '';
+        }
         if (live.includes('.')) return live;
         if (live.length >= 3) return live.slice(0, 2) + '.' + live.slice(2, 3);
         return live;
@@ -165,14 +170,11 @@
     function persistirModalControlSiValido() {
         if (!elBody) return false;
         elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => formatearInput(inp, true));
-        const incompleto = [...elBody.querySelectorAll('input')]
-            .some((inp) => String(inp.value || '').trim().endsWith('.'));
-        if (incompleto) return false;
         elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
             const k = inp.getAttribute('data-field');
             if (k) setVal(k, inp.value);
         });
-        window.Tk20Presion?.recalcularTodas?.({ render: true });
+        window.Tk20Presion?.recalcularTodas?.({ render: true, control: { ...valores } });
         window.Tk20Draft?.notificarCambio?.();
         return true;
     }
@@ -186,17 +188,11 @@
         if (!elBody) return;
         const tipo = elBody.dataset.ctrlTipo;
         elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => formatearInput(inp, true));
-        const incompleto = [...elBody.querySelectorAll('input')]
-            .some((inp) => String(inp.value || '').trim().endsWith('.'));
-        if (incompleto) {
-            window.Tk20Swal?.warn?.('Decimal incompleto', 'Ejemplo: 11.2 (no 11.).');
-            return;
-        }
         elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
             const k = inp.getAttribute('data-field');
             if (k) setVal(k, inp.value);
         });
-        window.Tk20Presion?.recalcularTodas?.({ render: true });
+        window.Tk20Presion?.recalcularTodas?.({ render: true, control: { ...valores } });
         ocultarModal(elModal);
         window.Tk20Draft?.notificarCambio?.();
         const msg = tipo === 'tk2_llegada_temp'
@@ -240,23 +236,37 @@
         window.Tk20Presion?.recalcularTodas?.({ render: false, control: valores });
     }
 
+    let flushControlEnCurso_ = false;
+
     function persistirModalControlSilencioso_() {
+        if (flushControlEnCurso_) return;
         if (!elModal || elModal.style.display !== 'flex' || !elBody) return;
-        elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => formatearInput(inp, true));
-        elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
-            const k = inp.getAttribute('data-field');
-            if (k) setVal(k, inp.value);
-        });
-        window.Tk20Presion?.recalcularTodas?.({ render: false });
+        flushControlEnCurso_ = true;
+        try {
+            elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => formatearInput(inp, true));
+            elBody.querySelectorAll('.packing-cg-inp').forEach((inp) => {
+                const k = inp.getAttribute('data-field');
+                if (k) setVal(k, inp.value);
+            });
+            // Pasar control evita getValores → flush → recalcular → getValores (stack overflow).
+            window.Tk20Presion?.recalcularTodas?.({ render: false, control: { ...valores } });
+        } finally {
+            flushControlEnCurso_ = false;
+        }
+    }
+
+    function getValoresSnapshot_() {
+        return { ...valores };
     }
 
     function getValoresConFlush_() {
         persistirModalControlSilencioso_();
-        return { ...valores };
+        return getValoresSnapshot_();
     }
 
     window.Tk20Control = {
         getValores: getValoresConFlush_,
+        getValoresSnapshot: getValoresSnapshot_,
         setValores,
         setBarDesbloqueada,
         persistirAbierto: persistirModalControlSilencioso_

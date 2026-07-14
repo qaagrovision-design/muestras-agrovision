@@ -21,16 +21,59 @@
     let tk20ObsEtapa = 'traslado';
     let tk20PresionEtapa = 'traslado';
 
+    const elPesosAlert = document.getElementById('tk2_pesos_alert');
+
+    function setAlertaPesosModal_(msgs) {
+        if (!elPesosAlert) return;
+        const list = Array.isArray(msgs) ? msgs.filter(Boolean) : [];
+        if (!list.length) {
+            elPesosAlert.style.display = 'none';
+            elPesosAlert.textContent = '';
+            return;
+        }
+        elPesosAlert.style.display = 'block';
+        elPesosAlert.textContent = list.join(' ');
+    }
+
+    function leerPesosDesdeModal_() {
+        const out = Object.create(null);
+        const modalBody = document.getElementById('tk2_pesos_modal_body');
+        const api = body();
+        modalBody?.querySelectorAll('input[data-field]').forEach((inp) => {
+            const key = inp.getAttribute('data-field');
+            if (!key) return;
+            const raw = typeof api?.pesoNumero === 'function'
+                ? api.pesoNumero(inp.value)
+                : Number(inp.value);
+            out[key] = Number.isFinite(raw) ? raw : 0;
+        });
+        return out;
+    }
+
+    function validarPesosModalActual_() {
+        const api = body();
+        if (!api) return [];
+        const etapaKey = api.getActiveEtapa();
+        const pesos = leerPesosDesdeModal_();
+        const detalle = window.Tk20Header?.getLastDetalle?.() || null;
+        const llegadaPesos = api.getEtapaCard?.('llegada')?.pesos || {};
+        return window.Tk20Pesos?.validarPesosEtapa?.(etapaKey, pesos, {
+            detalle,
+            pesosLlegada: llegadaPesos
+        }) || [];
+    }
+
     function etapaDesdeEl(el) {
         return String(el?.dataset?.tk20Etapa || 'traslado').trim() || 'traslado';
     }
 
     function buildPesosModalForm(etapaKey, pesos, focusKey) {
-        const body = document.getElementById('tk2_pesos_modal_body');
-        if (!body) return;
+        const bodyEl = document.getElementById('tk2_pesos_modal_body');
+        if (!bodyEl) return;
+        setAlertaPesosModal_([]);
         const list = window.Tk20Pesos?.pesosVisuales?.(etapaKey) || [];
         const vals = pesos || {};
-        body.innerHTML = list.map((campo) => (
+        bodyEl.innerHTML = list.map((campo) => (
             '<div class="form-group">'
             + '<label for="' + campo.inpId + '">' + campo.modalLabel + '</label>'
             + '<input type="number" id="' + campo.inpId + '" name="' + campo.key + '" data-field="' + campo.key + '"'
@@ -41,9 +84,15 @@
             const inp = document.getElementById(campo.inpId);
             if (inp) inp.value = valorPesoInput(vals[campo.key]);
         });
+        bodyEl.querySelectorAll('input[data-field]').forEach((inp) => {
+            inp.addEventListener('input', () => {
+                const err = validarPesosModalActual_();
+                setAlertaPesosModal_(err);
+            });
+        });
         const focusInp = focusKey
-            ? body.querySelector('[data-field="' + focusKey + '"]')
-            : body.querySelector('input');
+            ? bodyEl.querySelector('[data-field="' + focusKey + '"]')
+            : bodyEl.querySelector('input');
         if (focusInp) {
             setTimeout(() => {
                 focusInp.focus();
@@ -121,16 +170,25 @@
             if (key) card.pesos[key] = api.pesoNumero(inp.value);
         });
         api.renderCards();
-        window.Tk20Draft?.notificarCambio?.();
     }
 
     function cerrarModalPesos() {
         persistirModalPesos();
         ocultarModal(elPesosModal);
+        window.Tk20Draft?.notificarCambio?.();
     }
 
     function guardarModalPesos() {
-        cerrarModalPesos();
+        const errores = validarPesosModalActual_();
+        if (errores.length) {
+            setAlertaPesosModal_(errores);
+            window.Tk20Swal?.warn?.('Pesos inválidos', errores[0]);
+            return;
+        }
+        setAlertaPesosModal_([]);
+        persistirModalPesos();
+        ocultarModal(elPesosModal);
+        window.Tk20Draft?.notificarCambio?.();
         window.Tk20Draft?.notificarPdfVivo?.();
         window.Tk20Swal?.success?.('Guardado', 'Pesos actualizados.');
     }
@@ -185,19 +243,20 @@
         const api = body();
         if (!api) return;
         window.Tk20Presion?.recalcularEtapa?.(tk20PresionEtapa, { render: true });
-        window.Tk20Draft?.notificarCambio?.();
     }
 
     function cerrarModalPresion() {
         persistirModalPresion();
         ocultarModal(elPresionModal);
         if (elPresionBody) elPresionBody.innerHTML = '';
+        window.Tk20Draft?.notificarCambio?.();
     }
 
     function guardarModalPresion() {
         persistirModalPresion();
         ocultarModal(elPresionModal);
         if (elPresionBody) elPresionBody.innerHTML = '';
+        window.Tk20Draft?.notificarCambio?.();
         window.Tk20Swal?.success?.('Guardado', 'Presión recalculada desde T° y HR.');
     }
 
@@ -228,16 +287,18 @@
         if (!card) return;
         card.observacion = String(elObsInput?.value || '').trim();
         api.renderCards();
-        window.Tk20Draft?.notificarCambio?.();
     }
 
     function cerrarModalObservacion() {
         persistirModalObservacion();
         ocultarModal(elObsModal);
+        window.Tk20Draft?.notificarCambio?.();
     }
 
     function guardarModalObservacion() {
-        cerrarModalObservacion();
+        persistirModalObservacion();
+        ocultarModal(elObsModal);
+        window.Tk20Draft?.notificarCambio?.();
         window.Tk20Swal?.success?.('Guardado', 'Observación actualizada.');
     }
 

@@ -1,10 +1,13 @@
 /**
  * Caché local de PDFs enviados — solo hoy y ayer (IndexedDB).
+ * Persistente en el dispositivo: reintentos + verificación de lectura tras guardar.
  */
 (function histPdfStoreModule() {
     const DB_NAME = 'muestras-hist-pdf-v1';
     const DB_VER = 1;
     const STORE = 'pdfs';
+    const GUARDAR_INTENTOS = 3;
+    let persistenciaPedida_ = false;
 
     function hoyIsoLocal() {
         const d = new Date();
@@ -44,6 +47,20 @@
             String(numMuestra || '').trim().toUpperCase(),
             String(modulo || 'campo').trim().toLowerCase()
         ].join('||');
+    }
+
+    function sleepMs_(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function pedirPersistenciaAlmacenamiento_() {
+        if (persistenciaPedida_) return;
+        persistenciaPedida_ = true;
+        try {
+            if (navigator.storage && typeof navigator.storage.persist === 'function') {
+                void navigator.storage.persist().catch(() => { /* ok si el navegador niega */ });
+            }
+        } catch (_) { /* ignore */ }
     }
 
     function abrirDb() {
@@ -108,24 +125,56 @@
         return viejos.length;
     }
 
-    async function guardarBlobParaMuestras(blob, nombreArchivo, muestras) {
-        if (!blob || !Array.isArray(muestras) || !muestras.length) return;
-        const buf = await blob.arrayBuffer();
-        await purgarAntiguos();
+    function blobTieneContenido_(blobLike) {
+        if (!blobLike) return false;
+        if (blobLike instanceof ArrayBuffer) return blobLike.byteLength > 0;
+        if (typeof blobLike.byteLength === 'number') return blobLike.byteLength > 0;
+        if (typeof blobLike.size === 'number') return blobLike.size > 0;
+        return true;
+    }
+
+    async function escribirYVerificarUna_(rec) {
         const db = await abrirDb();
         const tx = db.transaction(STORE, 'readwrite');
-        const store = tx.objectStore(STORE);
+        tx.objectStore(STORE).put(rec);
+        await txDone(tx);
+        const leido = await new Promise((resolve, reject) => {
+            abrirDb().then((db2) => {
+                const tx2 = db2.transaction(STORE, 'readonly');
+                const req = tx2.objectStore(STORE).get(rec.id);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            }).catch(reject);
+        });
+        if (!leido || !blobTieneContenido_(leido.blob)) {
+            throw new Error('PDF local no verificado tras guardar (' + rec.id + ')');
+        }
+        return true;
+    }
+
+    async function guardarBlobParaMuestras(blob, nombreArchivo, muestras) {
+        if (!blob || !Array.isArray(muestras) || !muestras.length) return false;
+        pedirPersistenciaAlmacenamiento_();
+        const buf = await blob.arrayBuffer();
+        if (!buf || !buf.byteLength) {
+            throw new Error('PDF vacío: no se puede guardar en Historial');
+        }
+        try {
+            await purgarAntiguos();
+        } catch (err) {
+            console.warn('[HistPDF] purga previa falló (se sigue guardando):', err?.message || err);
+        }
         const ts = Date.now();
         const nombre = String(nombreArchivo || 'muestra.pdf');
+        const registros = [];
         muestras.forEach((m) => {
             const fecha = normalizarFecha(m.fecha);
             const ensayo = String(m.ensayo_numero || '').trim();
             const num = String(m.num_muestra || '').trim().toUpperCase();
             const modulo = String(m.modulo || 'campo').trim().toLowerCase();
             if (!fecha || !ensayo || !num) return;
-            const id = claveRegistro(fecha, ensayo, num, modulo);
-            store.put({
-                id,
+            registros.push({
+                id: claveRegistro(fecha, ensayo, num, modulo),
                 fecha,
                 ensayo_numero: ensayo,
                 num_muestra: num,
@@ -135,7 +184,22 @@
                 blob: buf
             });
         });
-        await txDone(tx);
+        if (!registros.length) return false;
+
+        let lastErr = null;
+        for (let intento = 1; intento <= GUARDAR_INTENTOS; intento++) {
+            try {
+                for (let i = 0; i < registros.length; i++) {
+                    await escribirYVerificarUna_(registros[i]);
+                }
+                return true;
+            } catch (err) {
+                lastErr = err;
+                console.warn('[HistPDF] intento ' + intento + '/' + GUARDAR_INTENTOS + ' falló:', err?.message || err);
+                if (intento < GUARDAR_INTENTOS) await sleepMs_(180 * intento);
+            }
+        }
+        throw lastErr || new Error('No se pudo guardar PDF en Historial local');
     }
 
     async function obtener(fecha, ensayoNumero, numMuestra, modulo) {
@@ -146,7 +210,7 @@
             const req = tx.objectStore(STORE).get(id);
             req.onsuccess = () => {
                 const row = req.result;
-                if (!row || !row.blob) {
+                if (!row || !blobTieneContenido_(row.blob)) {
                     resolve(null);
                     return;
                 }
@@ -168,6 +232,7 @@
         const todos = await listarTodos();
         const limiteMs = inicioDiaLocalMs(new Date()) - (24 * 60 * 60 * 1000);
         return todos.filter((r) => {
+            if (!blobTieneContenido_(r?.blob)) return false;
             const ts = Number(r?.ts) || 0;
             if (ts > 0) return ts >= limiteMs;
             const f = normalizarFecha(r?.fecha);
@@ -212,7 +277,7 @@
 
     async function existe(fecha, ensayoNumero, numMuestra, modulo) {
         const rec = await obtener(fecha, ensayoNumero, numMuestra, modulo);
-        return !!(rec && rec.blob);
+        return !!(rec && rec.blob && blobTieneContenido_(rec.blob));
     }
 
     async function modulosDisponibles(fecha, ensayoNumero, numMuestra) {

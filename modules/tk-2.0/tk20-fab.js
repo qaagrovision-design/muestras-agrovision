@@ -230,7 +230,8 @@
                 fecha: formatoFechaPdf(fechaIso),
                 trazabilidad: trazabilidadParaPdf(detalle, transporte),
                 responsable: String(estado?.responsable || detalle?.RESPONSABLE_TK || detalle?.RESPONSABLE || '').trim(),
-                guia: String(transporte.guia || detalle?.GUIA_REMISION || '').trim(),
+                // Por ahora: PDF sin guía (campo vacío en formato PE-F-CPS-312).
+                guia: '',
                 rotulo: textoRotuloMuestra(raw, detalle),
                 placa: String(transporte.placa || detalle?.PLACA_VEHICULO || '').trim(),
                 variedad: String(detalle?.VARIEDAD || '').trim(),

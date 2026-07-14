@@ -6284,16 +6284,64 @@
 
         body.packing-rc5-page #control_global_modal_overlay_packing .packing-cg-grid-rc5-unico {
             grid-template-columns: 1fr;
-            max-width: 220px;
-            margin: 0 auto;
+            width: 100%;
+            max-width: none;
+            margin: 0;
         }
 
         body.packing-rc5-page #control_global_modal_overlay_packing .packing-cg-grid-rc5-unico .form-group {
-            text-align: center;
+            width: 100%;
+            text-align: left;
         }
 
         body.packing-rc5-page #control_global_modal_overlay_packing .packing-cg-grid-rc5-unico .form-group label {
-            text-align: center;
+            text-align: left;
+        }
+
+        body.packing-rc5-page #control_global_modal_overlay_packing .packing-cg-grid-rc5-unico input {
+            width: 100%;
+            max-width: none;
+            box-sizing: border-box;
+        }
+
+        /* Packing RC5: presión vapor amb/fruta — un solo input a todo el ancho */
+        body.packing-rc5-page #packing-presion-modal-overlay .presion-metric-grid.packing-presion-grid-rc5-unico,
+        body.packing-rc5-page #packing-presion-modal-overlay .packing-presion-grid-rc5-unico {
+            display: grid;
+            grid-template-columns: 1fr !important;
+            width: 100%;
+            max-width: none;
+            margin: 0 0 8px;
+            gap: 0;
+        }
+
+        body.packing-rc5-page #packing-presion-modal-overlay .packing-presion-grid-rc5-unico .form-group {
+            width: 100%;
+            grid-column: 1 / -1;
+            margin-bottom: 0;
+        }
+
+        body.packing-rc5-page #packing-presion-modal-overlay .packing-presion-grid-rc5-unico .form-group label {
+            display: block;
+            text-align: left;
+            white-space: normal;
+            overflow: visible;
+            text-overflow: unset;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        body.packing-rc5-page #packing-presion-modal-overlay .packing-presion-grid-rc5-unico input.presion-readonly-inp,
+        body.packing-rc5-page #packing-presion-modal-overlay .packing-presion-grid-rc5-unico input.packing-presion-inp {
+            width: 100% !important;
+            max-width: none;
+            box-sizing: border-box;
+            font-size: 1.35rem;
+            padding: 18px 16px;
+        }
+
+        body.packing-rc5-page #packing-presion-modal-overlay .metric-modal-body {
+            width: 100%;
         }
 
         #packing-main.container {
@@ -7642,18 +7690,61 @@
             opacity: 0.65;
         }
 
+        .packing-status-wrap {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+        }
+
+        .packing-status-wrap[hidden] {
+            display: none !important;
+        }
+
         .packing-status-msg {
             font-size: 12px;
-            margin-top: 10px;
+            margin: 0;
             padding: 8px 10px;
             border-radius: 10px;
             background: #f1f5f9;
             color: #475569;
         }
 
+        /* MP-TK / TK-2.0: status suelto debajo del select */
+        .packing-select-block > .packing-status-msg {
+            margin-top: 16px;
+        }
+
         .packing-status-msg--error { background: #fee2e2; color: #991b1b; }
         .packing-status-msg--warn { background: #fef3c7; color: #92400e; }
         .packing-status-msg--info { background: #e0f2fe; color: #075985; }
+
+        .packing-status-retry-btn {
+            align-self: flex-start;
+            border: 1px solid #991b1b;
+            background: #fff;
+            color: #991b1b;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.2;
+            padding: 8px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .packing-status-retry-btn:hover {
+            background: #fee2e2;
+        }
+
+        .packing-status-retry-btn:disabled {
+            opacity: 0.55;
+            cursor: wait;
+        }
+
+        .packing-status-retry-btn[hidden] {
+            display: none !important;
+        }
 
         .packing-select-block {
             position: relative;

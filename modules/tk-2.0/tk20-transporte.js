@@ -116,7 +116,6 @@
     function persistirInputsTransporte() {
         leerInputs();
         actualizarBotonTransporte();
-        window.Tk20Draft?.notificarCambio?.();
     }
 
     function aplicarValores(t) {
@@ -208,6 +207,7 @@
     function cerrarModal() {
         persistirInputsTransporte();
         ocultarModal(elModal);
+        window.Tk20Draft?.notificarCambio?.();
     }
 
     function guardarModal() {
@@ -217,7 +217,8 @@
             elPlaca?.focus();
             return;
         }
-        cerrarModal();
+        ocultarModal(elModal);
+        window.Tk20Draft?.notificarCambio?.();
         window.Tk20Envio?.actualizarBtnEnviar?.();
         window.Tk20Swal?.success?.('Guardado', 'Datos de transporte actualizados.');
     }

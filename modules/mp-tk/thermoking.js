@@ -2937,13 +2937,24 @@
     }
 
     async function guardarPdfMptkHistorialTrasEnvio_(capturas, fechaIso) {
-        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarMptk !== 'function') return;
+        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarMptk !== 'function') return false;
         const lista = (Array.isArray(capturas) ? capturas : []).filter(capturaMptkElegibleHistorialPdf_);
-        if (!lista.length) return;
+        if (!lista.length) return false;
         try {
-            await window.HistPdfEnvio.guardarMptk(lista, fechaIso);
+            const ok = await window.HistPdfEnvio.guardarMptk(lista, fechaIso);
+            if (!ok) {
+                console.warn('[HistPDF] PDF MP-TK no verificado; reintento…');
+                return !!(await window.HistPdfEnvio.guardarMptk(lista, fechaIso));
+            }
+            return true;
         } catch (err) {
             console.warn('[HistPDF] No se pudo guardar PDF MP-TK:', err);
+            try {
+                return !!(await window.HistPdfEnvio.guardarMptk(lista, fechaIso));
+            } catch (err2) {
+                console.warn('[HistPDF] Reintento PDF MP-TK falló:', err2);
+                return false;
+            }
         }
     }
 
@@ -3407,7 +3418,7 @@
                                 detalle: borradorSync.detalleSnap || null
                             } : null;
                             if (capSync && capturaMptkElegibleHistorialPdf_(capSync)) {
-                                void guardarPdfMptkHistorialTrasEnvio_([capSync], fechaSync);
+                                await guardarPdfMptkHistorialTrasEnvio_([capSync], fechaSync);
                             }
                             limpiarBorradorMuestraPorClaveMptk_(fechaSync, rawSync);
                         }

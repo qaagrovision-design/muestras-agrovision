@@ -1143,9 +1143,6 @@ const META_SAVE_IDS = [
             const errs = [];
             if (!item || esClamshellSinDatos_(item)) return errs;
             const label = `Clamshell ${n}`;
-            if (!itemTieneAlgunPesoVisual_(item, n)) {
-                errs.push(`${label}: registra al menos un peso`);
-            }
             const msgOrden = validarOrdenCadenaPesosVisual_(item, n);
             if (msgOrden) errs.push(`${label}: ${msgOrden}`);
             return errs;
@@ -1243,12 +1240,10 @@ const META_SAVE_IDS = [
             }
         }
 
-        /** Validación de pesos Acopio por clamshell (envío): P4/P5 obligatorios; orden solo si hay data. */
+        /** Validación de pesos Acopio por clamshell (envío progresivo): solo orden entre valores capturados. */
         function validarPesosAcopioClamshell_(item, n) {
             const errs = [];
             const label = `Clamshell ${n}`;
-            if (pesoVacio(item?.p4)) errs.push(`${label}: Peso 4 · Clamshell calibrado`);
-            if (pesoVacio(item?.despacho)) errs.push(`${label}: Peso 5 · Despacho campo`);
             const msg45 = validarPesos45Acopio_(item?.p4, item?.despacho);
             if (msg45) errs.push(`${label}: ${msg45}`);
             const msgCadena = validarCadenaPesosOpcionalAcopio_(
@@ -1269,7 +1264,7 @@ const META_SAVE_IDS = [
             return n.toFixed(3);
         }
 
-        /** Antes: Visual clamshell 5+ copiaba Peso 1 desde Peso 2. Ya no: todos los pesos son editables. */
+        /** Antes: Visual clamshell 5+ copiaba Peso 1 desde Peso 2 en la UI. Ya no: UI/PDF dejan P1 vacío. */
         function clamshellUsaPeso1DesdePeso2(/* nroClamshell */) {
             return false;
         }
@@ -1281,6 +1276,85 @@ const META_SAVE_IDS = [
                 if (Number.isFinite(p2) && p2 > 0) return p2;
             }
             return Number(item?.p1) || 0;
+        }
+
+        /**
+         * Solo para planilla/POST Visual: si P1 vacío y P2 tiene valor → duplicar P2 en P1.
+         * UI y PDF siguen mostrando P1 vacío.
+         */
+        function peso1ParaPlanillaVisual_(item) {
+            if (pesoVacio(item?.p1) && !pesoVacio(item?.p2)) {
+                return pesoStrOrEmpty(item.p2);
+            }
+            return pesoStrOrEmpty(item?.p1);
+        }
+
+        /** Clamshells Visual con P1 vacío y P2 lleno (aviso al enviar). */
+        function listarClamshellsPeso1VacioConP2_(ensayoObjetivo) {
+            if (esModoRegistroAcopio_()) return [];
+            const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
+            const items = data
+                .filter((it) => String(it?.ensayo || 'Ensayo 1') === ensayo)
+                .slice()
+                .sort((a, b) => Number(a?.id || 0) - Number(b?.id || 0));
+            const out = [];
+            items.forEach((item, idx) => {
+                if (esClamshellSinDatos_(item)) return;
+                if (!pesoVacio(item?.p1)) return;
+                if (pesoVacio(item?.p2)) return;
+                const n = idx + 1;
+                const jarra = jarraVaciaItem_(item?.jarra) ? '—' : String(item.jarra).trim();
+                out.push({
+                    n,
+                    jarra,
+                    p2: pesoStrOrEmpty(item.p2)
+                });
+            });
+            return out;
+        }
+
+        async function confirmarPeso1VacioAntesDeEnviarVisual_(ensayos) {
+            if (esModoRegistroAcopio_()) return true;
+            const lista = Array.isArray(ensayos) ? ensayos : [ensayos];
+            const lineas = [];
+            lista.forEach((ensayo) => {
+                listarClamshellsPeso1VacioConP2_(ensayo).forEach((c) => {
+                    lineas.push(
+                        `${mostrarMuestra(ensayo)} · Clamshell #${c.n} · Jarra ${c.jarra} · Peso 2 = ${c.p2}g`
+                    );
+                });
+            });
+            if (!lineas.length) return true;
+            const top = lineas.slice(0, 10);
+            const extra = lineas.length - top.length;
+            const htmlLista = top.map((t) => `<li style="margin:0 0 4px;">${t}</li>`).join('')
+                + (extra > 0 ? `<li style="color:#64748b;">… y ${extra} más</li>` : '');
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                const r = await swalFireSafe({
+                    icon: 'warning',
+                    title: 'Peso 1 vacío',
+                    html: '<p style="margin:0 0 10px;font-size:14px;line-height:1.45;">'
+                        + 'Estos clamshells tienen <b>Peso 1 vacío</b> y sí tienen Peso 2.'
+                        + '</p>'
+                        + '<p style="margin:0 0 8px;font-size:13px;color:#64748b;">'
+                        + 'En pantalla y PDF el Peso 1 sigue vacío. En la planilla se copiará el Peso 2 → Peso 1.'
+                        + '</p>'
+                        + `<ul style="margin:0;padding-left:18px;text-align:left;font-size:13px;">${htmlLista}</ul>`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Confirmar y enviar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#1f4f82',
+                    reverseButtons: true,
+                    allowOutsideClick: false,
+                    width: 520
+                });
+                return !!r.isConfirmed;
+            }
+            return window.confirm(
+                'Peso 1 vacío en:\n- ' + top.join('\n- ')
+                + (extra > 0 ? `\n... y ${extra} más` : '')
+                + '\n\n¿Confirmar? En planilla se duplicará Peso 2 → Peso 1.'
+            );
         }
 
         function nroClamshellModalActual_(item) {
@@ -1448,13 +1522,6 @@ const META_SAVE_IDS = [
                 return faltantes;
             }
 
-            const keysTiempo = keysTiempoValidacionCampo_();
-            const keysTemp = ['inicioAmbiente', 'inicioPulpa', 'terminoAmbiente', 'terminoPulpa', 'llegadaAmbiente', 'llegadaPulpa', 'despachoAmbiente', 'despachoPulpa'];
-            const keysHum = ['inicio', 'termino', 'llegada', 'despacho'];
-            const keysPresAmb = ['presionAmbienteInicio', 'presionAmbienteTermino', 'presionAmbienteLlegada', 'presionAmbienteDespacho'];
-            const keysPresFru = ['presionFrutaInicio', 'presionFrutaTermino', 'presionFrutaLlegada', 'presionFrutaDespacho'];
-            const primer = items[0] || null;
-
             items.forEach((item, idx) => {
                 const n = idx + 1;
                 // Jarra " - " es válida (sin data de llenado). Solo Acopio exige jarra si hay Pesos 1–3.
@@ -1468,34 +1535,12 @@ const META_SAVE_IDS = [
                 }
 
                 const t = item?.metric?.tiempo || {};
-                // Regla operativa: tiempos se capturan en el clamshell líder (primero) y se replican.
+                // Enviar progresivo: solo secuencia entre tiempos capturados.
                 if (idx === 0) {
-                    if (keysTiempo.some((k) => campoVacio(t[k]))) {
-                    faltantes.push('Tiempos de la muestra (Clamshell líder)');
-                    } else {
-                        validarSecuenciaTiempoMetrica(t).forEach((e) => faltantes.push(e));
-                    }
+                    validarSecuenciaTiempoMetrica(t).forEach((e) => faltantes.push(e));
                 }
             });
 
-            // Temperatura y presiones se gestionan global por muestra: validar solo en clamshell líder.
-            const tempGlobal = primer?.metric?.temperatura || {};
-            if (keysTemp.some((k) => campoVacio(tempGlobal[k]))) {
-                faltantes.push('Temperatura global (ambiente/pulpa)');
-            }
-            // Aunque se calculen automáticamente, deben existir para considerar completo el ensayo.
-            if (keysPresAmb.some((k) => campoVacio(tempGlobal[k]))) {
-                faltantes.push('Presión vapor ambiente (global)');
-            }
-            if (keysPresFru.some((k) => campoVacio(tempGlobal[k]))) {
-                faltantes.push('Presión vapor fruta (global)');
-            }
-
-            // Humedad es global para todos: validar una sola vez en el clamshell líder.
-            const humGlobal = primer?.metric?.humedad || {};
-            if (keysHum.some((k) => campoVacio(humGlobal[k]))) {
-                faltantes.push('Humedad global');
-            }
             return [...new Set(faltantes)];
         }
 
@@ -3154,6 +3199,21 @@ const META_SAVE_IDS = [
                 const done = keys.filter((k) => String(t[k] ?? '').trim() !== '').length;
                 return { done, total: keys.length };
             }
+            if (kind === 'temperatura') {
+                const t = item?.metric?.temperatura || {};
+                const keys = [
+                    'inicioAmbiente', 'inicioPulpa', 'terminoAmbiente', 'terminoPulpa',
+                    'llegadaAmbiente', 'llegadaPulpa', 'despachoAmbiente', 'despachoPulpa'
+                ];
+                const done = keys.filter((k) => String(t[k] ?? '').trim() !== '').length;
+                return { done, total: keys.length };
+            }
+            if (kind === 'humedad') {
+                const h = item?.metric?.humedad || {};
+                const keys = ['inicio', 'termino', 'llegada', 'despacho'];
+                const done = keys.filter((k) => String(h[k] ?? '').trim() !== '').length;
+                return { done, total: keys.length };
+            }
             const m = item?.metric?.[kind];
             if (!m) return { done: 0, total: 0 };
             const vals = Object.values(m);
@@ -3352,16 +3412,14 @@ const META_SAVE_IDS = [
             let n = 0;
             data.forEach((item) => {
                 if (String(item.ensayo || 'Ensayo 1') !== ensayo) return;
+                // Parcial OK (como Packing): solo cuenta pendiente si aún no hay ningún dato.
+                // Presión no cuenta: se calcula sola desde T° + HR.
                 const t = conteoLlenadoMetrica(item, 'tiempo');
                 const h = conteoLlenadoMetrica(item, 'humedad');
                 const temp = conteoLlenadoMetrica(item, 'temperatura');
-                const pA = conteoLlenadoPresion(item, 'ambiente');
-                const pF = conteoLlenadoPresion(item, 'fruta');
-                const incompleto = (t.total > 0 && t.done < t.total)
-                    || (h.total > 0 && h.done < h.total)
-                    || (temp.total > 0 && temp.done < temp.total)
-                    || pA.done < pA.total
-                    || pF.done < pF.total;
+                const incompleto = (t.total > 0 && t.done === 0)
+                    || (h.total > 0 && h.done === 0)
+                    || (temp.total > 0 && temp.done === 0);
                 if (incompleto) n++;
             });
             return n;
@@ -3795,8 +3853,14 @@ const META_SAVE_IDS = [
         }
 
         function normalizarValorControlGlobal(raw) {
-            const live = sanitizarValorControlGlobalEnVivo(raw);
+            let live = sanitizarValorControlGlobalEnVivo(raw);
             if (!live) return '';
+            if (live === '.') return '';
+            // Al Guardar/blur: "11." → "11.0" (evita bloquear con “Completa el decimal”).
+            if (live.endsWith('.')) {
+                const base = live.slice(0, -1);
+                return base ? `${base}.0` : '';
+            }
             if (live.includes('.')) return live;
             // Auto-inserta decimal al confirmar cuando hay 3 dígitos (ej: 111 -> 11.1)
             if (live.length >= 3) return `${live.slice(0, 2)}.${live.slice(2, 3)}`;
@@ -3819,7 +3883,7 @@ const META_SAVE_IDS = [
             if (tipo === 'temperatura') {
                 const lider = liderClamshellEnsayo_(obtenerEnsayoActivo());
                 const muestra = lider?.metric?.temperatura || {};
-                titulo.textContent = 'Control equitativo · Temperatura ambiente y pulpa (todos)';
+                titulo.textContent = 'Control equitativo · Temperatura ambiente y pulpa';
                 body.innerHTML = `
                     <p class="metric-mini-title">Temperatura ambiente (°C)</p>
                     <div class="metric-grid-4">
@@ -3839,7 +3903,7 @@ const META_SAVE_IDS = [
             } else {
                 const lider = liderClamshellEnsayo_(obtenerEnsayoActivo());
                 const muestra = lider?.metric?.humedad || {};
-                titulo.textContent = 'Control equitativo · Humedad (todos)';
+                titulo.textContent = 'Control equitativo · Humedad';
                 body.innerHTML = `
                     <div class="metric-grid-4">
                         <div class="form-group"><label>Inicio</label><input type="text" inputmode="decimal" maxlength="4" id="visual-cg-humedad-inicio" value="${muestra.inicio || ''}"></div>
@@ -3852,15 +3916,20 @@ const META_SAVE_IDS = [
 
             body.querySelectorAll('input').forEach((input) => {
                 formatearInputControlGlobal(input, true);
+                const persistirCampo = () => {
+                    // Input a input (como Packing): guarda parcial + recalcula presión de lo lleno.
+                    aplicarControlGlobalDesdeFormulario(false);
+                    programarGuardadoDraftCompleto();
+                };
                 input.addEventListener('input', (ev) => {
                     const inputType = String(ev?.inputType || '');
                     const isDeleting = inputType.includes('delete');
                     formatearInputControlGlobal(input, false, { isDeleting });
-                    aplicarControlGlobalDesdeFormulario(false);
+                    persistirCampo();
                 });
                 input.addEventListener('change', () => {
                     formatearInputControlGlobal(input, true);
-                    aplicarControlGlobalDesdeFormulario(false);
+                    persistirCampo();
                 });
             });
             document.getElementById('control-global-modal-overlay').style.display = 'flex';
@@ -4194,12 +4263,11 @@ const META_SAVE_IDS = [
                 return;
             }
             const body = document.getElementById('control-global-modal-body');
-            const incompleto = body
-                ? [...body.querySelectorAll('input')].some((inp) => String(inp.value || '').trim().endsWith('.'))
-                : false;
-            if (incompleto) {
-                mostrarAlertaRegla('Dato incompleto', 'Completa el decimal. Ejemplo válido: 11.2 (no 11.).');
-                return;
+            if (body) {
+                body.querySelectorAll('input').forEach((inp) => {
+                    if (inp.disabled || inp.readOnly) return;
+                    formatearInputControlGlobal(inp, true);
+                });
             }
             aplicarControlGlobalDesdeFormulario(true);
             programarGuardadoDraftCompleto();
@@ -4862,12 +4930,11 @@ const META_SAVE_IDS = [
             const clave = String(ensayo || 'Ensayo 1');
             const filas = obtenerFilasLlenadoJarras(clave);
             marcarLlenadoJarrasVacioPorUsuario_(clave, false);
-            const incompleta = filas.find((f) => !String(f.inicio || '').trim() || !String(f.termino || '').trim());
-            if (incompleta) {
-                mostrarAlertaRegla('Completa horas primero', 'Para agregar otro registro debes completar Inicio y Final de las filas actuales.');
-                return;
-            }
-            const invalida = filas.find((f) => horarioFinalMenorQueInicio(f.inicio, f.termino));
+            const invalida = filas.find((f) => {
+                const ini = String(f.inicio || '').trim();
+                const fin = String(f.termino || '').trim();
+                return ini && fin && horarioFinalMenorQueInicio(ini, fin);
+            });
             if (invalida) {
                 mostrarAlertaRegla('Horario inválido', 'No se puede agregar: existe una fila con hora final menor que la hora de inicio.');
                 return;
@@ -5071,7 +5138,8 @@ const META_SAVE_IDS = [
                 pesoStrOrEmpty(item?.p4),
                 pesoStrOrEmpty(item?.despacho)
             ] : [
-                pesoStrOrEmpty(peso1EfectivoCampo(item, idx + 1)),
+                // Planilla: si P1 vacío y hay P2 → duplicar P2. UI/PDF siguen con P1 vacío.
+                peso1ParaPlanillaVisual_(item),
                 pesoStrOrEmpty(item?.p2),
                 pesoStrOrEmpty(item?.acopio),
                 pesoStrOrEmpty(item?.despacho)
@@ -5139,8 +5207,8 @@ const META_SAVE_IDS = [
         }
 
         /**
-         * Hoja 2: INICIO_C/TERMINO_C/MIN_C = fila Cosecha de esa jarra; INICIO_T/TERMINO_T/MIN_T = fila Trasvasado.
-         * Se envían en el hueco 21-26 de una fila expandida (el servidor hace toRowRegistro y copia a Hoja 2).
+         * Hoja TIEMPOS: INICIO_C/TERMINO_C/MIN_C = Cosecha; INICIO_T/TERMINO_T/MIN_T = Traslado.
+         * Se envían en hueco PRE_JARRA (Visual 21 / Acopio 22) de la fila expandida.
          */
         function minutosDiferenciaHorasHoja2(horaIni, horaFin) {
             if (!horaIni || !horaFin) return '';
@@ -5173,19 +5241,66 @@ const META_SAVE_IDS = [
             ];
         }
 
-        /** POST expandido: 22 + hueco Hoja2 (6) + cierre → 55 Visual / 57 Acopio. */
-        const REGISTRO_PRE_JARRA_COLS = 22;
+        /** Visual 21 (antes de temps); Acopio 22 (tras PESO_5). */
+        function registroPreJarraColsCampo_() {
+            return esModoRegistroAcopio_() ? 22 : 21;
+        }
 
         function construirFilaPostExpandidaConHoja2(item, idx, totalEnLote, horaRegistro) {
             const nCols = numColsRegistroCampo_();
+            const pre = registroPreJarraColsCampo_();
             const fila = construirFilaBaseRegistro(item, idx, totalEnLote, horaRegistro);
             const h6 = seisCeldasHoja2DesdeLlenadoJarras(String(item.ensayo || 'Ensayo 1'), item?.jarra);
-            return fila.slice(0, REGISTRO_PRE_JARRA_COLS).concat(h6, fila.slice(REGISTRO_PRE_JARRA_COLS, nCols));
+            return fila.slice(0, pre).concat(h6, fila.slice(pre, nCols));
         }
 
-        // Filas para POST (expandidas con tiempos Hoja 2 desde panel jarras).
+        /** Jarras del panel con C y/o T, aunque no estén asignadas a un clamshell. */
+        function jarrasDelPanelLlenado_(ensayo) {
+            const set = new Set();
+            obtenerFilasLlenadoJarras(ensayo).forEach((f) => {
+                const txt = String(f.jarra ?? '').trim();
+                const r = parseRangoJarraLlenado(txt);
+                if (r) {
+                    set.add(r.a);
+                    set.add(r.b);
+                    return;
+                }
+                const n = Number(txt);
+                if (Number.isFinite(n) && n >= 1) set.add(n);
+            });
+            return [...set].sort((a, b) => a - b);
+        }
+
+        /**
+         * Fila solo-TIEMPOS: lleva N_JARRA + horas C/T; sin clamshell ni pesos
+         * → el servidor no la inserta en VISUAL/ACOPIO, solo en TIEMPOS V./A.
+         */
+        function construirFilaPostSoloTiemposJarra_(ensayo, nJarra, horaRegistro) {
+            const nCols = numColsRegistroCampo_();
+            const pre = registroPreJarraColsCampo_();
+            const placeholder = {
+                ensayo: String(ensayo || 'Ensayo 1'),
+                jarra: String(nJarra),
+                p1: 0,
+                p2: 0,
+                acopio: 0,
+                p4: 0,
+                despacho: 0,
+                metric: metricaVacia()
+            };
+            const fila = construirFilaBaseRegistro(placeholder, 0, 1, horaRegistro);
+            // Sin N_CLAMSHELL → no insertable en hoja principal.
+            fila[15] = '';
+            fila[16] = String(nJarra);
+            const h6 = seisCeldasHoja2DesdeLlenadoJarras(String(ensayo || 'Ensayo 1'), nJarra);
+            return fila.slice(0, pre).concat(h6, fila.slice(pre, nCols));
+        }
+
+        // Filas para POST: solo clamshells (0..N-1). TIEMPOS V./A. van en el hueco de cada fila con N° jarra.
         function construirRowsRegistroBasePorEnsayo(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
+            sincronizarInicioCosechaDesdeAnterior(ensayo);
+            sincronizarInicioTrasvasadoDesdeCosecha(ensayo);
             sincronizarTiempoPorJarra(ensayo);
             recalcularPresionesParaEnsayo(ensayo);
             const items = data
@@ -7771,13 +7886,18 @@ const META_SAVE_IDS = [
                 mostrarAlertaRegla('Sin filas para enviar', 'Agrega al menos un clamshell para generar datos.');
                 return { ok: false, estado: 'sin_filas' };
             }
+            const valClam = validarPayloadClamshellsCompletos_(ensayoObjetivo, payload);
+            if (!valClam.ok) {
+                mostrarAlertaRegla('Clamshells incompletos', valClam.error || 'Faltan clamshells en el envío.');
+                return { ok: false, estado: 'clamshells_incompletos' };
+            }
             const body = {
                 uid: payload.uid,
                 modo_registro: payload.modo_registro || modoRegistroPostBody_(),
                 rows: payload.rows
             };
 
-            console.log(`[SYNC] Enviando a la nube: ${body.rows.length} filas. uid: ${body.uid}`);
+            console.log(`[SYNC] Enviando a la nube: ${body.rows.length} filas (${valClam.nPayload} clamshells). uid: ${body.uid}`);
             console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
 
             await fetch(API_URL, {
@@ -7984,6 +8104,35 @@ const META_SAVE_IDS = [
             };
         }
 
+        /** Cuántas filas del POST llevan N_CLAMSHELL (excluye solo-TIEMPOS). */
+        function contarClamshellsEnRowsPayload_(rows) {
+            return (Array.isArray(rows) ? rows : []).filter((r) => Number(r?.[15]) >= 1).length;
+        }
+
+        /**
+         * Evita enviar a medias: si en pantalla hay N clamshells con datos,
+         * el POST debe llevar esas N filas (no 4 de 8).
+         */
+        function validarPayloadClamshellsCompletos_(ensayoObjetivo, payload) {
+            const ensayo = String(ensayoObjetivo || payload?.ensayo || obtenerEnsayoActivo() || 'Ensayo 1');
+            const enPantalla = data
+                .filter((it) => String(it.ensayo || 'Ensayo 1') === ensayo)
+                .filter((it) => !esClamshellSinDatos_(it));
+            const nPantalla = enPantalla.length;
+            const nPayload = contarClamshellsEnRowsPayload_(payload?.rows);
+            if (nPantalla <= 0) {
+                return { ok: false, error: 'No hay clamshells con datos para enviar.' };
+            }
+            if (nPayload < nPantalla) {
+                return {
+                    ok: false,
+                    error: 'Solo se armaron ' + nPayload + ' de ' + nPantalla
+                        + ' clamshells para planilla. Revisa pesos y vuelve a intentar.'
+                };
+            }
+            return { ok: true, nPantalla, nPayload };
+        }
+
         /** Un solo POST con todas las muestras completas (8 filas × N muestras). */
         function construirPayloadRegistroVariosEnsayos(ensayosOrdenados) {
             const lista = ordenarEnsayosPorNumeroMuestra(ensayosOrdenados);
@@ -8021,6 +8170,19 @@ const META_SAVE_IDS = [
             if (!Array.isArray(payload.rows) || payload.rows.length === 0) {
                 mostrarAlertaRegla('Sin filas para enviar', 'Agrega al menos un clamshell para generar datos.');
                 return { ok: false, estado: 'sin_filas' };
+            }
+            for (let i = 0; i < lista.length; i++) {
+                const valClam = validarPayloadClamshellsCompletos_(lista[i], {
+                    ensayo: lista[i],
+                    rows: construirRowsRegistroBasePorEnsayo(lista[i])
+                });
+                if (!valClam.ok) {
+                    mostrarAlertaRegla(
+                        'Clamshells incompletos · ' + mostrarMuestra(lista[i]),
+                        valClam.error || 'Faltan clamshells en el envío.'
+                    );
+                    return { ok: false, estado: 'clamshells_incompletos' };
+                }
             }
             const body = {
                 uid: payload.uid,
@@ -9253,6 +9415,10 @@ const META_SAVE_IDS = [
             for (const ensayo of ordenados) {
                 const camposCompletos = await validarCamposRequeridosAntesDeEnviar(ensayo);
                 if (!camposCompletos) return;
+            }
+            const okP1 = await confirmarPeso1VacioAntesDeEnviarVisual_(ordenados);
+            if (!okP1) return;
+            for (const ensayo of ordenados) {
                 const puedeGuardar = await confirmarNumMuestraUnicoAntesDeGuardar(ensayo);
                 if (!puedeGuardar) return;
             }
@@ -9353,6 +9519,8 @@ const META_SAVE_IDS = [
             }
             const camposCompletos = await validarCamposRequeridosAntesDeEnviar(ensayoFinal);
             if (!camposCompletos) return;
+            const okP1 = await confirmarPeso1VacioAntesDeEnviarVisual_([ensayoFinal]);
+            if (!okP1) return;
             const puedeGuardar = await confirmarNumMuestraUnicoAntesDeGuardar(ensayoFinal);
             if (!puedeGuardar) return;
             await cambiarEnsayoActivoEnFormulario_(ensayoFinal);

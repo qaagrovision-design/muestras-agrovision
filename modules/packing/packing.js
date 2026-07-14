@@ -62,6 +62,11 @@
     const elSelectLoader = document.getElementById('packing-select-loader');
     const elSelectLoaderMsg = document.getElementById('packing-select-loader-msg');
     const elStatus = document.getElementById('packing-status');
+    const elStatusWrap = document.getElementById('packing-status-wrap');
+    const elStatusRetry = document.getElementById('packing-status-retry');
+    /** 'muestras' | 'detalle' | 'sync' | 'ambos' */
+    let packingStatusRetryKind_ = '';
+    let packingStatusRetryBusy_ = false;
     const elHeaderCard = document.getElementById('header-status-card');
     const elHeaderConn = document.getElementById('header-conn-label');
     const elHeaderPend = document.getElementById('header-pendientes-count');
@@ -493,8 +498,10 @@
         if (PACKING_RC5_MODULE) {
             const recep = pesoNumero(p.recepcion);
             if (recep <= 0) {
-                errores.push('Captura PESO RECEPCIÓN.');
-            } else if (limiteRecepcion != null && pesoSuperaLimite(recep, limiteRecepcion)) {
+                // Vacío OK (Guardar y Enviar progresivos).
+                return errores;
+            }
+            if (limiteRecepcion != null && pesoSuperaLimite(recep, limiteRecepcion)) {
                 errores.push('Peso recepción no puede superar PESO_DESPACHO_TK (' + limiteRecepcion + 'g).');
             }
             return errores;
@@ -507,15 +514,15 @@
         if (limiteRecepcion != null && recep > 0 && pesoSuperaLimite(recep, limiteRecepcion)) {
             errores.push('Peso recepción no puede superar el despacho acopio-campo (' + limiteRecepcion + 'g).');
         }
-        const gasLlenos = (ingGas > 0 ? 1 : 0) + (salGas > 0 ? 1 : 0);
-        if (gasLlenos === 1) {
-            errores.push('Completa ambos pesos de gasificado (I-GASIF. y S-GASIF.) o déjalos vacíos.');
-        }
-        if (ingGas > 0 && ingGas > recep + 0.001) {
+        // Gasificado / prefrío: uno a uno (como Campo). Solo orden entre valores ya capturados.
+        if (ingGas > 0 && recep > 0 && ingGas > recep + 0.001) {
             errores.push('Peso I-GASIF.: debe ser igual o menor que peso recepción.');
         }
-        if (salGas > 0 && salGas > recep + 0.001) {
+        if (salGas > 0 && recep > 0 && salGas > recep + 0.001) {
             errores.push('Peso S-GASIF.: debe ser igual o menor que peso recepción.');
+        }
+        if (ingGas > 0 && salGas > 0 && salGas > ingGas + 0.001) {
+            errores.push('Peso S-GASIF.: debe ser igual o menor que peso I-GASIF.');
         }
         if (ingPre > 0) {
             const ancla = salGas > 0 ? salGas : (ingGas > 0 ? ingGas : recep);
@@ -526,7 +533,7 @@
                 errores.push('Peso ingreso prefrío: debe ser igual o menor que ' + etiquetaAncla + '.');
             }
         }
-        if (salPre > 0 && salPre > ingPre + 0.001) {
+        if (salPre > 0 && ingPre > 0 && salPre > ingPre + 0.001) {
             errores.push('Peso salida prefrío: debe ser igual o menor que peso ingreso prefrío.');
         }
         return errores;
@@ -546,7 +553,7 @@
                 alertEl.style.display = 'none';
             }
         }
-        if (elPesosGuardar) elPesosGuardar.disabled = errores.length > 0;
+        if (elPesosGuardar) elPesosGuardar.disabled = false;
         return errores;
     }
 
@@ -578,9 +585,7 @@
             const errores = [];
             const horaInicio = String(t.horaInicio || '').trim();
             const recepcion = String(t.recepcion || '').trim();
-            if (!recepcion) {
-                errores.push('Completa el tiempo de recepción.');
-            } else if (horaInicio && horaMenorQue(horaInicio, recepcion)) {
+            if (horaInicio && recepcion && horaMenorQue(horaInicio, recepcion)) {
                 errores.push('Hora recepción: debe ser igual o posterior a hora inicio recepción.');
             }
             return errores;
@@ -600,9 +605,6 @@
         }
         if (ingresoGas && salidaGas && horaMenorQue(ingresoGas, salidaGas)) {
             errores.push('Hora salida gasif.: debe ser igual o posterior a hora ingreso gasif.');
-        }
-        if ((ingresoGas && !salidaGas) || (!ingresoGas && salidaGas)) {
-            errores.push('Completa ingreso y salida gasificado, o déjalos vacíos.');
         }
         if (salidaGas && ingresoPre && horaMenorQue(salidaGas, ingresoPre)) {
             errores.push('Hora ingreso prefrío: debe ser igual o posterior a hora salida gasif.');
@@ -637,7 +639,7 @@
             }
         }
         if (elTiemposGuardar && !tiemposModalSoloLectura) {
-            elTiemposGuardar.disabled = errores.length > 0;
+            elTiemposGuardar.disabled = false;
         }
         return errores;
     }
@@ -792,10 +794,8 @@
         if (elStatus?.dataset.pkCompletitudHint === '1' && baseOk && !envioPackingEnCurso) {
             const v = validarCompletitudPackingParaEnvio();
             if (v.ok) {
-                elStatus.hidden = true;
-                elStatus.textContent = '';
                 delete elStatus.dataset.pkCompletitudHint;
-                syncPackingFoldBtnAnchor();
+                setStatus('');
             }
         }
     }
@@ -1383,74 +1383,17 @@
             errores.push(msgErrorGlobalPacking('Cabecera', 'Completa Responsable.'));
         }
 
-        const tiempos = Array.isArray(estado?.tiempos) ? estado.tiempos : [];
-        const faltanTiempos = faltanTiemposObligatoriosPacking_(tiempos);
-        if (faltanTiempos.length) {
-            const req = tiemposIndicesObligatoriosPacking_().length;
-            const done = req - faltanTiempos.length;
-            errores.push(
-                msgErrorTiemposPacking(
-                    'Completa recepción e ingreso/salida prefrío (' + done + '/' + req
-                    + '). Gasificado es opcional.'
-                )
-            );
-        }
+        // Enviar progresivo: solo coherencia entre lo capturado (sin pares obligatorios).
         validarSecuenciaTiemposPacking(tiemposObjetoDesdeEstadoPacking_(estado)).forEach((e) => {
             errores.push(msgErrorTiemposPacking(e));
         });
 
-        const cg = recalcularPresionesDesdeControlPacking_(estado?.control);
-        const t = cg.temperatura;
-        const h = cg.humedad;
-        const faltanControl = !controlGlobalPackingCompleto_(t, h);
-        if (faltanControl) {
-            errores.push(
-                msgErrorGlobalPacking(
-                    'Control',
-                    mensajeControlGlobalIncompletoPacking_()
-                )
-            );
-        }
-
-        const idxsPres = idxsPresionRequeridaPacking_();
-        const faltanAmb = faltanPresionesEnIdxsPacking_(cg.presionAmb, idxsPres);
-        const faltanFruta = faltanPresionesEnIdxsPacking_(cg.presionFruta, idxsPres);
-        if (!faltanControl && faltanAmb.length) {
-            errores.push(
-                msgErrorGlobalPacking(
-                    '☁️',
-                    'Revisa temperatura ambiente y humedad ('
-                    + (idxsPres.length - faltanAmb.length) + '/' + idxsPres.length + ').'
-                )
-            );
-        }
-        if (!faltanControl && faltanFruta.length) {
-            errores.push(
-                msgErrorGlobalPacking(
-                    '🍎',
-                    'Revisa temperatura pulpa ('
-                    + (idxsPres.length - faltanFruta.length) + '/' + idxsPres.length + ').'
-                )
-            );
-        }
-
-        const pesoLabels = packingPesoLabelsObligatoriosUi_();
         const snapPesos = quotaSnap && typeof quotaSnap === 'object' ? quotaSnap : {};
         const tieneDespachoSnap = (Array.isArray(snapPesos.despachoPorFila) && snapPesos.despachoPorFila.length)
             || snapPesos.despachoAcopio != null;
         const cards = Array.isArray(estado?.packingCards) ? estado.packingCards : [];
         cards.forEach((card) => {
             const p = card.pesos || pesosVaciosPacking();
-            const faltantes = Object.keys(pesoLabels).filter((k) => pesoNumero(p[k]) <= 0);
-            if (faltantes.length) {
-                errores.push(
-                    msgErrorPesosPacking(
-                        card.clamshellNum,
-                        'Completa ' + faltantes.map((k) => pesoLabels[k]).join(', ') + '.'
-                    )
-                );
-                return;
-            }
             const limite = tieneDespachoSnap
                 ? getLimitePesoRecepcionPacking(card.clamshellNum, snapPesos)
                 : null;
@@ -1523,7 +1466,7 @@
         const parts = raw.split('|');
 
         if (raw === String(elMuestra?.value || '').trim()) {
-            const estado = capturarEstadoMuestraPacking();
+            const estado = enriquecerEstadoTiemposPacking_(capturarEstadoMuestraPacking(), raw);
             if (hayDatosTrabajoMuestraPacking(estado)) {
                 return {
                     raw,
@@ -1541,7 +1484,9 @@
                 raw,
                 num_muestra: parts[0] || '',
                 ensayo_numero: parts[1] || '',
-                estado: normalizarEstadoPesosPacking_(borrador),
+                estado: normalizarEstadoPesosPacking_(
+                    enriquecerEstadoTiemposPacking_(borrador, raw)
+                ),
                 quotaSnap: borrador.packingQuotaSnapshot || {}
             };
         }
@@ -2444,6 +2389,8 @@
             const onTiempoInput = () => {
                 actualizarContadoresTiempo();
                 validarTiemposModalEnVivo();
+                programarGuardadoBorradorPacking();
+                notificarPdfVivoPacking_();
             };
             inp.addEventListener('change', onTiempoInput);
             inp.addEventListener('input', onTiempoInput);
@@ -2526,7 +2473,7 @@
             row[c.rowIdx] = n > 0 ? String(n) : '';
         });
     }
-    /** Solo consola: filas en servidor y despacho acopio (GET detalle), arriba → abajo. */
+    /** Solo consola: filas en servidor y despacho por clamshell #1→#N (preciso col U Visual / V Acopio). */
     function logMetaServidorPackingConsola(d) {
         if (!d) return;
         const total = Number(d.FILAS_REGISTRADAS ?? d.numFilas ?? 0);
@@ -2536,26 +2483,103 @@
         const porFila = Array.isArray(d.despachoPorFila) ? d.despachoPorFila : [];
         const porFilaTk = Array.isArray(d.pesoDespachoTkPorFila) ? d.pesoDespachoTkPorFila : [];
         const fallback = d.DESPACHO_ACOPIO ?? d.despacho_acopio_gramos;
-        for (let i = 0; i < totalOk; i++) {
+        const esAcopio = String(d.modo_registro || d.modoRegistro || '').toLowerCase() === 'acopio';
+        const etiquetaCampo = esAcopio
+            ? 'PESO_5_DESPACHO_CAMPO (Acopio col V)'
+            : 'DESPACHO_ACOPIO (Visual col U)';
+        const nLogs = Math.max(totalOk, porFila.length, porFilaTk.length);
+        for (let i = 0; i < nLogs; i++) {
             const limTk = porFilaTk[i] != null && porFilaTk[i] !== '' ? porFilaTk[i] : '—';
             const limCampo = porFila[i] != null && porFila[i] !== '' ? porFila[i] : fallback;
             if (PACKING_RC5_MODULE) {
-                console.log('[Packing RC5] PESO_DESPACHO_TK · #' + (i + 1) + ':', limTk);
+                console.log('[Packing RC5] PESO_DESPACHO_TK · #' + (i + 1) + ':', limTk,
+                    '| campo ' + etiquetaCampo + ':', limCampo != null && limCampo !== '' ? limCampo : '—');
             } else {
-                console.log('[Packing] DESPACHO_ACOPIO (campo):', limCampo != null && limCampo !== '' ? limCampo : '—', '· #' + (i + 1));
+                console.log('[Packing] ' + etiquetaCampo + ':',
+                    limCampo != null && limCampo !== '' ? limCampo : '—', '· #' + (i + 1));
             }
         }
     }
 
-    function getTiemposMuestra() {
-        const ids = tiemposMuestraIds_();
-        const vals = ids.map((id) => String(document.getElementById(id)?.value || '').trim());
-        if (PACKING_RC5_MODULE) {
-            const out = ['', '', '', '', ''];
-            out[0] = vals[0] || '';
+    function esHoraHhMmValidaPacking_(raw) {
+        const s = String(raw || '').trim();
+        if (!s || s === '--:--') return false;
+        return /^\d{1,2}:\d{2}$/.test(s);
+    }
+
+    /** RC5: valor de #pk-tiempo-recepcion_rc5 (con fallback legacy / name). */
+    function leerTiempoRecepcionDomPacking_() {
+        const ids = PACKING_RC5_MODULE
+            ? ['pk-tiempo-recepcion_rc5', 'pk-tiempo-recepcion']
+            : ['pk-tiempo-recepcion'];
+        for (let i = 0; i < ids.length; i++) {
+            const v = String(document.getElementById(ids[i])?.value || '').trim();
+            if (esHoraHhMmValidaPacking_(v)) return v;
+        }
+        const porName = document.querySelector(
+            '#packing-tiempos-modal-overlay input.packing-tiempo-inp[name="recepcion"]'
+        );
+        const vn = String(porName?.value || '').trim();
+        return esHoraHhMmValidaPacking_(vn) ? vn : '';
+    }
+
+    function normalizarTiemposArrayPacking_(tiempos) {
+        if (Array.isArray(tiempos)) {
+            const out = tiempos.slice(0, 5).map((v) => {
+                const s = String(v || '').trim();
+                return esHoraHhMmValidaPacking_(s) ? s : '';
+            });
+            while (out.length < 5) out.push('');
+            if (PACKING_RC5_MODULE) return [out[0] || '', '', '', '', ''];
             return out;
         }
-        return vals;
+        if (tiempos && typeof tiempos === 'object') {
+            const recepcion = String(tiempos.recepcion ?? tiempos[0] ?? '').trim();
+            if (PACKING_RC5_MODULE) {
+                return [esHoraHhMmValidaPacking_(recepcion) ? recepcion : '', '', '', '', ''];
+            }
+            return [
+                esHoraHhMmValidaPacking_(recepcion) ? recepcion : '',
+                esHoraHhMmValidaPacking_(tiempos.ingresoGas ?? tiempos[1]) ? String(tiempos.ingresoGas ?? tiempos[1]).trim() : '',
+                esHoraHhMmValidaPacking_(tiempos.salidaGas ?? tiempos[2]) ? String(tiempos.salidaGas ?? tiempos[2]).trim() : '',
+                esHoraHhMmValidaPacking_(tiempos.ingresoPre ?? tiempos[3]) ? String(tiempos.ingresoPre ?? tiempos[3]).trim() : '',
+                esHoraHhMmValidaPacking_(tiempos.salidaPre ?? tiempos[4]) ? String(tiempos.salidaPre ?? tiempos[4]).trim() : ''
+            ];
+        }
+        return ['', '', '', '', ''];
+    }
+
+    function getTiemposMuestra() {
+        if (PACKING_RC5_MODULE) {
+            const out = ['', '', '', '', ''];
+            out[0] = leerTiempoRecepcionDomPacking_();
+            return out;
+        }
+        const ids = tiemposMuestraIds_();
+        return ids.map((id) => {
+            const s = String(document.getElementById(id)?.value || '').trim();
+            return esHoraHhMmValidaPacking_(s) ? s : '';
+        });
+    }
+
+    /** Activa: tiempos desde DOM (pk-tiempo-recepcion_rc5 → tiempos[0] → PDF tRecep). */
+    function enriquecerEstadoTiemposPacking_(estado, rawMuestraOpt) {
+        const base = estado && typeof estado === 'object' ? estado : {};
+        const rawActivo = String(elMuestra?.value || '').trim();
+        const raw = String(rawMuestraOpt ?? rawActivo).trim();
+        const esActiva = !raw || raw === rawActivo;
+        const tiempos = esActiva
+            ? getTiemposMuestra()
+            : normalizarTiemposArrayPacking_(base.tiempos);
+        return Object.assign({}, base, {
+            tiempos,
+            horaInicio: esActiva
+                ? (getHoraPersonal() || String(base.horaInicio || '').trim())
+                : String(base.horaInicio || '').trim(),
+            responsable: esActiva
+                ? (getResponsablePacking() || String(base.responsable || '').trim())
+                : String(base.responsable || '').trim()
+        });
     }
 
     function conteoTiemposMuestra() {
@@ -3572,70 +3596,15 @@
             errores.push(msgErrorGlobalPacking('Cabecera', 'Completa Responsable.'));
         }
 
-        const tiemposArr = getTiemposMuestra();
-        const faltanTiempos = faltanTiemposObligatoriosPacking_(tiemposArr);
-        if (faltanTiempos.length) {
-            const req = tiemposIndicesObligatoriosPacking_().length;
-            const done = req - faltanTiempos.length;
-            errores.push(
-                msgErrorTiemposPacking(
-                    'Completa recepción e ingreso/salida prefrío (' + done + '/' + req
-                    + '). Gasificado es opcional.'
-                )
-            );
-        }
-        validarSecuenciaTiemposPacking(obtenerTiemposDesdeModalPacking()).forEach((e) => {
+        // Enviar progresivo: solo coherencia entre lo capturado (sin pares obligatorios).
+        validarSecuenciaTiemposPacking(
+            tiemposObjetoDesdeEstadoPacking_(capturarEstadoMuestraPacking())
+        ).forEach((e) => {
             errores.push(msgErrorTiemposPacking(e));
         });
 
-        const t = packingControlState.temperatura;
-        const h = packingControlState.humedad;
-        const faltanControl = !controlGlobalPackingCompleto_(t, h);
-        if (faltanControl) {
-            errores.push(
-                msgErrorGlobalPacking(
-                    'Control',
-                    mensajeControlGlobalIncompletoPacking_()
-                )
-            );
-        }
-
-        const idxsPres = idxsPresionRequeridaPacking_();
-        const faltanAmb = faltanPresionesEnIdxsPacking_(packingControlState.presionAmb, idxsPres);
-        const faltanFruta = faltanPresionesEnIdxsPacking_(packingControlState.presionFruta, idxsPres);
-        if (!faltanControl && faltanAmb.length) {
-            errores.push(
-                msgErrorGlobalPacking(
-                    '☁️',
-                    'Revisa temperatura ambiente y humedad ('
-                    + (idxsPres.length - faltanAmb.length) + '/' + idxsPres.length + ').'
-                )
-            );
-        }
-        if (!faltanControl && faltanFruta.length) {
-            errores.push(
-                msgErrorGlobalPacking(
-                    '🍎',
-                    'Revisa temperatura pulpa ('
-                    + (idxsPres.length - faltanFruta.length) + '/' + idxsPres.length + ').'
-                )
-            );
-        }
-
-        const pesoLabels = packingPesoLabelsObligatoriosUi_();
-
         packingCards.forEach((card) => {
             const p = card.pesos || pesosVaciosPacking();
-            const faltantes = Object.keys(pesoLabels).filter((k) => pesoNumero(p[k]) <= 0);
-            if (faltantes.length) {
-                errores.push(
-                    msgErrorPesosPacking(
-                        card.clamshellNum,
-                        'Completa ' + faltantes.map((k) => pesoLabels[k]).join(', ') + '.'
-                    )
-                );
-                return;
-            }
             const limite = getLimitePesoRecepcionPacking(card.clamshellNum);
             const pesoErr = validarSecuenciaPesosPacking(p, limite);
             if (pesoErr.length) {
@@ -3670,11 +3639,33 @@
     }
 
     function normalizarValorControlGlobalPacking(raw) {
-        const live = sanitizarValorControlGlobalPacking(raw);
+        let live = sanitizarValorControlGlobalPacking(raw);
         if (!live) return '';
+        // Al Guardar/blur: "11." → "11.0" (el teclado deja punto a medias).
+        if (live === '.') return '';
+        if (live.endsWith('.')) {
+            const base = live.slice(0, -1);
+            return base ? (base + '.0') : '';
+        }
         if (live.includes('.')) return live;
         if (live.length >= 3) return live.slice(0, 2) + '.' + live.slice(2, 3);
         return live;
+    }
+
+    /** Cierra decimales a medias en inputs del modal (no bloquea Guardar). */
+    function finalizarDecimalesModalPacking_(root) {
+        if (!root) return;
+        root.querySelectorAll('input').forEach((inp) => {
+            if (inp.disabled || inp.readOnly) return;
+            const before = String(inp.value || '').trim();
+            if (!before) return;
+            if (inp.classList.contains('packing-cg-inp') || inp.classList.contains('control-equitativo-inp')) {
+                formatearInputControlGlobalPacking(inp, true);
+            } else if (before.endsWith('.') || before.endsWith(',')) {
+                const base = before.slice(0, -1).trim();
+                inp.value = base ? (base.replace(',', '.') + (base.includes('.') || base.includes(',') ? '0' : '.0')) : '';
+            }
+        });
     }
 
     function formatearInputControlGlobalPacking(input, final, opts) {
@@ -3820,7 +3811,7 @@
         if (!muestraSeleccionada() || !elControlModalPacking || !elControlModalBodyPacking) return;
         packingControlState.tipo = tipo;
         if (elControlModalTitlePacking) {
-            const sufijo = PACKING_RC5_MODULE ? ' (recepción)' : ' (todos)';
+            const sufijo = PACKING_RC5_MODULE ? ' · recepción' : '';
             elControlModalTitlePacking.textContent = tipo === 'temperatura'
                 ? 'Control equitativo · Temperatura ambiente y pulpa' + sufijo
                 : 'Control equitativo · Humedad' + sufijo;
@@ -3859,16 +3850,7 @@
 
     function guardarModalControlGlobalPacking() {
         if (!elControlModalBodyPacking) return;
-        const incompleto = [...elControlModalBodyPacking.querySelectorAll('input')]
-            .some((inp) => String(inp.value || '').trim().endsWith('.'));
-        if (incompleto) {
-            mostrarToastPacking(
-                'warning',
-                'Decimal incompleto',
-                'Completa el decimal. Ejemplo: 11.2 (no 11.).'
-            );
-            return;
-        }
+        finalizarDecimalesModalPacking_(elControlModalBodyPacking);
         leerControlGlobalPackingDesdeModal();
         recalcularPresionesPacking();
         const errPresion = validarPresionesControlGlobalPacking_(packingControlState);
@@ -3882,6 +3864,7 @@
         if (elStatus) elStatus.hidden = true;
         programarGuardadoBorradorPacking();
         notificarPdfVivoPacking_();
+        mostrarToastPacking('success', 'Guardado', 'Control equitativo actualizado.');
     }
 
     function celdaPresionModalPacking(etapa, valores, usarLabelCompleto) {
@@ -3898,7 +3881,8 @@
     function htmlGridPresionModalPacking(valores) {
         const etapas = controlEtapasPackingUi_();
         if (etapas.length === 1) {
-            return '<div class="presion-metric-grid metric-grid-4">'
+            // RC5: un solo valor → grid de 1 col a todo el ancho (no metric-grid-4).
+            return '<div class="presion-metric-grid packing-presion-grid-rc5-unico">'
                 + celdaPresionModalPacking(etapas[0], valores, true)
                 + '</div>';
         }
@@ -4293,34 +4277,48 @@
     }
 
     async function guardarPdfPackingHistorialTrasEnvio_(capturas, fechaIso) {
-        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarPacking !== 'function') return;
+        if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarPacking !== 'function') return false;
         try {
-            await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() });
+            const ok = await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() });
+            if (!ok) {
+                console.warn('[HistPDF] PDF packing no verificado tras envío; reintento…');
+                return !!(await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() }));
+            }
+            return true;
         } catch (err) {
             console.warn('[HistPDF] No se pudo guardar PDF packing:', err);
+            try {
+                return !!(await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() }));
+            } catch (err2) {
+                console.warn('[HistPDF] Reintento PDF packing falló:', err2);
+                return false;
+            }
         }
     }
 
     function armarCapturaPdfPacking_(fecha, rawMuestra, sel, cards) {
         const key = claveBorradorMuestraPacking(fecha, rawMuestra);
         const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
-        const estado = borrador && hayDatosTrabajoMuestraPacking(borrador)
+        const raw = String(rawMuestra || '').trim();
+        let estadoBase = borrador && hayDatosTrabajoMuestraPacking(borrador)
             ? borrador
             : {
                 packingCards: Array.isArray(cards) ? cards : [],
                 tiempos: getTiemposMuestra(),
                 control: packingControlState,
-                responsable: getHoraPersonal(),
+                responsable: getResponsablePacking(),
                 horaInicio: getHoraPersonal(),
                 previewMeta: lastDetallePacking || null,
                 nViaje: packingNViaje || ''
             };
+        // Siempre relee #pk-tiempo-recepcion_rc5 (u homologo) para PDF / historial.
+        estadoBase = enriquecerEstadoTiemposPacking_(estadoBase, raw);
         return {
             fecha: normalizarFechaIso(fecha),
             num_muestra: String(sel?.num_muestra || '').trim(),
             ensayo_numero: String(sel?.ensayo_numero || '').trim(),
-            raw: String(rawMuestra || '').trim(),
-            estado
+            raw,
+            estado: estadoBase
         };
     }
 
@@ -4874,7 +4872,10 @@
             setStatus('Planilla actualizada.', '');
             if (elStatus) elStatus.hidden = true;
         } catch (err) {
-            setStatus(String(err.message || err), 'error');
+            setStatus(String(err.message || err), 'error', {
+                reintentar: true,
+                reintentarKind: 'sync'
+            });
         } finally {
             setSelectLoading(false);
         }
@@ -5306,12 +5307,77 @@
         syncPackingFoldBtnAnchor();
     }
 
-    function setStatus(msg, tipo) {
+    function mensajePlanillaReintentablePacking_(msg) {
+        const s = String(msg || '');
+        return /tardó demasiado|Reintenta|Error de conexión|conexión con el servidor/i.test(s);
+    }
+
+    function setStatus(msg, tipo, opts) {
         if (!elStatus) return;
-        elStatus.textContent = msg || '';
+        const text = String(msg || '');
+        const kindExplicito = opts && opts.reintentarKind
+            ? String(opts.reintentarKind)
+            : '';
+        const showRetry = !!(opts && opts.reintentar)
+            || (tipo === 'error' && mensajePlanillaReintentablePacking_(text));
+        if (!text) {
+            packingStatusRetryKind_ = '';
+        } else if (kindExplicito) {
+            packingStatusRetryKind_ = kindExplicito;
+        } else if (showRetry && !packingStatusRetryKind_) {
+            packingStatusRetryKind_ = 'ambos';
+        }
+        elStatus.textContent = text;
         elStatus.className = 'packing-status-msg' + (tipo ? ' packing-status-msg--' + tipo : '');
-        elStatus.hidden = !msg;
+        if (elStatusWrap) {
+            elStatusWrap.hidden = !text;
+            elStatus.hidden = false;
+        } else {
+            elStatus.hidden = !text;
+        }
+        if (elStatusRetry) {
+            elStatusRetry.hidden = !(showRetry && text);
+            if (!text) elStatusRetry.disabled = false;
+        }
         syncPackingFoldBtnAnchor();
+    }
+
+    async function forzarRefrescoPlanillaDesdeStatus_() {
+        if (packingStatusRetryBusy_) return;
+        if (!navigator.onLine) {
+            setStatus('Sin internet para sincronizar con la planilla.', 'warn');
+            return;
+        }
+        const fecha = normalizarFechaIso(elFecha?.value);
+        if (!fecha) {
+            setStatus('Selecciona una fecha primero.', 'warn');
+            return;
+        }
+        packingStatusRetryBusy_ = true;
+        if (elStatusRetry) elStatusRetry.disabled = true;
+        const kind = packingStatusRetryKind_ || 'ambos';
+        try {
+            setStatus('Reintentando consulta a la planilla…', 'info');
+            const necesitaLista = kind === 'muestras' || kind === 'ambos' || kind === 'sync'
+                || !String(elMuestra?.value || '').trim();
+            if (necesitaLista) {
+                await cargarMuestrasPorFecha(fecha);
+            }
+            const sel = ensayoSeleccionado();
+            const necesitaDetalle = (kind === 'detalle' || kind === 'ambos' || kind === 'sync')
+                && !!sel.ensayo_numero;
+            if (necesitaDetalle) {
+                await cargarDetalle(fecha, sel.ensayo_numero);
+            }
+        } catch (err) {
+            setStatus(String(err.message || err), 'error', {
+                reintentar: true,
+                reintentarKind: kind
+            });
+        } finally {
+            packingStatusRetryBusy_ = false;
+            if (elStatusRetry) elStatusRetry.disabled = false;
+        }
     }
 
     function callbackJsonp(params, timeoutMs) {
@@ -5552,8 +5618,7 @@
             setStatus(msg, 'warn');
             if (elStatus) elStatus.hidden = false;
         } else if (PACKING_RC5_MODULE && d && basesRc5CompletasDesdeDetalle_(d)) {
-            setStatus('Listo para Packing RC5.', '');
-            if (elStatus) elStatus.hidden = true;
+            setStatus('');
         }
         actualizarFabRestanteBadge();
         syncPackingFoldBtnAnchor();
@@ -5637,12 +5702,12 @@
         } catch (err) {
             if (seq !== cargandoMuestrasSeq) return;
             const msg = String(err.message || err);
-            setStatus(msg, 'error');
+            setStatus(msg, 'error', { reintentar: true, reintentarKind: 'muestras' });
             if (elMuestra) {
                 elMuestra.innerHTML = '';
                 const opt = document.createElement('option');
                 opt.value = '';
-                opt.textContent = 'Error — cambia la fecha';
+                opt.textContent = 'Error — reintenta o cambia la fecha';
                 elMuestra.appendChild(opt);
                 elMuestra.disabled = false;
             }
@@ -5706,7 +5771,10 @@
             pintarPreview(r.data);
         } catch (err) {
             if (!sinOverlay) {
-                setStatus(String(err.message || err), 'error');
+                setStatus(String(err.message || err), 'error', {
+                    reintentar: true,
+                    reintentarKind: 'detalle'
+                });
                 limpiarPreview();
             }
         } finally {
@@ -5763,6 +5831,9 @@
         } else {
             void sincronizarConPlanillaPacking();
         }
+    });
+    elStatusRetry?.addEventListener('click', () => {
+        void forzarRefrescoPlanillaDesdeStatus_();
     });
     document.getElementById('fab-packing-borrar')?.addEventListener('click', () => void borrarTodoYCachePacking());
     elFabAgregar?.addEventListener('click', onFabAgregarPackingClick);
@@ -6025,8 +6096,9 @@
     }
 
     function sanitizarTiemposPdfPacking_(tiempos) {
-        const arr = Array.isArray(tiempos) ? tiempos : [];
+        const arr = normalizarTiemposArrayPacking_(tiempos);
         if (!PACKING_RC5_MODULE) return arr.map(formatoHoraPdfPacking);
+        // RC5: solo RECEPCIÓN en TIEMPOS DE LA MUESTRA (HORA) ← pk-tiempo-recepcion_rc5
         return [
             formatoHoraPdfPacking(arr[0]),
             '', '', '', ''
@@ -6170,7 +6242,7 @@
             return null;
         }
         const trazMeta = metaTrazDesdeDetallePdfPacking_(detalle, estadoNorm?.previewMeta, estadoNorm?.nViaje);
-        const tiempos = Array.isArray(estadoNorm?.tiempos) ? estadoNorm.tiempos : [];
+        const tiempos = normalizarTiemposArrayPacking_(estadoNorm?.tiempos);
         const tiemposFmt = sanitizarTiemposPdfPacking_(tiempos);
         const cards = (Array.isArray(estadoNorm?.packingCards) ? estadoNorm.packingCards : [])
             .slice()

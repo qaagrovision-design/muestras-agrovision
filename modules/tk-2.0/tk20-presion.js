@@ -5,6 +5,10 @@
     if (!F || !PV) return;
 
     function controlVals_() {
+        // Snapshot sin flush: evita bucle getValores → recalcularTodas → getValores.
+        if (typeof window.Tk20Control?.getValoresSnapshot === 'function') {
+            return window.Tk20Control.getValoresSnapshot() || {};
+        }
         return window.Tk20Control?.getValores?.() || {};
     }
 
