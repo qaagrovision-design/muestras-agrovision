@@ -1572,29 +1572,8 @@
         return out({ ok: false, error: errorNumMuestraVacio });
       }
 
-      lastRow = sheet.getLastRow();
-      existingKeys = {};
-      existingContentKeys = {};
-      if (lastRow >= 2) {
-        existingValues = sheet.getRange(2, 1, lastRow, NUM_COLS).getValues();
-        existingValues.forEach(function(r) {
-          var key = buildKey(r);
-          if (key) existingKeys[key] = true;
-          var ck2 = buildKeyContenidoCampoRegistro_(r, esAcopio);
-          if (ck2) existingContentKeys[ck2] = true;
-        });
-        var filtradas = [];
-        nuevasFilas.forEach(function(fila) {
-          var key = buildKey(fila);
-          if (existingKeys[key]) return;
-          var ckFil = buildKeyContenidoCampoRegistro_(fila, esAcopio);
-          if (ckFil && existingContentKeys[ckFil]) return;
-          filtradas.push(fila);
-          existingKeys[key] = true;
-          if (ckFil) existingContentKeys[ckFil] = true;
-        });
-        nuevasFilas = filtradas;
-      }
+      // LockService + primer barrido ya llenaron existingKeys/contentKeys.
+      // No releer toda la hoja (mismo anti-dupe, menos espera).
 
       if (nuevasFilas.length > 0) {
         var startRow = sheet.getLastRow() + 1;

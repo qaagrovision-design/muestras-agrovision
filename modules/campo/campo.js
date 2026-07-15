@@ -2020,11 +2020,15 @@ const META_SAVE_IDS = [
             return t;
         }
 
+        /** true = logs detallados SYNC en consola (F12). Dejar en false en uso normal. */
+        const DEBUG_SYNC_CAMPO = false;
+
         async function precongelarNumerosMuestraParaEnvio(ensayos) {
             const lista = ordenarEnsayosPorNumeroMuestra(ensayos);
             if (!lista.length) return;
             if (navigator.onLine && API_URL) {
-                await refrescarEstadoServidorOperativo(true);
+                // false: respeta debounce 10s si ya sincronizamos al preparar envío.
+                await refrescarEstadoServidorOperativo(false);
             } else {
                 refrescarEstadoOperativoLocal();
             }
@@ -7920,8 +7924,10 @@ const META_SAVE_IDS = [
                 rows: payload.rows
             };
 
-            console.log(`[SYNC] Enviando a la nube: ${body.rows.length} filas (${valClam.nPayload} clamshells). uid: ${body.uid}`);
-            console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
+            if (DEBUG_SYNC_CAMPO || window.__DEBUG_SYNC_CAMPO__) {
+                console.log(`[SYNC] Enviando a la nube: ${body.rows.length} filas (${valClam.nPayload} clamshells). uid: ${body.uid}`);
+                console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
+            }
 
             await fetch(API_URL, {
                 method: 'POST',
@@ -7974,16 +7980,25 @@ const META_SAVE_IDS = [
         }
 
         async function confirmarRegistroServidorConReintentos(reg) {
-            // Confirmación inmediata (sin bucle largo) para evitar "intentos" cuando el código ya existe.
-            // 1) UID confirmado => se guardó este envío.
+            // Confirmación: UID y N° muestra en paralelo (misma lógica, menos espera).
+            const jobs = [];
             if (reg.uid) {
-                const uidExiste = await existeUidServidor(reg.uid);
-                if (uidExiste === true) return { estado: 'confirmado' };
+                jobs.push(existeUidServidor(reg.uid).then((ok) => ({ kind: 'uid', ok })));
             }
-            // 2) Si el código ya existe en servidor => duplicado, se debe cambiar N° muestra.
             if (reg.num_muestra) {
-                const numInfo = await existeNumMuestraServidor(reg.num_muestra);
-                if (numInfo && numInfo.existe === true) return { estado: 'duplicado_codigo', detalle: numInfo };
+                jobs.push(existeNumMuestraServidor(reg.num_muestra).then((info) => ({ kind: 'num', info })));
+            }
+            if (!jobs.length) return { estado: 'pendiente' };
+            const resultados = await Promise.all(jobs);
+            for (let i = 0; i < resultados.length; i++) {
+                const r = resultados[i];
+                if (r.kind === 'uid' && r.ok === true) return { estado: 'confirmado' };
+            }
+            for (let j = 0; j < resultados.length; j++) {
+                const r = resultados[j];
+                if (r.kind === 'num' && r.info && r.info.existe === true) {
+                    return { estado: 'duplicado_codigo', detalle: r.info };
+                }
             }
             return { estado: 'pendiente' };
         }
@@ -7992,7 +8007,7 @@ const META_SAVE_IDS = [
         async function confirmarRegistroServidorTrasPost_(reg) {
             let confirmacion = await confirmarRegistroServidorConReintentos(reg);
             if (confirmacion?.estado !== 'pendiente') return confirmacion;
-            const esperas = [450, 700, 1100];
+            const esperas = [350, 550, 900];
             for (let i = 0; i < esperas.length; i++) {
                 await sleepMs(esperas[i]);
                 confirmacion = await confirmarRegistroServidorConReintentos(reg);
@@ -8006,7 +8021,7 @@ const META_SAVE_IDS = [
             const yaFijado = !!numerosMuestraFijadosSesion[ensayo];
             if (!yaFijado) {
                 if (navigator.onLine && API_URL) {
-                    await refrescarEstadoServidorOperativo(true);
+                    await refrescarEstadoServidorOperativo(false);
                 } else {
                     refrescarEstadoOperativoLocal();
                 }
@@ -8221,9 +8236,11 @@ const META_SAVE_IDS = [
                 rows: payload.rows
             };
             const etiquetas = lista.map((e) => `${mostrarMuestra(e)} N°${payload.nums_por_ensayo?.[e] || '?'}`).join(', ');
-            console.log(`[SYNC] Lote conjunto: ${body.rows.length} filas, ${lista.length} muestra(s). uid: ${body.uid}`);
-            console.log('[SYNC] Muestras:', etiquetas);
-            console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
+            if (DEBUG_SYNC_CAMPO || window.__DEBUG_SYNC_CAMPO__) {
+                console.log(`[SYNC] Lote conjunto: ${body.rows.length} filas, ${lista.length} muestra(s). uid: ${body.uid}`);
+                console.log('[SYNC] Muestras:', etiquetas);
+                console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
+            }
 
             await fetch(API_URL, {
                 method: 'POST',
@@ -8291,8 +8308,9 @@ const META_SAVE_IDS = [
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
             marcarEnsayoEnUsoSesion(ensayo);
             snapshotMetaEnsayoActual();
+            // Debounce: preparar/confirmar ya sincronizaron; force solo en conflictos más abajo.
             if (navigator.onLine && API_URL) {
-                await refrescarEstadoServidorOperativo(true);
+                await refrescarEstadoServidorOperativo(false);
             } else {
                 refrescarEstadoOperativoLocal();
             }
@@ -8866,17 +8884,22 @@ const META_SAVE_IDS = [
             const sinFilasLlenado = ensayoSinFilasLlenadoJarras_(ensayo);
             const opciones = construirOpcionesJarraModal(ensayo, jarraActual);
             const opcionesHtml = opciones.map((n) => `<option value="${n}">n° ${n}</option>`).join('');
-            // " - " solo cuando no hay ninguna fila de tiempo de llenado de jarras.
-            const dashOpt = sinFilasLlenado ? '<option value=""> - </option>' : '';
+            // Acopio: " - " siempre (Pesos 4–5 sin jarra). Visual: solo si aún no hay panel de llenado.
+            const mostrarDash = esModoRegistroAcopio_() || sinFilasLlenado;
+            const dashOpt = mostrarDash ? '<option value=""> - </option>' : '';
             select.innerHTML = `${dashOpt}${opcionesHtml}`;
-            if (sinFilasLlenado) {
+            if (jarraVaciaItem_(jarraActual) && mostrarDash) {
                 select.value = '';
             } else if (jarraVaciaItem_(jarraActual)) {
                 select.value = String(opciones[0] ?? '1');
             } else {
                 const preferida = Number(jarraActual);
-                const valor = Number.isFinite(preferida) && preferida >= 1 ? preferida : opciones[0];
+                const valor = Number.isFinite(preferida) && preferida >= 1 ? preferida : (opciones[0] ?? '');
                 select.value = String(valor);
+                if (select.value === '' && opciones.length) select.value = String(opciones[0]);
+            }
+            if (esModoRegistroAcopio_()) {
+                onCambioJarraModalAcopio_();
             }
         }
 
@@ -9533,11 +9556,7 @@ const META_SAVE_IDS = [
                 return;
             }
             const ensayoFinal = seleccion.ensayo || ensayoBase;
-            if (navigator.onLine && API_URL) {
-                await refrescarEstadoServidorOperativo(false);
-            } else {
-                refrescarEstadoOperativoLocal();
-            }
+            // prepararDeteccionEnvioCampo ya refrescó; precongelar usa debounce (force=false).
             await precongelarNumerosMuestraParaEnvio([ensayoFinal]);
             if (String(metaActivoEnsayo || ensayoDesdeFormulario() || '') === ensayoFinal) {
                 aplicarNumMuestraParaEnsayoActivo('preValidarEnvio');

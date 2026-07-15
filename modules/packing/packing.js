@@ -30,7 +30,7 @@
     const PACKING_PDF_FILAS_POR_MUESTRA = 10;
     const PACKING_PDF_INICIO_SEGUNDA_MUESTRA = 10;
     const PACKING_PDF_FILAS_SEGUNDA_BLOQUE = 11;
-    const MIN_LOADER_MS = 350;
+    const MIN_LOADER_MS = 200;
 
     /** Plantilla demo: solo rellena inputs visibles de la muestra activa (no atajos internos). */
     const PACKING_DEMO_PLANTILLA = {

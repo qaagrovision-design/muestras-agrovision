@@ -5,7 +5,7 @@
     const SYNC_MAX_HISTORY = 200;
     const DRAFT_STORAGE_KEY = 'tiempos-mptk-draft-v1';
     const CHIPS_COLLAPSED_KEY = 'mptk-chips-collapsed-v1';
-    const MIN_LOADER_MS = 350;
+    const MIN_LOADER_MS = 200;
 
     /** Plantilla demo MP-TK: control global + cards Thermo-King (como Packing). */
     const MPTK_DEMO_PLANTILLA = {

@@ -2,7 +2,7 @@
 (function initTk20Header() {
     const API_URL = String(window.APPS_SCRIPT_API_URL || '').trim();
     const CHIPS_COLLAPSED_KEY = 'tk20-chips-collapsed-v1';
-    const MIN_LOADER_MS = 350;
+    const MIN_LOADER_MS = 200;
 
     const elFecha = document.getElementById('mptk-fecha');
     const elMuestra = document.getElementById('mptk-muestra');
