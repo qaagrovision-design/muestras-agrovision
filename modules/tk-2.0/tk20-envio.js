@@ -582,7 +582,6 @@
         const huecos = huecosSinExentosTk20_(huecosRaw, exentos);
         const huecosDia = huecosSinExentosTk20_(info.huecosEnDia || [], exentos);
         const secuenciaContinua = huecos.length === 0 && huecosDia.length === 0;
-        if (lista.length === 1) return { modo: 'una', raw: lista[0].raw };
 
         const opts = {};
         lista.forEach((item) => {
@@ -592,15 +591,12 @@
         const pref = lista.find((x) => x.raw === preferida)?.raw || lista[lista.length - 1].raw;
 
         let htmlSecuencia = '<p style="margin:0 0 10px;font-size:13px;color:#64748b;">'
-            + 'Solo aparecen muestras con contador en <b>0</b> (badge verde en el botón +).</p>';
-        if (secuenciaContinua) {
-            htmlSecuencia += '<p style="margin:0 0 10px;font-size:13px;color:#64748b;">'
-                + 'Puedes enviar una o todas juntas en orden.</p>';
-        } else {
+            + 'Elige una muestra o envía <b>todas las listas</b> (contador en <b>0</b>).</p>';
+        if (lista.length >= 2 && !secuenciaContinua) {
             const faltan = huecosDia.length ? huecosDia : huecos;
             htmlSecuencia += '<p style="margin:0 0 10px;font-size:13px;color:#b45309;">'
-                + '<b>Hay hueco en la secuencia</b> (muestra ' + faltan.join(', ')
-                + ' sin contador en 0). Completa esos datos o envía <b>una muestra</b> a la vez.</p>';
+                + 'Hay ensayos sin listos (' + faltan.join(', ')
+                + '). Aun así puedes enviar las muestras ya completas.</p>';
         }
         if (info.pendientes?.length) {
             htmlSecuencia += '<p style="margin:0 0 6px;font-size:12px;color:#94a3b8;">No listadas (incompletas): '
@@ -610,21 +606,21 @@
 
         const r = await window.Tk20Swal?.fire?.({
             icon: 'question',
-            title: 'TK-2.0 listo para enviar',
+            title: 'TK-2.0 — enviar muestras',
             html: htmlSecuencia,
             input: 'select',
             inputOptions: opts,
             inputValue: pref,
-            confirmButtonText: 'Enviar muestra',
-            showDenyButton: secuenciaContinua,
-            denyButtonText: 'Enviar muestras juntas',
+            confirmButtonText: 'Enviar una',
+            showDenyButton: lista.length >= 2,
+            denyButtonText: 'Enviar todas las listas',
             showCancelButton: true,
             cancelButtonText: 'Cancelar',
             denyButtonColor: '#1f4f82',
             allowOutsideClick: false
         });
         if (!r) return null;
-        if (r.isDenied && secuenciaContinua) return { modo: 'todas', lista };
+        if (r.isDenied && lista.length >= 2) return { modo: 'todas', lista };
         if (!r.isConfirmed) return null;
         return { modo: 'una', raw: String(r.value || '').trim() || pref };
     }
@@ -723,9 +719,18 @@
         const respOk = Boolean(String(elResponsable?.value || '').trim());
         const placaOk = Boolean(String(transporte()?.getPlaca?.() || '').trim());
         const pesosOk = pesosCompletosParaEnvio();
-        const puede = sel && campoListo && respOk && placaOk && pesosOk && !tkCompleto && !envioEnCurso;
+        const activaLista = sel && campoListo && respOk && placaOk && pesosOk && !tkCompleto && !envioEnCurso;
+        let hayOtrasListas = false;
+        if (!activaLista && sel && !envioEnCurso) {
+            try {
+                const completas = obtenerMuestrasCompletasTk20ParaEnvio_();
+                const listas = obtenerMuestrasListasModalEnvioTk20_();
+                hayOtrasListas = unirMuestrasTk20ParaEnvio_([completas, listas]).length > 0;
+            } catch (_) { /* ignore */ }
+        }
+        const puede = activaLista || hayOtrasListas;
         elBtnEnviar.disabled = !puede;
-        if (elEnvioBar) elEnvioBar.classList.toggle('is-disabled', !sel || !campoListo || tkCompleto);
+        if (elEnvioBar) elEnvioBar.classList.toggle('is-disabled', !sel || (!campoListo && !hayOtrasListas) || (tkCompleto && !hayOtrasListas));
     }
 
     function setButtonLoading(loading, texto) {
@@ -855,12 +860,14 @@
             setButtonLoading(true, 'Enviando...');
         }
         try {
-            await fetch(apiUrl, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            await (window.NetworkSync?.fetchApiPost
+                ? window.NetworkSync.fetchApiPost(apiUrl, payload)
+                : fetch(apiUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }));
             const confirmado = await confirmarTk20EnServidor_(
                 payload.fecha,
                 payload.ensayo_numero,
@@ -1035,28 +1042,8 @@
 
     async function enviarTk20MuestrasEnSecuencia_(lista) {
         const ordenadasAsc = ordenarMuestrasTk20PorEnsayo_(lista || []);
-        const analisisLote = analizarMuestrasTk20DelDia_();
-        const exentos = analisisLote.ensayosExentos || ensayosExentosSecuenciaTk20_();
-        const huecos = huecosSinExentosTk20_(detectarHuecosSecuenciaTk20_(ordenadasAsc).huecos, exentos);
-        const huecosDia = huecosSinExentosTk20_(analisisLote.huecosEnDia || [], exentos);
-        const faltanSecuencia = huecosDia.length ? huecosDia : huecos;
-        if (faltanSecuencia.length) {
-            const pend = analisisLote.pendientes.find(
-                (r) => Number(r.ensayo_numero) === faltanSecuencia[0]
-            );
-            const etiqueta = pend?.etiqueta || ('muestra ' + faltanSecuencia[0]);
-            await window.Tk20Swal?.fire?.({
-                icon: 'warning',
-                title: 'No se puede enviar todas juntas',
-                html: '<p style="margin:0;font-size:13px;color:#475569;">'
-                    + '<b>' + etiqueta + '</b> no tiene contador en <b>0</b> '
-                    + '(badge verde en el botón +). Completa sus datos antes de enviar la secuencia.</p>',
-                confirmButtonText: 'Entendido',
-                allowOutsideClick: false
-            });
-            return false;
-        }
-
+        if (!ordenadasAsc.length) return false;
+        // Envía solo las listas (candidatas). No bloquea por huecos de ensayos incompletos.
         const rawActivo = String(elMuestra?.value || '').trim();
         asegurarBorradoresAntesEnvioTk20_(lista);
         persistirBorradoresCompletasTk20_(elFecha?.value);
@@ -1143,13 +1130,14 @@
         };
 
         try {
+            window.Tk20Draft?.persistirSoloLocal?.();
             const completas = prepararDeteccionEnvioTk20Local_();
             const analisis = analizarMuestrasTk20DelDia_();
             const candidatas = resolverCandidatasModalEnvioTk20_(completas);
             asegurarBorradoresAntesEnvioTk20_(candidatas);
             const rawActivo = String(elMuestra?.value || '').trim();
 
-            if (analisis.pendientes.length) {
+            if (analisis.pendientes.length && candidatas.length) {
                 liberarValidacionUi();
                 const ok = await confirmarContinuarEnvioConPendientesTk20_(analisis);
                 if (!ok) return;
@@ -1174,16 +1162,11 @@
                 return;
             }
 
-            let plan = null;
-            if (candidatas.length >= 2) {
-                liberarValidacionUi();
-                plan = await seleccionarMuestraTk20ParaEnviar_(rawActivo, candidatas, analisis);
-                if (!plan) return;
-                validandoUi = false;
-            } else {
-                validandoUi = false;
-                plan = { modo: 'una', raw: candidatas[0].raw };
-            }
+            // Siempre abrir modal: elegir una o (si hay 2+) enviar todas las listas.
+            liberarValidacionUi();
+            const plan = await seleccionarMuestraTk20ParaEnviar_(rawActivo, candidatas, analisis);
+            if (!plan) return;
+            validandoUi = false;
 
             if (plan.modo === 'todas') {
                 await enviarTk20MuestrasEnSecuencia_(plan.lista);

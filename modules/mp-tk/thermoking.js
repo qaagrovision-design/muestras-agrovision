@@ -43,6 +43,8 @@
     const elFecha = document.getElementById('mptk-fecha');
     const elMuestra = document.getElementById('mptk-muestra');
     const elStatus = document.getElementById('mptk-status');
+    const elStatusWrap = document.getElementById('mptk-status-wrap');
+    const elStatusRetry = document.getElementById('mptk-status-retry');
     const elSelectBlock = document.getElementById('mptk-select-block');
     const elSelectLoader = document.getElementById('mptk-select-loader');
     const elSelectLoaderMsg = document.getElementById('mptk-select-loader-msg');
@@ -91,6 +93,8 @@
     ];
 
     let cargandoMuestrasSeq = 0;
+    let cargandoDetalleSeq = 0;
+    let mptkListaMuestrasCache_ = { fecha: '', items: [] };
     let lastDetalleTk = null;
     let tkYaEnServidor = false;
     let muestrasPendientesTkCount = 0;
@@ -698,22 +702,33 @@
         snapshotBorradorTk_(fecha, raw, { activa: true });
     }
 
-    function guardarBorradorMuestraActivaInmediatoMptk_() {
-        if (omitirAutoguardado || mptkRestaurandoBorrador) return '';
-        const fecha = elFecha?.value || '';
-        const raw = elMuestra?.value || '';
+    function guardarBorradorMuestraActivaInmediatoMptk_(opts) {
+        const forzar = !!(opts && opts.forzar);
+        if (mptkRestaurandoBorrador) return '';
+        if (omitirAutoguardado && !forzar) return '';
+        let fecha = elFecha?.value || '';
+        let raw = elMuestra?.value || '';
+        if ((!fecha || !raw)) {
+            const store = leerStoreBorradorTk();
+            const activa = String(store.activo || '').trim();
+            const ix = activa.indexOf('::');
+            if (ix > 0) {
+                if (!fecha) fecha = activa.slice(0, ix);
+                if (!raw) raw = activa.slice(ix + 2);
+            }
+        }
         if (!fecha || !raw) return '';
         snapshotBorradorTk_(fecha, raw, { activa: true });
         return claveBorradorTk(fecha, raw);
     }
 
     /** Solo localStorage — nunca envía a planilla ni cola de sync. */
-    function persistirSoloLocalMptk_() {
+    function persistirSoloLocalMptk_(opts) {
         cancelarGuardadoBorradorProgramadoMptk_();
         try {
             window.MptkUi?.persistirModalesAbiertas?.();
         } catch (_) { /* ignore */ }
-        guardarBorradorMuestraActivaInmediatoMptk_();
+        guardarBorradorMuestraActivaInmediatoMptk_({ forzar: !!(opts && opts.forzar) || opts === true });
     }
 
     function programarGuardadoBorradorTk_() {
@@ -727,8 +742,13 @@
     }
 
     function callbackJsonp(params, timeoutMs) {
+        if (!navigator.onLine) {
+            return Promise.reject(new Error('Sin internet'));
+        }
         const limiteMs = Number(timeoutMs);
-        const espera = Number.isFinite(limiteMs) && limiteMs > 0 ? limiteMs : 14000;
+        const espera = window.NetworkSync?.jsonpTimeoutMs
+            ? window.NetworkSync.jsonpTimeoutMs(limiteMs)
+            : (Number.isFinite(limiteMs) && limiteMs > 0 ? Math.min(limiteMs, 25000) : 15000);
         return new Promise((resolve, reject) => {
             const cb = '__mptk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
             const noop = function () {};
@@ -871,6 +891,21 @@
     }
 
     function puedeIntentarEnviarMptk_() {
+        if (envioTkEnCurso) return false;
+        const hayMuestra = !!(String(elMuestra?.value || '').trim());
+        if (!hayMuestra) return false;
+        // Se puede abrir el modal si la activa está lista O hay otra del día lista.
+        if (puedeIntentarEnviarActivaMptk_()) return true;
+        try {
+            const completas = obtenerMuestrasCompletasMptkParaEnvio_();
+            const listas = obtenerMuestrasListasModalEnvioMptk_();
+            return unirMuestrasMptkParaEnvio_([completas, listas]).length > 0;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function puedeIntentarEnviarActivaMptk_() {
         if (!(String(elMuestra?.value || '').trim())) return false;
         if (tkYaEnServidor) return false;
         if (!muestraPackingCompletaParaTk_(lastDetalleTk)) return false;
@@ -982,16 +1017,22 @@
     }
 
     async function fetchMuestrasPorFecha(fechaIso) {
-        const r = await callbackJsonp({
+        const topes = window.NetworkSync?.listadoTimeoutsMs?.() || [18000, 18000];
+        const run = window.NetworkSync?.conReintentosTimeouts
+            ? (fn) => window.NetworkSync.conReintentosTimeouts(topes, fn)
+            : async (fn) => fn(topes[0] || 18000, 0);
+
+        const r = await run((ms) => callbackJsonp({
             listado_muestras_fecha: '1',
             fecha: fechaIso
-        });
+        }, ms));
         if (r && r.ok === true && Array.isArray(r.muestras)) return r.muestras;
-        const r2 = await callbackJsonp({
+
+        const r2 = await run((ms) => callbackJsonp({
             listado_registrados: '1',
             fecha_desde: fechaIso,
             fecha_hasta: fechaIso
-        });
+        }, ms));
         if (r2 && r2.ok === true && Array.isArray(r2.registrados)) {
             const seen = {};
             const lista = [];
@@ -1071,8 +1112,28 @@
         return extra ? (base + ' ' + extra) : base;
     }
 
-    function poblarSelectMuestra(lista) {
+    function fusionarListaMuestrasMptk_(base, offline) {
+        const merged = [];
+        const seen = new Set();
+        [...(base || []), ...(offline || [])].forEach((item) => {
+            const num = String(item?.num_muestra || '').trim();
+            const en = String(item?.ensayo_numero || '').trim();
+            const key = num + '|' + en;
+            if (!en || seen.has(key)) return;
+            seen.add(key);
+            merged.push(item);
+        });
+        merged.sort((a, b) => {
+            const na = Number(a.ensayo_numero) || 0;
+            const nb = Number(b.ensayo_numero) || 0;
+            return na - nb || String(a.num_muestra || '').localeCompare(String(b.num_muestra || ''));
+        });
+        return merged;
+    }
+
+    function poblarSelectMuestra(lista, opts) {
         if (!elMuestra) return;
+        const preserveRaw = String(opts?.preserveRaw || elMuestra.value || '').trim();
         elMuestra.innerHTML = '';
         const opt0 = document.createElement('option');
         opt0.value = '';
@@ -1093,6 +1154,10 @@
         elMuestra.disabled = n === 0;
         if (n === 0) elMuestra.setAttribute('disabled', 'disabled');
         else elMuestra.removeAttribute('disabled');
+        if (preserveRaw && Array.from(elMuestra.options).some((o) => o.value === preserveRaw)) {
+            elMuestra.value = preserveRaw;
+            mptkMuestraAnterior = preserveRaw;
+        }
         muestrasPendientesTkCount = n;
         actualizarFabRestanteBadgeMptk();
     }
@@ -1100,6 +1165,8 @@
     let mptkStatusValidacionEnVivo_ = false;
     let mptkStatusSeguimientoEnvio_ = false;
     let mptkStatusValidacionRaf_ = 0;
+    let mptkStatusRetryKind_ = '';
+    let mptkStatusRetryBusy_ = false;
 
     function esMensajeValidacionEnvioMptk_(txt) {
         const t = String(txt || '').trim();
@@ -1116,21 +1183,83 @@
         return prefijos.some((p) => t.startsWith(p));
     }
 
-    function setStatus(msg, tipo) {
+    function mensajePlanillaReintentableMptk_(msg) {
+        const s = String(msg || '');
+        return /tardó demasiado|Reintenta|Error de conexión|conexión con el servidor|Timeout JSONP|Error JSONP|No se pudo leer el listado/i.test(s);
+    }
+
+    function setStatus(msg, tipo, opts) {
         if (!elStatus) return;
         const texto = msg || '';
         if (!texto) {
             mptkStatusValidacionEnVivo_ = false;
             mptkStatusSeguimientoEnvio_ = false;
+            mptkStatusRetryKind_ = '';
         } else if (texto.startsWith('La simulación no pasó validación:')) {
             mptkStatusValidacionEnVivo_ = true;
         } else if (esMensajeValidacionEnvioMptk_(texto)) {
             mptkStatusSeguimientoEnvio_ = true;
         }
+        const kindExplicito = opts && opts.reintentarKind ? String(opts.reintentarKind) : '';
+        const showRetry = !!(opts && opts.reintentar)
+            || (tipo === 'error' && mensajePlanillaReintentableMptk_(texto));
+        if (texto && kindExplicito) {
+            mptkStatusRetryKind_ = kindExplicito;
+        } else if (texto && showRetry && !mptkStatusRetryKind_) {
+            mptkStatusRetryKind_ = 'ambos';
+        }
         elStatus.textContent = texto;
         elStatus.className = 'packing-status-msg' + (tipo ? ' packing-status-msg--' + tipo : '');
-        elStatus.hidden = !texto;
+        if (elStatusWrap) {
+            elStatusWrap.hidden = !texto;
+            elStatus.hidden = false;
+        } else {
+            elStatus.hidden = !texto;
+        }
+        if (elStatusRetry) {
+            elStatusRetry.hidden = !(showRetry && texto);
+            if (!texto) elStatusRetry.disabled = false;
+        }
         syncFoldBtnAnchor();
+    }
+
+    async function forzarRefrescoPlanillaDesdeStatusMptk_() {
+        if (mptkStatusRetryBusy_) return;
+        if (!navigator.onLine) {
+            setStatus('Sin internet para sincronizar con la planilla.', 'warn');
+            return;
+        }
+        const fecha = normalizarFechaIso(elFecha?.value);
+        if (!fecha) {
+            setStatus('Selecciona una fecha primero.', 'warn');
+            return;
+        }
+        mptkStatusRetryBusy_ = true;
+        if (elStatusRetry) elStatusRetry.disabled = true;
+        const kind = mptkStatusRetryKind_ || 'ambos';
+        try {
+            setStatus('Reintentando consulta a la planilla…', 'info');
+            const necesitaLista = kind === 'muestras' || kind === 'ambos' || kind === 'sync'
+                || !String(elMuestra?.value || '').trim();
+            if (necesitaLista) {
+                await cargarMuestrasPorFecha(fecha);
+            }
+            const parts = String(elMuestra?.value || '').split('|');
+            const ensayoNumero = parts.length >= 2 ? parts[1] : '';
+            const necesitaDetalle = (kind === 'detalle' || kind === 'ambos' || kind === 'sync')
+                && !!ensayoNumero;
+            if (necesitaDetalle) {
+                await cargarDetalle(fecha, ensayoNumero);
+            }
+        } catch (err) {
+            setStatus(String(err.message || err), 'error', {
+                reintentar: true,
+                reintentarKind: kind
+            });
+        } finally {
+            mptkStatusRetryBusy_ = false;
+            if (elStatusRetry) elStatusRetry.disabled = false;
+        }
     }
 
     function actualizarStatusValidacionEnVivoMptk_() {
@@ -2610,7 +2739,6 @@
         const huecosLista = huecosSinSatisfechosMptk_(detectarHuecosSecuenciaMptk_(lista).huecos, satisfechos);
         const huecosDia = huecosSinSatisfechosMptk_(info.huecosEnDia || [], satisfechos);
         const secuenciaContinua = huecosLista.length === 0 && huecosDia.length === 0;
-        if (lista.length === 1) return { modo: 'una', raw: lista[0].raw };
 
         const opts = {};
         lista.forEach((item) => {
@@ -2620,15 +2748,12 @@
         const pref = lista.find((x) => x.raw === preferida)?.raw || lista[lista.length - 1].raw;
 
         let htmlSecuencia = '<p style="margin:0 0 10px;font-size:13px;color:#64748b;">'
-            + 'Solo aparecen muestras con contador en <b>0</b> (badge verde en el botón +).</p>';
-        if (secuenciaContinua) {
-            htmlSecuencia += '<p style="margin:0 0 10px;font-size:13px;color:#64748b;">'
-                + 'Puedes enviar una o todas juntas en orden.</p>';
-        } else {
+            + 'Elige una muestra o envía <b>todas las listas</b> (contador en <b>0</b>).</p>';
+        if (lista.length >= 2 && !secuenciaContinua) {
             const faltan = huecosDia.length ? huecosDia : huecosLista;
             htmlSecuencia += '<p style="margin:0 0 10px;font-size:13px;color:#b45309;">'
-                + '<b>Hay hueco en la secuencia</b> (ensayo ' + faltan.join(', ')
-                + ' sin datos listos). Completa esos datos o envía <b>una muestra</b> a la vez.</p>';
+                + 'Hay ensayos sin listos (' + faltan.join(', ')
+                + '). Aun así puedes enviar las muestras ya completas.</p>';
         }
         if (info.pendientes?.length) {
             htmlSecuencia += '<p style="margin:0 0 6px;font-size:12px;color:#94a3b8;">No listadas (incompletas): '
@@ -2639,20 +2764,20 @@
         if (window.Swal && typeof window.Swal.fire === 'function') {
             const r = await swalFireMptk_({
                 icon: 'question',
-                title: 'MP-TK listo para enviar',
+                title: 'MP-TK — enviar muestras',
                 html: htmlSecuencia,
                 input: 'select',
                 inputOptions: opts,
                 inputValue: pref,
-                confirmButtonText: 'Enviar muestra',
-                showDenyButton: secuenciaContinua,
-                denyButtonText: 'Enviar muestras juntas',
+                confirmButtonText: 'Enviar una',
+                showDenyButton: lista.length >= 2,
+                denyButtonText: 'Enviar todas las listas',
                 showCancelButton: true,
                 cancelButtonText: 'Cancelar',
                 denyButtonColor: '#1f4f82',
                 allowOutsideClick: false
             });
-            if (r.isDenied && secuenciaContinua) return { modo: 'todas', lista };
+            if (r.isDenied && lista.length >= 2) return { modo: 'todas', lista };
             if (!r.isConfirmed) return null;
             return { modo: 'una', raw: String(r.value || '').trim() || pref };
         }
@@ -3365,7 +3490,7 @@
         const ensayo = String(payload?.ensayo_numero || '').trim();
         if (!fecha || !ensayo || !API_URL) return false;
         try {
-            const r = await callbackJsonp({ fecha, ensayo_numero: ensayo }, 12000);
+            const r = await callbackJsonp({ fecha, ensayo_numero: ensayo });
             return !!(r?.ok && r.data?.tieneThermoKing === true);
         } catch (_) {
             return false;
@@ -3392,12 +3517,14 @@
                 if (!reg || String(reg.estado || '') !== 'pendiente' || !esRegistroColaTk(reg)) continue;
                 const body = reg.payload;
                 try {
-                    await fetch(API_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
+                    await (window.NetworkSync?.fetchApiPost
+                        ? window.NetworkSync.fetchApiPost(API_URL, body)
+                        : fetch(API_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        }));
                     const ok = await confirmarTkEnServidorTrasPost_(body);
                     if (ok) {
                         reg.estado = 'enviado';
@@ -3560,12 +3687,14 @@
             setButtonLoadingMptk_(elBtnEnviar, true, 'Enviando...');
         }
         try {
-            await fetch(API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            await (window.NetworkSync?.fetchApiPost
+                ? window.NetworkSync.fetchApiPost(API_URL, body)
+                : fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }));
             const confirmado = await confirmarTkEnServidorTrasPost_(body);
             if (confirmado) {
                 marcarColaTkEnviada_(fecha, sel?.ensayo_numero || body?.ensayo_numero, sel?.num_muestra || body?.num_muestra);
@@ -3701,35 +3830,8 @@
 
     async function enviarMptkMuestrasEnSecuencia_(lista) {
         const ordenadasAsc = ordenarMuestrasMptkPorEnsayo_(lista || []);
-        const analisisLote = analizarMuestrasMptkDelDia_();
-        const satisfechos = ensayosSatisfechosSecuenciaMptk_(analisisLote);
-        const huecos = huecosSinSatisfechosMptk_(detectarHuecosSecuenciaMptk_(ordenadasAsc).huecos, satisfechos);
-        const huecosDia = huecosSinSatisfechosMptk_(analisisLote.huecosEnDia || [], satisfechos);
-        const faltanSecuencia = huecosDia.length ? huecosDia : huecos;
-        if (faltanSecuencia.length) {
-            const pend = analisisLote.pendientes.find(
-                (r) => Number(r.ensayo_numero) === faltanSecuencia[0]
-            );
-            const etiqueta = pend?.etiqueta || ('muestra ' + faltanSecuencia[0]);
-            if (window.Swal && typeof window.Swal.fire === 'function') {
-                await swalFireMptk_({
-                    icon: 'warning',
-                    title: 'No se puede enviar todas juntas',
-                    html: '<p style="margin:0;font-size:13px;color:#475569;">'
-                        + '<b>' + etiqueta + '</b> no tiene contador en <b>0</b> '
-                        + '(badge verde en el botón +). Completa sus datos antes de enviar la secuencia.</p>',
-                    confirmButtonText: 'Entendido',
-                    allowOutsideClick: false
-                });
-            } else {
-                mostrarToastTk(
-                    'warning',
-                    'Secuencia incompleta',
-                    'Completa ' + etiqueta + ' (contador en 0) antes de enviar todas juntas.'
-                );
-            }
-            return false;
-        }
+        if (!ordenadasAsc.length) return false;
+        // Envía solo las listas (candidatas). No bloquea por huecos de ensayos incompletos.
         const rawActivo = String(elMuestra?.value || '').trim();
         asegurarBorradoresAntesEnvioMptk_(lista);
         persistirBorradoresContadorCeroMptk_(elFecha?.value);
@@ -3818,45 +3920,19 @@
 
         try {
             const rawActivo = String(elMuestra?.value || '').trim();
-
             if (!rawActivo) {
                 setStatus('Selecciona una muestra antes de enviar.', 'warn');
                 return;
             }
-            if (tkYaEnServidor) {
-                mostrarToastTk(
-                    'info',
-                    'Ya en planilla',
-                    'Thermo-King ya está completo en el servidor. Selecciona otra muestra pendiente.'
-                );
-                return;
-            }
-            if (!muestraPackingCompletaParaTk_(lastDetalleTk)) {
-                setStatus('Packing aún no está completo en servidor.', 'warn');
-                return;
-            }
-            if (restantesPorAgregarMptk_() > 0) {
-                const rest = restantesPorAgregarMptk_();
-                mostrarToastTk(
-                    'warning',
-                    'Faltan Thermo-King',
-                    'Agrega ' + rest + ' más (el contador del + debe estar en 0).'
-                );
-                return;
-            }
 
+            // Primero detectar candidatas del día (no bloquear por incompleta activa).
+            persistirSoloLocalMptk_();
             const completas = prepararDeteccionEnvioMptkLocal_();
             const analisis = analizarMuestrasMptkDelDia_();
             const candidatas = resolverCandidatasModalEnvioMptk_(completas);
             asegurarBorradoresAntesEnvioMptk_(candidatas);
 
-            if (!candidatas.length) {
-                validandoUi = false;
-                await enviarMptkMuestraActual_();
-                return;
-            }
-
-            if (analisis.pendientes.length) {
+            if (analisis.pendientes.length && candidatas.length) {
                 liberarValidacionUi();
                 const ok = await confirmarContinuarEnvioConPendientesMptk_(analisis);
                 if (!ok) return;
@@ -3864,17 +3940,38 @@
                 validandoUi = true;
             }
 
-            let plan = null;
-            if (candidatas.length >= 2) {
-                liberarValidacionUi();
-                plan = await seleccionarMuestraMptkParaEnviar_(rawActivo, candidatas, analisis);
-                if (!plan) return;
-                setButtonLoadingMptk_(elBtnEnviar, true, 'Enviando…');
+            if (!candidatas.length) {
+                if (tkYaEnServidor) {
+                    mostrarToastTk(
+                        'info',
+                        'Ya en planilla',
+                        'Thermo-King ya está completo en el servidor. Selecciona otra muestra pendiente.'
+                    );
+                    return;
+                }
+                if (!muestraPackingCompletaParaTk_(lastDetalleTk)) {
+                    setStatus('Packing aún no está completo en servidor.', 'warn');
+                    return;
+                }
+                if (restantesPorAgregarMptk_() > 0) {
+                    mostrarToastTk(
+                        'warning',
+                        'Faltan Thermo-King',
+                        'Agrega ' + restantesPorAgregarMptk_() + ' más (el contador del + debe estar en 0).'
+                    );
+                    return;
+                }
                 validandoUi = false;
-            } else {
-                validandoUi = false;
-                plan = { modo: 'una', raw: candidatas[0].raw };
+                await enviarMptkMuestraActual_();
+                return;
             }
+
+            // Siempre abrir modal: elegir una o (si hay 2+) enviar todas las listas.
+            liberarValidacionUi();
+            const plan = await seleccionarMuestraMptkParaEnviar_(rawActivo, candidatas, analisis);
+            if (!plan) return;
+            setButtonLoadingMptk_(elBtnEnviar, true, 'Enviando…');
+            validandoUi = false;
 
             if (plan.modo === 'todas') {
                 await enviarMptkMuestrasEnSecuencia_(plan.lista);
@@ -3905,9 +4002,14 @@
         return enviarMptkMuestraActual_(opts);
     }
 
-    async function fetchDetalleTk_(fechaIso, ensayoNumero) {
+    async function fetchDetalleTk_(fechaIso, ensayoNumero, opts) {
+        if (!navigator.onLine) {
+            throw new Error('Sin internet');
+        }
         const params = { fecha: fechaIso, ensayo_numero: ensayoNumero };
-        const intentos = [22000, 28000];
+        const intentos = opts?.revalidar
+            ? (window.NetworkSync?.detalleRevalidarTimeoutsMs?.() || [14000])
+            : (window.NetworkSync?.detalleTimeoutsMs?.() || [16000, 16000]);
         let ultimoErr = null;
         for (let i = 0; i < intentos.length; i++) {
             try {
@@ -3932,28 +4034,35 @@
 
     async function cargarDetalle(fechaIso, ensayoNumero) {
         if (!fechaIso || !ensayoNumero) return;
+        const seq = ++cargandoDetalleSeq;
         cancelarGuardadoBorradorProgramadoMptk_();
+        // NO persistir aquí: el change de muestra ya guardó la anterior.
+        // Si guardamos ahora, elMuestra ya es la nueva pero la UI aún tiene
+        // la captura anterior → se copia la muestra 3 en la 4 (bug).
         omitirAutoguardado = true;
         const rawMuestra = String(elMuestra?.value || '').trim();
         const key = claveBorradorTk(fechaIso, rawMuestra);
 
         if (!navigator.onLine) {
+            if (seq !== cargandoDetalleSeq) return;
             const borrador = key ? leerStoreBorradorTk().porClave[key] : null;
-            if (borrador?.detalleSnap) {
-                lastDetalleTk = borrador.detalleSnap;
-                tkYaEnServidor = !!borrador.tkYaEnServidor
-                    || detalleSnapIndicaTkCompletoEnServidorMptk_(borrador.detalleSnap);
-                aplicarCuotaDesdeDetalleTk_(lastDetalleTk);
-                if (tkYaEnServidor) {
-                    guardarMarcaServidorMptkDesdeDetalle_(fechaIso, rawMuestra, lastDetalleTk);
+            if (borrador?.detalleSnap || (borrador?.estado && hayDatosCapturaMptk_(borrador.estado))) {
+                if (borrador.detalleSnap) {
+                    lastDetalleTk = borrador.detalleSnap;
+                    tkYaEnServidor = !!borrador.tkYaEnServidor
+                        || detalleSnapIndicaTkCompletoEnServidorMptk_(borrador.detalleSnap);
+                    aplicarCuotaDesdeDetalleTk_(lastDetalleTk);
+                    if (tkYaEnServidor) {
+                        guardarMarcaServidorMptkDesdeDetalle_(fechaIso, rawMuestra, lastDetalleTk);
+                    }
                 }
                 setResumenVisible(true);
                 setChipsPanelCollapsed(false, false);
                 setPreviewLoading(false);
                 limpiarUiCapturaMuestraMptk_();
                 syncFechaInspeccionDesdeSelector_();
-                pintarPreview(lastDetalleTk);
-                if (!tkYaEnServidor && borrador.estado && hayDatosCapturaMptk_(borrador.estado)) {
+                if (lastDetalleTk) pintarPreview(lastDetalleTk);
+                if (borrador.estado && hayDatosCapturaMptk_(borrador.estado)) {
                     mptkRestaurandoBorrador = true;
                     try {
                         aplicarEstadoFormularioTk_(borrador.estado);
@@ -3963,30 +4072,107 @@
                 }
                 setFormularioHabilitado(!tkYaEnServidor && mptkCapturaPermitida_(lastDetalleTk));
                 actualizarFabRestanteBadgeMptk();
-                const msgTk = textoStatusTkMptk_();
-                if (msgTk) {
-                    setStatus(msgTk, 'warn');
-                } else {
-                    setStatus('');
-                    if (elStatus) elStatus.hidden = true;
-                }
-                omitirAutoguardado = false;
+                setStatus('Sin internet: datos recuperados del borrador local.', 'warn');
+                if (elStatus) elStatus.hidden = false;
+                if (seq === cargandoDetalleSeq) omitirAutoguardado = false;
                 return;
             }
-            setStatus('Sin internet para cargar el detalle.', 'warn');
-            omitirAutoguardado = false;
+            // Sin borrador de ESTA muestra: vaciar UI (no dejar pegada la anterior).
+            prepararUiNuevaMuestraMptk_();
+            setPreviewLoading(false);
+            lastDetalleTk = null;
+            tkYaEnServidor = false;
+            setFormularioHabilitado(false);
+            setStatus('Sin internet. Abre esta muestra con conexión una vez para poder trabajarla offline.', 'warn');
+            if (elStatus) elStatus.hidden = false;
+            if (seq === cargandoDetalleSeq) omitirAutoguardado = false;
+            return;
+        }
+
+        // Local-first: mostrar captura ya y NO bloquear 40–60s esperando planilla.
+        const borradorPrevio = key ? leerStoreBorradorTk().porClave[key] : null;
+        const hayLocal = !!(borradorPrevio?.detalleSnap
+            || (borradorPrevio?.estado && hayDatosCapturaMptk_(borradorPrevio.estado)));
+        setStatus('');
+        if (elStatus) elStatus.hidden = true;
+        if (hayLocal) {
+            if (seq !== cargandoDetalleSeq) return;
+            if (borradorPrevio.detalleSnap) {
+                lastDetalleTk = borradorPrevio.detalleSnap;
+                tkYaEnServidor = !!borradorPrevio.tkYaEnServidor
+                    || detalleSnapIndicaTkCompletoEnServidorMptk_(borradorPrevio.detalleSnap);
+                aplicarCuotaDesdeDetalleTk_(lastDetalleTk);
+            }
+            setResumenVisible(true);
+            setChipsPanelCollapsed(false, false);
+            setPreviewLoading(false);
+            limpiarUiCapturaMuestraMptk_();
+            syncFechaInspeccionDesdeSelector_();
+            if (lastDetalleTk) pintarPreview(lastDetalleTk);
+            if (borradorPrevio.estado && hayDatosCapturaMptk_(borradorPrevio.estado)) {
+                mptkRestaurandoBorrador = true;
+                try {
+                    aplicarEstadoFormularioTk_(borradorPrevio.estado);
+                } finally {
+                    mptkRestaurandoBorrador = false;
+                }
+            }
+            setFormularioHabilitado(!tkYaEnServidor && mptkCapturaPermitida_(lastDetalleTk));
+            actualizarFabRestanteBadgeMptk();
+            if (seq === cargandoDetalleSeq) omitirAutoguardado = false;
+            void (async () => {
+                try {
+                    const r = await fetchDetalleTk_(fechaIso, ensayoNumero, { revalidar: true });
+                    if (seq !== cargandoDetalleSeq) return;
+                    if (!r || r.ok !== true || !r.data) return;
+                    if (String(elMuestra?.value || '').trim() !== rawMuestra) return;
+                    omitirAutoguardado = true;
+                    try {
+                        lastDetalleTk = r.data;
+                        tkYaEnServidor = r.data.tieneThermoKing === true;
+                        aplicarCuotaDesdeDetalleTk_(r.data);
+                        if (tkYaEnServidor) {
+                            guardarMarcaServidorMptkDesdeDetalle_(fechaIso, rawMuestra, r.data);
+                        }
+                        if (!fundoHabilitaMptk_(r.data) || !muestraPackingCompletaParaTk_(r.data)) return;
+                        syncFechaInspeccionDesdeSelector_();
+                        const borrador = key ? leerStoreBorradorTk().porClave[key] : null;
+                        if (borrador && hayDatosCapturaMptk_(borrador.estado)) {
+                            pintarPreview(r.data);
+                            mptkRestaurandoBorrador = true;
+                            try {
+                                aplicarEstadoFormularioTk_(borrador.estado);
+                            } finally {
+                                mptkRestaurandoBorrador = false;
+                            }
+                        } else {
+                            pintarPreview(r.data);
+                        }
+                        setFormularioHabilitado(!tkYaEnServidor && mptkCapturaPermitida_(lastDetalleTk));
+                        actualizarFabRestanteBadgeMptk();
+                        const msgTk = textoStatusTkMptk_();
+                        if (msgTk) setStatus(msgTk, 'warn');
+                        else {
+                            setStatus('');
+                            if (elStatus) elStatus.hidden = true;
+                        }
+                    } finally {
+                        if (seq === cargandoDetalleSeq) omitirAutoguardado = false;
+                    }
+                } catch (_) { /* local ya operativo */ }
+            })();
             return;
         }
 
         prepararUiNuevaMuestraMptk_();
-        setStatus('');
-        if (elStatus) elStatus.hidden = true;
 
         try {
             const r = await withMinLoader(() => fetchDetalleTk_(fechaIso, ensayoNumero));
+            if (seq !== cargandoDetalleSeq) return;
             if (!r || r.ok !== true || !r.data) {
                 throw new Error(r?.error || 'Registro no encontrado');
             }
+            if (String(elMuestra?.value || '').trim() !== rawMuestra) return;
             lastDetalleTk = r.data;
             tkYaEnServidor = r.data.tieneThermoKing === true;
             aplicarCuotaDesdeDetalleTk_(r.data);
@@ -4006,7 +4192,8 @@
 
             const borrador = key ? leerStoreBorradorTk().porClave[key] : null;
             syncFechaInspeccionDesdeSelector_();
-            if (!tkYaEnServidor && borrador && hayDatosCapturaMptk_(borrador.estado)) {
+            // Preferir borrador local con trabajo; no limpia draft por marca de servidor.
+            if (borrador && hayDatosCapturaMptk_(borrador.estado)) {
                 pintarPreview(r.data);
                 mptkRestaurandoBorrador = true;
                 try {
@@ -4029,31 +4216,101 @@
                 if (elStatus) elStatus.hidden = true;
             }
         } catch (err) {
-            setStatus(String(err.message || err), 'error');
-            limpiarPreview();
+            if (seq !== cargandoDetalleSeq) return;
+            const borrador = key ? leerStoreBorradorTk().porClave[key] : null;
+            if (borrador?.detalleSnap || (borrador?.estado && hayDatosCapturaMptk_(borrador.estado))) {
+                if (borrador.detalleSnap) {
+                    lastDetalleTk = borrador.detalleSnap;
+                    tkYaEnServidor = !!borrador.tkYaEnServidor
+                        || detalleSnapIndicaTkCompletoEnServidorMptk_(borrador.detalleSnap);
+                    aplicarCuotaDesdeDetalleTk_(lastDetalleTk);
+                }
+                syncFechaInspeccionDesdeSelector_();
+                if (lastDetalleTk) pintarPreview(lastDetalleTk);
+                if (borrador.estado && hayDatosCapturaMptk_(borrador.estado)) {
+                    mptkRestaurandoBorrador = true;
+                    try {
+                        aplicarEstadoFormularioTk_(borrador.estado);
+                    } finally {
+                        mptkRestaurandoBorrador = false;
+                    }
+                }
+                setFormularioHabilitado(!tkYaEnServidor && mptkCapturaPermitida_(lastDetalleTk));
+                actualizarFabRestanteBadgeMptk();
+                setStatus('');
+                if (elStatus) elStatus.hidden = true;
+            } else {
+                setStatus(String(err.message || err), 'error', {
+                    reintentar: true,
+                    reintentarKind: 'detalle'
+                });
+                limpiarPreview();
+            }
         } finally {
-            setPreviewLoading(false);
-            omitirAutoguardado = false;
+            if (seq === cargandoDetalleSeq) {
+                setPreviewLoading(false);
+                omitirAutoguardado = false;
+            }
         }
     }
 
-    function restaurarMuestraActivaDesdeBorrador() {
+    function rawMuestraActivaOMasRecienteMptk_(fecha) {
+        const fechaIso = normalizarFechaIso(fecha);
+        if (!fechaIso) return '';
         const store = leerStoreBorradorTk();
+        const prefix = fechaIso + '::';
+        let rawMuestra = '';
         const activo = String(store?.activo || '').trim();
-        const fecha = normalizarFechaIso(elFecha?.value);
-        if (!activo || !fecha || !elMuestra) return false;
-        if (!activo.startsWith(fecha + '::')) return false;
-        const rawMuestra = activo.slice(fecha.length + 2);
-        if (!rawMuestra) return false;
-        const opt = Array.from(elMuestra.options).find((o) => o.value === rawMuestra);
-        if (!opt) return false;
+        if (activo.startsWith(prefix)) {
+            const raw = activo.slice(prefix.length);
+            const row = store.porClave[activo];
+            if (raw && row?.estado && hayDatosCapturaMptk_(row.estado)) rawMuestra = raw;
+        }
+        if (!rawMuestra) {
+            let bestTs = -1;
+            Object.keys(store.porClave || {}).forEach((k) => {
+                if (!k.startsWith(prefix)) return;
+                const row = store.porClave[k];
+                if (!row?.estado || !hayDatosCapturaMptk_(row.estado)) return;
+                const ts = Number(row.guardado_en || row.actualizado) || 0;
+                if (ts >= bestTs) {
+                    bestTs = ts;
+                    rawMuestra = k.slice(prefix.length);
+                }
+            });
+        }
+        return rawMuestra;
+    }
+
+    function asegurarMuestraActivaMptk_(fecha, rawPreferido, opts) {
+        const fechaIso = normalizarFechaIso(fecha);
+        if (!fechaIso || !elMuestra) return false;
+        const rawActivo = String(rawPreferido || '').trim()
+            || rawMuestraActivaOMasRecienteMptk_(fechaIso)
+            || '';
+        if (!rawActivo) return false;
+        if (!Array.from(elMuestra.options).some((o) => o.value === rawActivo)) return false;
+        const yaSeleccionada = String(elMuestra.value || '').trim() === rawActivo;
         mptkRestaurandoBorrador = true;
-        elMuestra.value = rawMuestra;
-        mptkMuestraAnterior = rawMuestra;
+        elMuestra.value = rawActivo;
+        mptkMuestraAnterior = rawActivo;
         mptkRestaurandoBorrador = false;
-        const ensayoNumero = rawMuestra.split('|')[1] || '';
-        if (ensayoNumero) void cargarDetalle(fecha, ensayoNumero);
+        const store = leerStoreBorradorTk();
+        store.activo = claveBorradorTk(fechaIso, rawActivo);
+        guardarStoreBorradorTk(store);
+        const ensayoNumero = String(rawActivo.split('|')[1] || '').trim();
+        if (!ensayoNumero) return false;
+        // Solo saltar si la UI YA tiene captura visible (no basta con borrador en storage).
+        if (opts?.soloSiHaceFalta && yaSeleccionada) {
+            if (hayDatosCapturaMptk_(leerEstadoFormularioTk_())) return true;
+        }
+        void cargarDetalle(fechaIso, ensayoNumero);
         return true;
+    }
+
+    function restaurarMuestraActivaDesdeBorrador() {
+        const fecha = normalizarFechaIso(elFecha?.value);
+        return asegurarMuestraActivaMptk_(fecha, '', { soloSiHaceFalta: false });
     }
 
     async function cargarMuestrasPorFecha(fechaIso) {
@@ -4063,21 +4320,32 @@
             return;
         }
         const seq = ++cargandoMuestrasSeq;
-        if (elMuestra) {
-            elMuestra.innerHTML = '';
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = 'Cargando…';
-            elMuestra.appendChild(opt);
-            elMuestra.disabled = true;
+        const rawAntes = String(elMuestra?.value || '').trim()
+            || rawMuestraActivaOMasRecienteMptk_(fecha)
+            || '';
+        try {
+            persistirSoloLocalMptk_({ forzar: true });
+        } catch (_) { /* ignore */ }
+
+        const cacheItems = mptkListaMuestrasCache_.fecha === fecha
+            ? (mptkListaMuestrasCache_.items || [])
+            : [];
+        const listaInmediata = fusionarListaMuestrasMptk_(
+            cacheItems,
+            muestrasOfflineDesdeBorradorTk(fecha)
+        );
+        if (listaInmediata.length) {
+            poblarSelectMuestra(listaInmediata, { preserveRaw: rawAntes });
+            asegurarMuestraActivaMptk_(fecha, rawAntes, { soloSiHaceFalta: true });
         }
-        limpiarPreview();
 
         if (!navigator.onLine) {
-            const listaLocal = muestrasOfflineDesdeBorradorTk(fecha);
             if (seq !== cargandoMuestrasSeq) return;
-            poblarSelectMuestra(listaLocal);
-            restaurarMuestraActivaDesdeBorrador();
+            const listaLocal = muestrasOfflineDesdeBorradorTk(fecha);
+            poblarSelectMuestra(listaLocal, { preserveRaw: rawAntes });
+            if (listaLocal.length) {
+                asegurarMuestraActivaMptk_(fecha, rawAntes, { soloSiHaceFalta: false });
+            }
             setStatus(listaLocal.length
                 ? 'Sin internet: muestras recuperadas del borrador local.'
                 : 'Sin internet. No hay borradores guardados para esta fecha.', 'warn');
@@ -4085,7 +4353,7 @@
             return;
         }
 
-        setSelectLoading(true, 'Cargando muestras…');
+        setSelectLoading(true, listaInmediata.length ? 'Actualizando listado…' : 'Cargando muestras…');
         setStatus('');
         if (elStatus) elStatus.hidden = true;
 
@@ -4093,35 +4361,46 @@
             const base = await withMinLoader(() => fetchMuestrasPorFecha(fecha));
             if (seq !== cargandoMuestrasSeq) return;
             const operativas = normalizarListaMuestrasOperativasTk_(base);
-            if (seq !== cargandoMuestrasSeq) return;
             const offline = muestrasOfflineDesdeBorradorTk(fecha);
-            const merged = [];
-            const seen = new Set();
-            [...operativas, ...offline].forEach((item) => {
-                const key = String(item.num_muestra || '') + '|' + String(item.ensayo_numero || '');
-                if (!key || seen.has(key)) return;
-                seen.add(key);
-                merged.push(item);
-            });
-            poblarSelectMuestra(merged);
+            const merged = fusionarListaMuestrasMptk_(operativas, offline);
+            mptkListaMuestrasCache_ = { fecha, items: merged };
             actualizarCacheListaMuestrasMptk_(fecha, merged);
-            restaurarMuestraActivaDesdeBorrador();
+            const rawKeep = String(elMuestra?.value || '').trim() || rawAntes;
+            poblarSelectMuestra(merged, { preserveRaw: rawKeep });
             if (!merged.length) {
                 setStatus('No hay registros de campo para esa fecha.', 'warn');
+            } else {
+                asegurarMuestraActivaMptk_(fecha, rawKeep, { soloSiHaceFalta: true });
             }
         } catch (err) {
             if (seq !== cargandoMuestrasSeq) return;
-            const msg = String(err.message || err);
-            setStatus(msg, 'error');
-            if (elMuestra) {
-                elMuestra.innerHTML = '';
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = 'Error — cambia la fecha';
-                elMuestra.appendChild(opt);
-                elMuestra.disabled = false;
+            const fallback = fusionarListaMuestrasMptk_(
+                mptkListaMuestrasCache_.fecha === fecha ? mptkListaMuestrasCache_.items : [],
+                muestrasOfflineDesdeBorradorTk(fecha)
+            );
+            if (fallback.length) {
+                const rawKeep = String(elMuestra?.value || '').trim() || rawAntes;
+                poblarSelectMuestra(fallback, { preserveRaw: rawKeep });
+                asegurarMuestraActivaMptk_(fecha, rawKeep, { soloSiHaceFalta: true });
+                setStatus(
+                    'Planilla lenta o sin respuesta: listado local. Puedes seguir editando.',
+                    'warn',
+                    { reintentar: true, reintentarKind: 'muestras' }
+                );
+            } else {
+                setStatus(String(err.message || err), 'error', {
+                    reintentar: true,
+                    reintentarKind: 'muestras'
+                });
+                if (elMuestra && !String(elMuestra.value || '').trim()) {
+                    elMuestra.innerHTML = '';
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'Error — reintenta o cambia la fecha';
+                    elMuestra.appendChild(opt);
+                    elMuestra.disabled = false;
+                }
             }
-            poblarSelectMuestra([]);
         } finally {
             if (seq === cargandoMuestrasSeq) setSelectLoading(false);
         }
@@ -4205,7 +4484,12 @@
         cancelarGuardadoBorradorProgramadoMptk_();
 
         if (prev && prev !== raw && fecha) {
-            snapshotMuestraMptkSiHayTrabajo_(fecha, prev, estadoPrev, detallePrev);
+            // Guardar siempre la muestra que se deja (formulario aún tiene esos datos).
+            snapshotBorradorTk_(fecha, prev, {
+                activa: false,
+                estado: estadoPrev || leerEstadoFormularioTk_(),
+                detalleSnap: detallePrev
+            });
         }
         mptkMuestraAnterior = raw;
 
@@ -4221,6 +4505,9 @@
             setStatus('');
             return;
         }
+        // Vaciar UI ya: evita mostrar la captura de la muestra anterior
+        // mientras carga el detalle / borrador de la nueva.
+        prepararUiNuevaMuestraMptk_();
         const store = leerStoreBorradorTk();
         store.activo = claveBorradorTk(fecha, raw);
         guardarStoreBorradorTk(store);
@@ -4228,6 +4515,10 @@
     });
 
     elResumenToggle?.addEventListener('click', toggleChipsPanelCollapsed);
+
+    elStatusRetry?.addEventListener('click', () => {
+        void forzarRefrescoPlanillaDesdeStatusMptk_();
+    });
 
     elBtnEnviar?.addEventListener('click', () => { void guardarRegistroYEnviarDesdePantallaMptk_(); });
 
@@ -4377,7 +4668,7 @@
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
-            persistirSoloLocalMptk_();
+            persistirSoloLocalMptk_({ forzar: true });
             return;
         }
         purgarBorradoresMptkOtrosDias_();
@@ -4387,13 +4678,13 @@
     });
 
     window.addEventListener('beforeunload', () => {
-        persistirSoloLocalMptk_();
+        persistirSoloLocalMptk_({ forzar: true });
     });
     window.addEventListener('pagehide', () => {
-        persistirSoloLocalMptk_();
+        persistirSoloLocalMptk_({ forzar: true });
     });
     window.addEventListener('freeze', () => {
-        persistirSoloLocalMptk_();
+        persistirSoloLocalMptk_({ forzar: true });
     });
 
     const MPTK_DRAFT_AUTOSAVE_MS = 3000;
@@ -4403,6 +4694,14 @@
         if (!String(elMuestra?.value || '').trim()) return;
         persistirSoloLocalMptk_();
     }, MPTK_DRAFT_AUTOSAVE_MS);
+
+    if (typeof window.solicitarAlmacenamientoPersistenteApp === 'function') {
+        window.solicitarAlmacenamientoPersistenteApp();
+    }
+    if (typeof window.bindNavPersistDraft === 'function') {
+        window.bindNavPersistDraft(() => persistirSoloLocalMptk_({ forzar: true }), { topeMs: 220 });
+    }
+    window.persistirSoloLocalMptk = persistirSoloLocalMptk_;
 
     actualizarHeaderConexion();
     actualizarHeaderPendientes();

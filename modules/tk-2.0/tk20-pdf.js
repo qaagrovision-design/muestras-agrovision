@@ -48,8 +48,9 @@
     let pdfjsLibInited = false;
     let pdfPreviewSession = null;
     let ultimoHashPdfVivoTk20_ = '';
-    const pdfZoomState = { scale: 1, min: 0.6, max: 4, step: 0.35 };
-    const PDF_PREVIEW_DPR = () => Math.min(window.devicePixelRatio || 1, 3);
+    const pdfZoomState = { scale: 1, min: 0.6, max: 2.5, step: 0.35 };
+    // Cap bajo: en emulación móvil DPR alto + canvas doble explotaba la RAM (varios GB).
+    const PDF_PREVIEW_DPR = () => Math.min(window.devicePixelRatio || 1, 1.5);
 
     function profundidadDesdeRaizProyectoTk20Pdf_() {
         const path = String(window.location.pathname || '').replace(/\\/g, '/');
@@ -877,9 +878,45 @@
         }, { passive: true });
     }
 
+    function liberarCanvasesPaginaPdf_(item) {
+        if (!item) return;
+        try {
+            if (item.canvas) {
+                item.canvas.width = 0;
+                item.canvas.height = 0;
+            }
+            if (item.bufferCanvas) {
+                item.bufferCanvas.width = 0;
+                item.bufferCanvas.height = 0;
+            }
+        } catch (_) { /* ignore */ }
+        item.bufferCanvas = null;
+        item.bufferCtx = null;
+        item.ctx = null;
+        item.canvas = null;
+    }
+
+    function destruirSesionPdfPreview_() {
+        const session = pdfPreviewSession;
+        pdfPreviewSession = null;
+        if (!session) return;
+        if (session.zoomTimer) {
+            clearTimeout(session.zoomTimer);
+            session.zoomTimer = null;
+        }
+        session.renderGen = (session.renderGen || 0) + 1;
+        (session.pages || []).forEach(liberarCanvasesPaginaPdf_);
+        session.pages = [];
+        if (session.pdf) {
+            try { session.pdf.cleanup?.(); } catch (_) { /* ignore */ }
+            try { session.pdf.destroy?.(); } catch (_) { /* ignore */ }
+            session.pdf = null;
+        }
+    }
+
     function limpiarVistaPreviaPdf() {
         ocultarVisorPdfNativo();
-        pdfPreviewSession = null;
+        destruirSesionPdfPreview_();
         const pages = document.getElementById('pdf-preview-pages');
         if (pages) pages.innerHTML = '';
         estadoVistaPreviaPdf('loading');
@@ -943,7 +980,9 @@
         if (ov) ov.style.display = 'none';
         limpiarVistaPreviaPdf();
         revocarPdfUrlActual();
+        pdfBlobActual = null;
         pdfDatosActual = null;
+        pdfNombreActual = 'medicion-tk20.pdf';
         ultimoHashPdfVivoTk20_ = '';
     }
 

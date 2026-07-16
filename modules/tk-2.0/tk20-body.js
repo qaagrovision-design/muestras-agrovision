@@ -393,13 +393,16 @@
         renderCards();
     }
 
-    /** Solo cuota de pesos y variedad desde Campo — sin rellenar captura TK. */
+    /**
+     * Solo cuota/variedad/flag completo desde Campo.
+     * NO reinicia pesos/obs: eso lo hace prepararUiNuevaMuestra;
+     * reiniciar aquí vaciaba la UI justo antes de restaurar el borrador.
+     */
     function aplicarContextoCampoDesdeDetalle(d) {
         if (!d) {
             tk20VariedadHtml = 'Variedad: —';
             tk20RegistroCompleto = false;
             F?.resetCuotaPesos?.();
-            resetCardsLocal();
             renderCards();
             return;
         }
@@ -408,9 +411,11 @@
         tk20VariedadHtml = textoVariedadDesdeDetalle(d);
         ETAPAS.forEach((cfg) => {
             const st = stateByEtapa[cfg.key];
-            st.cardSeq = 0;
-            st.card = crearCardEtapa(cfg.key);
-            if (cfg.key === 'traslado') tk20ActiveCardId = st.card.id;
+            if (!st.card) {
+                st.cardSeq = 0;
+                st.card = crearCardEtapa(cfg.key);
+                if (cfg.key === 'traslado') tk20ActiveCardId = st.card.id;
+            }
         });
         renderCards();
     }

@@ -1831,6 +1831,11 @@ const META_SAVE_IDS = [
         let bloqueoMuestraRefrescando = false;
         let bloqueoMuestraUltimoFetchMs = 0;
         let bloqueoMuestraCacheNums = null;
+        let servidorOperativoRefrescando = false;
+        let servidorOperativoRefreshPromise = null;
+        let servidorOperativoFallosSeguidos = 0;
+        let servidorOperativoRetryTimer = null;
+        let refrescoVisibleCampoTimer = null;
         /** N° asignado por muestra en esta sesión (no recalcular tras cada envío). */
         const numerosMuestraFijadosSesion = {};
         /** Debe declararse antes de leerNumMuestraDesdePantalla (arranque temprano). */
@@ -1968,12 +1973,15 @@ const META_SAVE_IDS = [
                 inp.placeholder = 'Automático';
                 return;
             }
-            if (numMuestraLoaderCount > 0) {
+            if (numMuestraLoaderCount > 0 || servidorOperativoRefrescando) {
                 inp.placeholder = 'Leyendo planilla…';
                 return;
             }
             if (navigator.onLine && API_URL && !numMuestraSincronizadoServidor) {
-                inp.placeholder = 'Sin planilla';
+                // Aún sin sync (reintento pendiente): no decir "Sin planilla" de golpe.
+                inp.placeholder = servidorOperativoRetryTimer
+                    ? 'Reintentando…'
+                    : 'Leyendo planilla…';
                 return;
             }
             inp.placeholder = 'Automático';
@@ -2196,17 +2204,50 @@ const META_SAVE_IDS = [
                 metaPorEnsayo[e] = metaPlantillaVaciaEnsayo_(e);
                 return;
             }
+            // Solo limpia si no hay trabajo real. Nunca borrar meta con datos
+            // solo porque la sesión aún no marcó el ensayo como “visitado”
+            // (eso vaciaba Acopio al cambiar de muestra).
             const tieneTrabajo = ensayoMetaTieneDatosTrabajo(e);
             const completa = metaEnsayoCompletaParaOrden(e);
             if (!tieneTrabajo && !completa) {
                 metaPorEnsayo[e] = metaPlantillaVaciaEnsayo_(e);
-                return;
             }
-            const visitada = ensayosActivadosSesion.has(e)
-                || data.some((it) => String(it?.ensayo || '') === e);
-            if (tieneTrabajo && !visitada) {
-                metaPorEnsayo[e] = metaPlantillaVaciaEnsayo_(e);
-            }
+        }
+
+        /** Cabecera + logística Acopio se copian a una muestra nueva vacía. */
+        const META_IDS_HEREDAR_CAMBIO_MUESTRA_ = [
+            'visual-responsable', 'visual-guia-precosecha', 'visual-hora',
+            'visual-meta-fundo', 'visual-meta-variedad', 'visual-traz-etapa', 'visual-traz-campo',
+            'visual-traz-turno', 'visual-traz-acopio', 'visual-trazabilidad',
+            'visual-guia-acopio', 'visual-placa-vehiculo', 'visual-observacion-formato'
+        ];
+
+        function heredarMetaCabeceraEntreEnsayos_(origen, destino) {
+            const fromKey = String(origen || '').trim();
+            const toKey = String(destino || '').trim();
+            if (!fromKey || !toKey || fromKey === toKey) return;
+            const from = metaPorEnsayo[fromKey];
+            if (!from || typeof from !== 'object') return;
+            if (ensayoMetaTieneDatosTrabajo(toKey) || metaEnsayoCompletaParaOrden(toKey)) return;
+            const to = { ...(metaPorEnsayo[toKey] || metaPlantillaVaciaEnsayo_(toKey)) };
+            let copio = false;
+            META_IDS_HEREDAR_CAMBIO_MUESTRA_.forEach((id) => {
+                const v = String(from[id] ?? '').trim();
+                if (!v) return;
+                to[id] = from[id];
+                copio = true;
+            });
+            if (!copio) return;
+            to['visual-meta-muestra'] = toKey;
+            to['visual-rotulo'] = toKey;
+            delete to['visual-num-muestra'];
+            delete to._num_muestra_fijo;
+            metaPorEnsayo[toKey] = to;
+            ensayoMeta[toKey] = {
+                guiaRemision: String(to['visual-guia-acopio'] || '').trim(),
+                placaVehiculo: String(to['visual-placa-vehiculo'] || '').trim().toUpperCase()
+            };
+            marcarEnsayoEnUsoSesion(toKey);
         }
 
         let metaGuardadoSuspendido = 0;
@@ -2690,7 +2731,9 @@ const META_SAVE_IDS = [
                         }
                         persistirLogisticaAcopioDesdeInputs(anterior);
                         snapshotMetaEnsayoActual(anterior);
+                        marcarEnsayoEnUsoSesion(anterior);
                         programarActualizarErroresMetaFormulario();
+                        heredarMetaCabeceraEntreEnsayos_(anterior, muestra);
                         asegurarMetaEnsayoSinDatosFantasma_(muestra);
                         if (!metaPorEnsayo[muestra]) {
                             metaPorEnsayo[muestra] = metaPlantillaVaciaEnsayo_(muestra);
@@ -2736,10 +2779,19 @@ const META_SAVE_IDS = [
         function asegurarOpcionesSelectAcopio(valorPreferido) {
             const sel = document.getElementById('visual-traz-acopio');
             if (!sel) return;
+            const ACOPIOS_EXTRA = [
+                { value: 'Acopio Central 1', label: 'Acopio C1' },
+                { value: 'Acopio Central 2', label: 'Acopio C2' }
+            ];
             const actual = String(valorPreferido != null ? valorPreferido : sel.value || '').trim();
             const valores = new Set(['']);
             for (let i = 1; i <= 25; i++) valores.add(`Acopio ${i}`);
-            if (sel.options.length < 26) {
+            ACOPIOS_EXTRA.forEach((x) => valores.add(x.value));
+            const esperadas = 1 + 25 + ACOPIOS_EXTRA.length;
+            const faltanExtra = ACOPIOS_EXTRA.some(
+                (x) => ![...sel.options].some((o) => o.value === x.value)
+            );
+            if (sel.options.length < esperadas || faltanExtra) {
                 const prev = actual;
                 sel.innerHTML = '<option value="">Acopio</option>';
                 for (let i = 1; i <= 25; i++) {
@@ -2748,6 +2800,12 @@ const META_SAVE_IDS = [
                     opt.textContent = `Acopio ${i}`;
                     sel.appendChild(opt);
                 }
+                ACOPIOS_EXTRA.forEach((x) => {
+                    const opt = document.createElement('option');
+                    opt.value = x.value;
+                    opt.textContent = x.label;
+                    sel.appendChild(opt);
+                });
                 if (prev && !valores.has(prev)) {
                     const leg = document.createElement('option');
                     leg.value = prev;
@@ -2941,7 +2999,7 @@ const META_SAVE_IDS = [
                 return new Set([...bloqueoMuestraCacheNums]);
             }
             try {
-                const r = await callbackJsonp(API_URL, { fecha: hoyIsoLocal() }, 5000);
+                const r = await callbackJsonp(API_URL, { fecha: hoyIsoLocal() });
                 if (!r || r.ok !== true || !Array.isArray(r.ensayos)) return null;
                 const out = new Set(r.ensayos.map((e) => String(e).trim()).filter(Boolean));
                 bloqueoMuestraCacheNums = out;
@@ -3543,6 +3601,7 @@ const META_SAVE_IDS = [
         }
 
         function persistirLogisticaAcopioDesdeInputs(ensayoOverride) {
+            if (metaGuardadoSuspendido > 0 && !ensayoOverride) return;
             const ensayo = String(ensayoOverride || obtenerEnsayoActivo() || 'Ensayo 1').trim() || 'Ensayo 1';
             const gEl = document.getElementById('visual-guia-acopio');
             const pEl = document.getElementById('visual-placa-vehiculo');
@@ -5164,7 +5223,7 @@ const META_SAVE_IDS = [
             ];
 
             return [
-                // Visual: 49 cols. Acopio: 51 cols. TRAZ_ACOPIO (Acopio 1–25) tras PLACA.
+                // Visual: 49 cols. Acopio: 51 cols. TRAZ_ACOPIO (Acopio 1–25 + Central 1/2) tras PLACA.
                 hoyIsoLocal(),
                 strOrEmpty(ensayoNombre),
                 numMuestraUnica,
@@ -6409,6 +6468,11 @@ const META_SAVE_IDS = [
             const enviado = String(ensayoEnviado || '').trim();
             if (!enviado) return '';
 
+            // Guardar cabecera antes de borrar el ensayo enviado (para heredar a la siguiente).
+            const metaEnviadoSnap = metaPorEnsayo[enviado]
+                ? { ...metaPorEnsayo[enviado] }
+                : null;
+
             for (let i = data.length - 1; i >= 0; i--) {
                 if (String(data[i]?.ensayo || 'Ensayo 1') === enviado) {
                     data.splice(i, 1);
@@ -6429,16 +6493,23 @@ const META_SAVE_IDS = [
             }
 
             const siguiente = siguienteEnsayoPendienteTrasEnvio_(enviado);
+            if (metaEnviadoSnap) metaPorEnsayo[enviado] = metaEnviadoSnap;
             if (siguiente) {
+                heredarMetaCabeceraEntreEnsayos_(enviado, siguiente);
+                delete metaPorEnsayo[enviado];
                 aplicarCambioMuestraRapido(siguiente);
             } else {
                 const num = Number(numeroDesdeEnsayoTexto(enviado)) || 1;
                 const prox = ensayoNombreDesdeNumero(num + 1);
                 if (prox && num < MAX_MUESTRAS_CAMPO) {
+                    heredarMetaCabeceraEntreEnsayos_(enviado, prox);
+                    delete metaPorEnsayo[enviado];
                     if (!metaPorEnsayo[prox]) {
                         metaPorEnsayo[prox] = metaPlantillaVaciaEnsayo_(prox);
                     }
                     aplicarCambioMuestraRapido(prox);
+                } else {
+                    delete metaPorEnsayo[enviado];
                 }
             }
 
@@ -6743,7 +6814,12 @@ const META_SAVE_IDS = [
         }
 
         function callbackJsonp(urlBase, params, timeoutMs) {
-            const waitMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 8000;
+            if (!navigator.onLine) {
+                return Promise.reject(new Error('Sin internet'));
+            }
+            const waitMs = window.NetworkSync?.jsonpTimeoutMs
+                ? window.NetworkSync.jsonpTimeoutMs(timeoutMs)
+                : (Number(timeoutMs) > 0 ? Math.min(Number(timeoutMs), 25000) : 15000);
             return new Promise((resolve, reject) => {
                 const cb = '__cb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 const noopCb = function () { };
@@ -6797,19 +6873,18 @@ const META_SAVE_IDS = [
             throw ultimoError || new Error('JSONP falló');
         }
 
-        let servidorOperativoRefrescando = false;
-        let servidorOperativoRefreshPromise = null;
-        let refrescoVisibleCampoTimer = null;
-        let servidorOperativoFallosSeguidos = 0;
-        let servidorOperativoRetryTimer = null;
-
         function programarReintentoEstadoServidor() {
             if (servidorOperativoRetryTimer) return;
             if (!navigator.onLine) return;
             const espera = Math.min(30000, 2000 + servidorOperativoFallosSeguidos * 1500);
+            actualizarHintNumMuestraPantalla();
             servidorOperativoRetryTimer = setTimeout(() => {
                 servidorOperativoRetryTimer = null;
-                void refrescarEstadoServidorOperativo(true);
+                setNumMuestraCargando(true);
+                void refrescarEstadoServidorOperativo(true).finally(() => {
+                    setNumMuestraCargando(false);
+                    actualizarHintNumMuestraPantalla();
+                });
             }, espera);
         }
 
@@ -7216,14 +7291,18 @@ const META_SAVE_IDS = [
 
         /** estado_operativo (planilla + ensayos hoy); si falla, intenta proximo_num_muestra. */
         async function consultarEstadoNumMuestraServidor_(force) {
-            const intentos = force ? 3 : 2;
+            // Política empresarial: NetworkSync.planillaTimeoutsMs (18s × 2–3). Offline corta solo.
+            const topes = window.NetworkSync?.planillaTimeoutsMs?.(force)
+                || (force ? [18000, 18000, 18000] : [18000, 18000]);
+            const topeMs = topes[0] || 18000;
+            const intentos = topes.length;
             const r = await callbackJsonpConReintentos(API_URL, {
                 estado_operativo: '1',
                 fecha: hoyIsoLocal()
-            }, intentos, 8000);
+            }, intentos, topeMs);
             if (r && r.ok === true) return r;
             logNumMuestra('consultarEstadoNumMuestraServidor_ fallback proximo_num_muestra', { respuesta_estado: r });
-            const r2 = await callbackJsonpConReintentos(API_URL, { proximo_num_muestra: '1' }, 2, 8000);
+            const r2 = await callbackJsonpConReintentos(API_URL, { proximo_num_muestra: '1' }, Math.max(2, intentos - 1), topeMs);
             if (r2 && r2.ok === true) {
                 return { ...r2, ensayos: Array.isArray(r2.ensayos) ? r2.ensayos : [] };
             }
@@ -7243,6 +7322,7 @@ const META_SAVE_IDS = [
             }
             if (servidorOperativoRefreshPromise) return servidorOperativoRefreshPromise;
             servidorOperativoRefrescando = true;
+            actualizarHintNumMuestraPantalla();
             servidorOperativoRefreshPromise = (async () => {
                 try {
                     const r = await consultarEstadoNumMuestraServidor_(force);
@@ -7291,6 +7371,7 @@ const META_SAVE_IDS = [
                 } finally {
                     servidorOperativoRefrescando = false;
                     servidorOperativoRefreshPromise = null;
+                    actualizarHintNumMuestraPantalla();
                 }
             })();
             return servidorOperativoRefreshPromise;
@@ -7929,12 +8010,14 @@ const META_SAVE_IDS = [
                 console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
             }
 
-            await fetch(API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            await (window.NetworkSync?.fetchApiPost
+                ? window.NetworkSync.fetchApiPost(API_URL, body)
+                : fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }));
 
             snapshotMetaEnsayoActual();
             const ensayoPdf = String(ensayoObjetivo || payload.ensayo || ('Ensayo ' + payload.ensayo_numero));
@@ -8242,12 +8325,14 @@ const META_SAVE_IDS = [
                 console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
             }
 
-            await fetch(API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            await (window.NetworkSync?.fetchApiPost
+                ? window.NetworkSync.fetchApiPost(API_URL, body)
+                : fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }));
 
             snapshotMetaEnsayoActual();
             const datosPdfLote = typeof window.obtenerDatosPdfCampoParaEnsayos === 'function'
@@ -8488,12 +8573,14 @@ const META_SAVE_IDS = [
                         reg.intentos = Number(reg.intentos || 0) + 1;
                         reg.actualizado_en = Date.now();
                         try {
-                            await fetch(API_URL, {
-                                method: 'POST',
-                                mode: 'no-cors',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(bodyPk)
-                            });
+                            await (window.NetworkSync?.fetchApiPost
+                                ? window.NetworkSync.fetchApiPost(API_URL, bodyPk)
+                                : fetch(API_URL, {
+                                    method: 'POST',
+                                    mode: 'no-cors',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(bodyPk)
+                                }));
                             reg.estado = 'subido';
                             reg.error = '';
                             pushEstadoSync(reg);
@@ -8595,12 +8682,14 @@ const META_SAVE_IDS = [
                         console.log('[POST CAMPO JSON.stringify]', JSON.stringify(body));
                         // Apps Script Web App no expone CORS en muchos despliegues.
                         // Se envía en modo no-cors y luego se confirma por UID/NUM_MUESTRA vía JSONP.
-                        await fetch(API_URL, {
-                            method: 'POST',
-                            mode: 'no-cors',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body)
-                        });
+                        await (window.NetworkSync?.fetchApiPost
+                            ? window.NetworkSync.fetchApiPost(API_URL, body)
+                            : fetch(API_URL, {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(body)
+                            }));
                         const confirmacion = await confirmarRegistroServidorConReintentos(reg);
                         logSync('Confirmación servidor (detalle completo)', confirmacion);
                         if (confirmacion?.estado === 'confirmado') {
@@ -10018,14 +10107,37 @@ const META_SAVE_IDS = [
                 e.returnValue = msg;
                 return msg;
             });
-            document.querySelectorAll('#main-bottom-nav a[href]').forEach((a) => {
-                a.addEventListener('click', () => {
-                    persistirSoloLocalCampo_();
-                    void flushDraftCampoAIdb_();
+            if (typeof window.bindNavPersistDraft === 'function') {
+                window.bindNavPersistDraft(() => {
                     omitirConfirmacionSalida = true;
-                    setTimeout(() => { omitirConfirmacionSalida = false; }, 1200);
+                    persistirSoloLocalCampo_();
+                    setTimeout(() => { omitirConfirmacionSalida = false; }, 2500);
+                }, {
+                    flushAsync: () => flushDraftCampoAIdb_(),
+                    topeMs: 200
                 });
-            });
+            } else {
+                document.querySelectorAll('#main-bottom-nav a[href]').forEach((a) => {
+                    a.addEventListener('click', (ev) => {
+                        persistirSoloLocalCampo_();
+                        omitirConfirmacionSalida = true;
+                        const href = a.getAttribute('href');
+                        if (!href || href === '#' || a.classList.contains('active')) {
+                            void flushDraftCampoAIdb_();
+                            return;
+                        }
+                        ev.preventDefault();
+                        const destino = a.href;
+                        Promise.race([
+                            Promise.resolve(flushDraftCampoAIdb_()).catch(() => {}),
+                            new Promise((r) => setTimeout(r, 450))
+                        ]).then(() => {
+                            window.location.href = destino;
+                        });
+                        setTimeout(() => { omitirConfirmacionSalida = false; }, 2500);
+                    });
+                });
+            }
             actualizarBarraHeaderEstado();
             await arranqueServidorCampoTrasBorrador_(draftRestaurado);
             iniciarAutosaveDraftCampo_();
@@ -10084,15 +10196,8 @@ const META_SAVE_IDS = [
                     const res = await cargarMejorBorradorCampoAsync_({ silencioso: true, repintar: true });
                     borradorActivo = res.aplicado;
                 }
-                if (!borradorActivo && !hayBorradorEnAlmacen && !campoInicioLimpioNuevoDia_) {
-                    await vaciarDatosIngresoPreservandoMuestraYNumeracion_(metaActivoEnsayo || ensayoDesdeFormulario());
-                    establecerAcordeonMetaAbierto(false);
-                    guardarMetaEnAlmacenamiento();
-                    if (typeof window.borrarBorradorCampoIdb === 'function') {
-                        void window.borrarBorradorCampoIdb();
-                    }
-                    guardarDraftCompleto();
-                }
+                // Nunca vaciar ni borrar borrador al arrancar/volvé de otro módulo.
+                // Solo se limpia en “nuevo día” o con el botón borrar local.
                 actualizarVistaCompacta();
                 actualizarProgresoMeta();
             } finally {

@@ -69,7 +69,12 @@
                         </select>
                     </div>
                 </div>
-                <p class="packing-status-msg" id="mptk-status" hidden></p>
+                <div class="packing-status-wrap" id="mptk-status-wrap" hidden>
+                    <p class="packing-status-msg" id="mptk-status"></p>
+                    <button type="button" class="packing-status-retry-btn" id="mptk-status-retry" hidden>
+                        Refrescar datos
+                    </button>
+                </div>
             </div>
 
             <section class="packing-resumen is-empty" id="mptk-resumen" aria-label="Resumen de datos">
@@ -364,6 +369,7 @@
     </div>
 
     <script src="../../core/script.js"></script>
+    <script src="../../core/nav-persist-draft.js"></script>
     <script src="../../core/mensajes-usuario.js"></script>
     <script src="../../core/fundo-flujo-tk20.js"></script>
     <script src="./tk20-formato.js"></script>
@@ -375,6 +381,7 @@
     <script src="../../core/time-picker.js"></script>
     <script src="../../core/api-config.js"></script>
     <script src="../../core/fecha-operativa.js"></script>
+    <script src="../../core/network.js"></script>
     <script src="./tk20-header.js"></script>
     <script src="../../core/presion-vapor.js"></script>
     <script src="./tk20-fields.js"></script>

@@ -21,6 +21,8 @@
         }
         if (guardado && valid.includes(guardado)) sel.value = guardado;
         else sel.value = paginaActual;
+        // Recordar MP-TK 1.0 si te quedas aquí (no pisar si redirigimos a 2.0 arriba).
+        localStorage.setItem(MPTK_FORMATO_KEY, paginaActual === '1.0' ? '1.0' : (sel.value || paginaActual));
     } catch (_) {
         sel.value = paginaActual;
     }
@@ -33,10 +35,18 @@
         try {
             localStorage.setItem(MPTK_FORMATO_KEY, v);
         } catch (_) { /* ignore */ }
+        try {
+            if (typeof window.persistirSoloLocalMptk === 'function') {
+                window.persistirSoloLocalMptk();
+            }
+        } catch (_) { /* ignore */ }
+        const ir = (url) => {
+            setTimeout(() => { window.location.href = url; }, 80);
+        };
         if (v === '2.0' && paginaActual !== '2.0') {
-            window.location.href = urlTk20;
+            ir(urlTk20);
         } else if (v === '1.0' && paginaActual !== '1.0') {
-            window.location.href = urlMpTk;
+            ir(urlMpTk);
         }
     });
 }());

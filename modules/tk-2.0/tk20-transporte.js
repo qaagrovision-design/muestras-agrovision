@@ -2,6 +2,10 @@
 (function initTk20Transporte() {
     const F = window.Tk20Fields;
     const NUM_ACOPIOS = 25;
+    const ACOPIOS_EXTRA = [
+        { value: 'Acopio Central 1', label: 'Acopio C1' },
+        { value: 'Acopio Central 2', label: 'Acopio C2' }
+    ];
 
     const elBtn = document.getElementById('tk2_btn_transporte');
     const elModal = document.getElementById('tk2_transporte_modal');
@@ -44,14 +48,24 @@
     function normalizarAcopioSelect(raw) {
         const v = String(raw || '').trim();
         if (!v) return '';
-        const slash = v.lastIndexOf('/');
+        const compact = v.replace(/\s+/g, ' ');
+        if (/^acopio\s+central\s*1$/i.test(compact) || /^acopio\s*c\s*1$/i.test(compact)) {
+            return 'Acopio Central 1';
+        }
+        if (/^acopio\s+central\s*2$/i.test(compact) || /^acopio\s*c\s*2$/i.test(compact)) {
+            return 'Acopio Central 2';
+        }
+        const slash = compact.lastIndexOf('/');
         if (slash >= 0) {
-            const tail = v.slice(slash + 1).trim();
+            const tail = compact.slice(slash + 1).trim();
+            const mCentral = /^acopio\s+central\s*([12])$/i.exec(tail)
+                || /^acopio\s*c\s*([12])$/i.exec(tail);
+            if (mCentral) return 'Acopio Central ' + mCentral[1];
             const m = /^acopio\s+(\d+)$/i.exec(tail);
             if (m) return 'Acopio ' + m[1];
         }
-        if (/^Acopio\s+\d+$/i.test(v)) {
-            return v.replace(/\s+/g, ' ').replace(/^acopio/i, 'Acopio');
+        if (/^Acopio\s+\d+$/i.test(compact)) {
+            return compact.replace(/^acopio/i, 'Acopio');
         }
         return '';
     }
@@ -78,6 +92,12 @@
             opt.textContent = etiquetaAcopioOpcion(i);
             elAcopio.appendChild(opt);
         }
+        ACOPIOS_EXTRA.forEach((x) => {
+            const opt = document.createElement('option');
+            opt.value = x.value;
+            opt.textContent = x.label;
+            elAcopio.appendChild(opt);
+        });
         const acopioPrev = normalizarAcopioSelect(prev);
         if (acopioPrev && acopioExisteEnSelect(acopioPrev)) elAcopio.value = acopioPrev;
         elAcopio.dataset.tk2AcopioBuilt = '1';

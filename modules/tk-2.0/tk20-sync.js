@@ -194,12 +194,14 @@
                 if (!reg || String(reg.estado || '') !== 'pendiente' || !esRegistroColaTk20(reg)) continue;
                 const body = reg.payload;
                 try {
-                    await fetch(apiUrl_(), {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
+                    await (window.NetworkSync?.fetchApiPost
+                        ? window.NetworkSync.fetchApiPost(apiUrl_(), body)
+                        : fetch(apiUrl_(), {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        }));
                     const ok = await confirmarTk20EnServidorTrasPost_(body);
                     if (ok) {
                         reg.estado = 'enviado';

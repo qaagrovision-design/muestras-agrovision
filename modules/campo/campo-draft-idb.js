@@ -74,10 +74,9 @@
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE, 'readwrite');
             const store = tx.objectStore(STORE);
+            // Solo el modo actual (visual u acopio). Nunca borrar el otro.
             store.delete(draftIdbKey_());
             store.delete('campo-draft-latest');
-            store.delete('campo-draft-latest-visual');
-            store.delete('campo-draft-latest-acopio');
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });

@@ -7693,8 +7693,8 @@
         .packing-status-wrap {
             margin-top: 16px;
             display: flex;
-            flex-direction: column;
-            align-items: stretch;
+            flex-direction: row;
+            align-items: center;
             gap: 8px;
         }
 
@@ -7703,6 +7703,8 @@
         }
 
         .packing-status-msg {
+            flex: 1 1 auto;
+            min-width: 0;
             font-size: 12px;
             margin: 0;
             padding: 8px 10px;
@@ -7721,7 +7723,8 @@
         .packing-status-msg--info { background: #e0f2fe; color: #075985; }
 
         .packing-status-retry-btn {
-            align-self: flex-start;
+            flex: 0 0 auto;
+            align-self: center;
             border: 1px solid #991b1b;
             background: #fff;
             color: #991b1b;
@@ -7731,6 +7734,7 @@
             padding: 8px 12px;
             border-radius: 10px;
             cursor: pointer;
+            white-space: nowrap;
         }
 
         .packing-status-retry-btn:hover {

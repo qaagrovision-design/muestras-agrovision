@@ -36,7 +36,14 @@ const APP_SHELL = [
     './assets/librerias/standard_fonts/LiberationSans-Regular.ttf',
     './core/network.js',
     './core/script.js',
+    './core/nav-persist-draft.js',
     './core/app-version.js',
+    './core/fecha-operativa.js',
+    './core/flujo-bienvenida.css',
+    './core/flujo-bienvenida.js',
+    './core/pdf-preview-live.js',
+    './core/mensajes-usuario.js',
+    './core/fundo-flujo-tk20.js',
     './core/icono-app.js',
     './core/catalogo-json.js',
     './core/mapeo-parcelas-data.js',
@@ -52,6 +59,7 @@ const APP_SHELL = [
     './assets/images/log.png',
     './modules/campo/',
     './modules/campo/index.html',
+    './modules/campo/campo-draft-idb.js',
     './modules/packing/',
     './modules/packing/index.html',
     './modules/packing/packing.js',
@@ -68,10 +76,16 @@ const APP_SHELL = [
     './modules/tk-2.0/index.html',
     './modules/tk-2.0/tk20-formato.js',
     './modules/tk-2.0/tk20-header.js',
+    './modules/tk-2.0/tk20-draft.js',
     './modules/tk-2.0/tk20-fields.js',
     './modules/tk-2.0/tk20-pesos-config.js',
     './modules/tk-2.0/tk20-body.js',
     './modules/tk-2.0/tk20-modals.js',
+    './modules/tk-2.0/tk20-control.js',
+    './modules/tk-2.0/tk20-swal.js',
+    './modules/tk-2.0/tk20-sync.js',
+    './modules/tk-2.0/tk20-pdf.js',
+    './modules/tk-2.0/tk20-fab.js',
     './core/presion-vapor.js',
     './modules/tk-2.0/tk20-presion.js',
     './modules/tk-2.0/tk20-envio.js',
@@ -227,15 +241,28 @@ function revalidarEnSegundoPlano(req, event) {
     );
 }
 
-/** Online: red primero. Sin red: caché (pestañas + estilos). */
+/** Online: red con tope corto, luego caché. Offline: caché primero (sin esperar fallo de red). */
 async function respondNavigate(req, event) {
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    if (offline) {
+        const cachedOff = await offlineNavigateFallback(req);
+        if (cachedOff) return cachedOff;
+        const home = await caches.match('./index.html');
+        if (home) return home;
+        return Response.error();
+    }
+
     try {
-        const res = await fetch(req);
+        const res = await Promise.race([
+            fetch(req),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('nav-timeout')), 1500))
+        ]);
         if (res && res.ok) {
             putRuntimeWithLimit(req, res.clone());
             return res;
         }
-    } catch (_) { /* sin red */ }
+    } catch (_) { /* sin red / timeout */ }
+
     const cached = await offlineNavigateFallback(req);
     if (cached) return cached;
     return caches.match('./index.html');

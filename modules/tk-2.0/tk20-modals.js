@@ -158,7 +158,12 @@
         mostrarModal(elPesosModal);
     }
 
-    function persistirModalPesos() {
+    /**
+     * Copia pesos del modal al card en memoria.
+     * render:true solo al cerrar/guardar — el autosave (cada 3s) NO debe redibujar
+     * todas las cards con el modal abierto (eso congelaba la UI en móvil).
+     */
+    function persistirModalPesos(opts) {
         const api = body();
         if (!api) return;
         const etapaKey = api.getActiveEtapa();
@@ -169,11 +174,11 @@
             const key = inp.getAttribute('data-field');
             if (key) card.pesos[key] = api.pesoNumero(inp.value);
         });
-        api.renderCards();
+        if (opts?.render) api.renderCards();
     }
 
     function cerrarModalPesos() {
-        persistirModalPesos();
+        persistirModalPesos({ render: true });
         ocultarModal(elPesosModal);
         window.Tk20Draft?.notificarCambio?.();
     }
@@ -186,7 +191,7 @@
             return;
         }
         setAlertaPesosModal_([]);
-        persistirModalPesos();
+        persistirModalPesos({ render: true });
         ocultarModal(elPesosModal);
         window.Tk20Draft?.notificarCambio?.();
         window.Tk20Draft?.notificarPdfVivo?.();
@@ -239,21 +244,23 @@
         mostrarModal(elPresionModal);
     }
 
-    function persistirModalPresion() {
+    function persistirModalPresion(opts) {
         const api = body();
         if (!api) return;
-        window.Tk20Presion?.recalcularEtapa?.(tk20PresionEtapa, { render: true });
+        window.Tk20Presion?.recalcularEtapa?.(tk20PresionEtapa, {
+            render: !!opts?.render
+        });
     }
 
     function cerrarModalPresion() {
-        persistirModalPresion();
+        persistirModalPresion({ render: true });
         ocultarModal(elPresionModal);
         if (elPresionBody) elPresionBody.innerHTML = '';
         window.Tk20Draft?.notificarCambio?.();
     }
 
     function guardarModalPresion() {
-        persistirModalPresion();
+        persistirModalPresion({ render: true });
         ocultarModal(elPresionModal);
         if (elPresionBody) elPresionBody.innerHTML = '';
         window.Tk20Draft?.notificarCambio?.();
@@ -280,23 +287,23 @@
         mostrarModal(elObsModal);
     }
 
-    function persistirModalObservacion() {
+    function persistirModalObservacion(opts) {
         const api = body();
         if (!api) return;
         const card = api.getEtapaCard(tk20ObsEtapa);
         if (!card) return;
         card.observacion = String(elObsInput?.value || '').trim();
-        api.renderCards();
+        if (opts?.render) api.renderCards();
     }
 
     function cerrarModalObservacion() {
-        persistirModalObservacion();
+        persistirModalObservacion({ render: true });
         ocultarModal(elObsModal);
         window.Tk20Draft?.notificarCambio?.();
     }
 
     function guardarModalObservacion() {
-        persistirModalObservacion();
+        persistirModalObservacion({ render: true });
         ocultarModal(elObsModal);
         window.Tk20Draft?.notificarCambio?.();
         window.Tk20Swal?.success?.('Guardado', 'Observación actualizada.');
@@ -367,6 +374,14 @@
         return !!(el && el.style.display === 'flex');
     }
 
+    function hayModalTk20Abierto_() {
+        return modalTk20Abierto_(elPesosModal)
+            || modalTk20Abierto_(elObsModal)
+            || modalTk20Abierto_(elPresionModal)
+            || modalTk20Abierto_(document.getElementById('tk2_control_modal'))
+            || modalTk20Abierto_(document.getElementById('tk2_transporte_modal'));
+    }
+
     function persistirModalesAbiertasTk20_() {
         if (modalTk20Abierto_(elPesosModal)) persistirModalPesos();
         if (modalTk20Abierto_(elObsModal)) persistirModalObservacion();
@@ -388,6 +403,7 @@
     bindCerrarFuera(elObsModal, cerrarModalObservacion);
 
     window.Tk20Modals = {
-        persistirAbiertas: persistirModalesAbiertasTk20_
+        persistirAbiertas: persistirModalesAbiertasTk20_,
+        hayModalAbierto: hayModalTk20Abierto_
     };
 }());

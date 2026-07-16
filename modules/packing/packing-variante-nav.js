@@ -1,4 +1,4 @@
-/** Navegación Packing ↔ Packing RC5 — independientes (sin localStorage compartido). */
+/** Navegación Packing ↔ Packing RC5 — independientes (borrador local separado por módulo). */
 (function initPackingVarianteNav() {
     const sel = document.getElementById('header-packing-variante');
     if (!sel) return;
@@ -11,14 +11,17 @@
 
     sel.addEventListener('change', () => {
         const v = sel.value;
-        if (v === 'packing-rc5' && !isRc5Page) {
-            window.location.href = urlRc5;
+        const irARc5 = v === 'packing-rc5' && !isRc5Page;
+        const irAPacking = v === 'packing' && isRc5Page;
+        if (!irARc5 && !irAPacking) {
+            sel.value = isRc5Page ? 'packing-rc5' : 'packing';
             return;
         }
-        if (v === 'packing' && isRc5Page) {
-            window.location.href = urlPacking;
-            return;
-        }
-        sel.value = isRc5Page ? 'packing-rc5' : 'packing';
+        try {
+            if (typeof window.persistirSoloLocalPacking === 'function') {
+                window.persistirSoloLocalPacking();
+            }
+        } catch (_) { /* ignore */ }
+        window.location.href = irARc5 ? urlRc5 : urlPacking;
     });
 }());

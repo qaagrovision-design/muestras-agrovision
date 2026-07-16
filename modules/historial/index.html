@@ -199,6 +199,7 @@
     </nav>
 
     <script src="../../core/api-config.js"></script>
+    <script src="../../core/network.js"></script>
     <script src="../../core/script.js"></script>
     <script src="../../core/hist-pdf-store.js"></script>
     <script src="../../assets/librerias/jspdf.umd.min.js"></script>
@@ -340,6 +341,9 @@
         window.addEventListener('offline', () => actualizarHeaderHistorial());
 
         function cbJsonp(urlBase, params) {
+            if (!navigator.onLine) {
+                return Promise.reject(new Error('Sin internet'));
+            }
             return new Promise((resolve, reject) => {
                 const cb = '__hist_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 const noopCb = function () { };
@@ -348,13 +352,16 @@
                 const src = urlBase + (urlBase.includes('?') ? '&' : '?') + qs.toString();
                 const script = document.createElement('script');
                 let done = false;
+                const espera = window.NetworkSync?.jsonpTimeoutMs
+                    ? window.NetworkSync.jsonpTimeoutMs()
+                    : 15000;
                 const timeoutId = setTimeout(() => {
                     if (done) return;
                     done = true;
                     window[cb] = noopCb;
                     if (script.parentNode) script.parentNode.removeChild(script);
                     reject(new Error('Timeout JSONP'));
-                }, 12000);
+                }, espera);
                 window[cb] = (payload) => {
                     if (done) return;
                     done = true;

@@ -7,6 +7,8 @@
     const elFecha = document.getElementById('mptk-fecha');
     const elMuestra = document.getElementById('mptk-muestra');
     const elStatus = document.getElementById('mptk-status');
+    const elStatusWrap = document.getElementById('mptk-status-wrap');
+    const elStatusRetry = document.getElementById('mptk-status-retry');
     const elSelectBlock = document.getElementById('mptk-select-block');
     const elSelectLoader = document.getElementById('mptk-select-loader');
     const elSelectLoaderMsg = document.getElementById('mptk-select-loader-msg');
@@ -27,6 +29,8 @@
     let lastDetalle = null;
     let foldBtnSyncRaf = 0;
     let tk20ListaMuestrasMetaCache_ = { fecha: '', porRaw: {} };
+    let tk20StatusRetryKind_ = '';
+    let tk20StatusRetryBusy_ = false;
 
     function hoyIsoLocal() {
         const d = new Date();
@@ -53,8 +57,13 @@
     }
 
     function callbackJsonp(params, timeoutMs) {
+        if (!navigator.onLine) {
+            return Promise.reject(new Error('Sin internet'));
+        }
         const limiteMs = Number(timeoutMs);
-        const espera = Number.isFinite(limiteMs) && limiteMs > 0 ? limiteMs : 14000;
+        const espera = window.NetworkSync?.jsonpTimeoutMs
+            ? window.NetworkSync.jsonpTimeoutMs(limiteMs)
+            : (Number.isFinite(limiteMs) && limiteMs > 0 ? Math.min(limiteMs, 25000) : 15000);
         return new Promise((resolve, reject) => {
             const cb = '__tk20_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
             const noop = function () {};
@@ -93,10 +102,15 @@
     }
 
     async function fetchMuestrasPorFecha(fechaIso) {
-        const r = await callbackJsonp({
+        const topes = window.NetworkSync?.listadoTimeoutsMs?.() || [18000, 18000];
+        const run = window.NetworkSync?.conReintentosTimeouts
+            ? (fn) => window.NetworkSync.conReintentosTimeouts(topes, fn)
+            : async (fn) => fn(topes[0] || 18000, 0);
+
+        const r = await run((ms) => callbackJsonp({
             listado_muestras_fecha: '1',
             fecha: fechaIso
-        });
+        }, ms));
         if (r && r.ok === true && Array.isArray(r.muestras)) {
             return r.muestras;
         }
@@ -104,11 +118,11 @@
         if (err === 'accion_no_soportada') {
             throw new Error('Redespliega code.gs en Apps Script (falta listado_muestras_fecha)');
         }
-        const r2 = await callbackJsonp({
+        const r2 = await run((ms) => callbackJsonp({
             listado_registrados: '1',
             fecha_desde: fechaIso,
             fecha_hasta: fechaIso
-        });
+        }, ms));
         if (r2 && r2.ok === true && Array.isArray(r2.registrados)) {
             const seen = {};
             const lista = [];
@@ -147,11 +161,16 @@
     }
 
     async function fetchDetalle(fechaIso, ensayoNumero, opts) {
+        if (!navigator.onLine) {
+            throw new Error('Sin internet');
+        }
         const sel = ensayoSeleccionado();
         const modo = String(opts?.modo_registro || sel.modo_registro || '').trim().toLowerCase();
         const params = { fecha: fechaIso, ensayo_numero: ensayoNumero };
         if (modo === 'acopio' || modo === 'visual') params.modo_registro = modo;
-        const intentos = [22000, 28000];
+        const intentos = opts?.revalidar
+            ? (window.NetworkSync?.detalleRevalidarTimeoutsMs?.() || [14000])
+            : (window.NetworkSync?.detalleTimeoutsMs?.() || [16000, 16000]);
         let ultimoErr = null;
         for (let i = 0; i < intentos.length; i++) {
             try {
@@ -345,8 +364,9 @@
         return n && e ? (n + ' - ' + e + ' muestra') : (n || e);
     }
 
-    function poblarSelectMuestra(lista) {
+    function poblarSelectMuestra(lista, opts) {
         if (!elMuestra) return;
+        const preserveRaw = String(opts?.preserveRaw || elMuestra.value || '').trim();
         elMuestra.innerHTML = '';
         const opt0 = document.createElement('option');
         opt0.value = '';
@@ -373,15 +393,204 @@
         elMuestra.disabled = n === 0;
         if (n === 0) elMuestra.setAttribute('disabled', 'disabled');
         else elMuestra.removeAttribute('disabled');
+        if (preserveRaw && Array.from(elMuestra.options).some((o) => o.value === preserveRaw)) {
+            elMuestra.value = preserveRaw;
+            tk20MuestraAnterior = preserveRaw;
+        }
     }
 
-    function setStatus(msg, tipo) {
+    /**
+     * Enlaza selector + detalle/borrador a la muestra activa.
+     * soloSiHaceFalta: no recarga detalle si ya estamos en esa muestra con UI.
+     */
+    function asegurarMuestraActivaYDatosTk20_(fecha, rawPreferido, opts) {
+        const fechaIso = normalizarFechaIso(fecha);
+        if (!fechaIso || !elMuestra) return false;
+        const rawActivo = String(rawPreferido || '').trim()
+            || window.Tk20Draft?.rawMuestraDesdeClaveActiva?.(fechaIso)
+            || '';
+        if (!rawActivo) return false;
+        const opt = Array.from(elMuestra.options).find((o) => o.value === rawActivo);
+        if (!opt) return false;
+        const yaSeleccionada = String(elMuestra.value || '').trim() === rawActivo;
+        elMuestra.value = rawActivo;
+        tk20MuestraAnterior = rawActivo;
+        window.Tk20Draft?.setMuestraActivaClave?.(fechaIso, rawActivo);
+        const ensayoNumero = String(rawActivo.split('|')[1] || '').trim();
+        if (!ensayoNumero) return false;
+        // Solo saltar si la UI YA tiene captura visible (vuelta de módulo con pantalla vacía → cargar).
+        if (opts?.soloSiHaceFalta && yaSeleccionada) {
+            const hayUi = !!(window.Tk20Draft?.hayDatosCaptura?.(window.Tk20Draft?.capturarEstadoUi?.()));
+            if (hayUi) return true;
+        }
+        void cargarDetalle(fechaIso, ensayoNumero);
+        return true;
+    }
+
+    function restaurarMuestraActivaDesdeBorradorTk20_() {
+        const fecha = normalizarFechaIso(elFecha?.value);
+        return asegurarMuestraActivaYDatosTk20_(fecha, '', { soloSiHaceFalta: false });
+    }
+
+    function listaCacheMuestrasTk20_(fechaIso) {
+        const fecha = normalizarFechaIso(fechaIso);
+        if (!fecha || tk20ListaMuestrasMetaCache_.fecha !== fecha) return [];
+        return Object.keys(tk20ListaMuestrasMetaCache_.porRaw || {}).map((k) => tk20ListaMuestrasMetaCache_.porRaw[k]);
+    }
+
+    async function cargarMuestrasPorFecha(fechaIso) {
+        const fecha = normalizarFechaIso(fechaIso);
+        if (!fecha) {
+            poblarSelectMuestra([]);
+            return;
+        }
+        const seq = ++cargandoMuestrasSeq;
+        // No cancelar detalle en curso: el listado local-first no debe vaciar la captura.
+        const rawAntes = String(elMuestra?.value || '').trim()
+            || window.Tk20Draft?.rawMuestraDesdeClaveActiva?.(fecha)
+            || '';
+
+        // Guardar captura ANTES de tocar el selector (evita “desapareció la data”).
+        try {
+            window.Tk20Draft?.persistirSoloLocal?.({ forzar: true });
+        } catch (_) { /* ignore */ }
+
+        // Pintar ya cache + borradores locales (sin esperar al servidor).
+        const listaInmediata = fusionarBorradoresLocales(listaCacheMuestrasTk20_(fecha), fecha);
+        if (listaInmediata.length) {
+            poblarSelectMuestra(listaInmediata, { preserveRaw: rawAntes });
+            asegurarMuestraActivaYDatosTk20_(fecha, rawAntes, { soloSiHaceFalta: true });
+        }
+
+        if (!navigator.onLine) {
+            if (seq !== cargandoMuestrasSeq) return;
+            const listaLocal = fusionarBorradoresLocales([], fecha);
+            poblarSelectMuestra(listaLocal, { preserveRaw: rawAntes });
+            if (listaLocal.length) {
+                asegurarMuestraActivaYDatosTk20_(fecha, rawAntes, { soloSiHaceFalta: false });
+                setStatus('Sin internet: muestras recuperadas del borrador local.', 'warn');
+            } else {
+                setStatus('Sin internet. Conéctate para ver muestras del día.', 'warn');
+            }
+            return;
+        }
+
+        setSelectLoading(true, listaInmediata.length ? 'Actualizando listado…' : 'Cargando muestras…');
+        setStatus('');
+        if (elStatus) elStatus.hidden = true;
+
+        try {
+            const base = await withMinLoader(() => fetchMuestrasPorFecha(fecha));
+            if (seq !== cargandoMuestrasSeq) return;
+            const merged = fusionarBorradoresLocales(base, fecha);
+            actualizarCacheListaMuestrasTk20_(merged, fecha);
+            const rawKeep = String(elMuestra?.value || '').trim() || rawAntes;
+            poblarSelectMuestra(merged, { preserveRaw: rawKeep });
+            if (!merged.length) {
+                setStatus('No hay registros de campo para esa fecha.', 'warn');
+            } else {
+                asegurarMuestraActivaYDatosTk20_(fecha, rawKeep, { soloSiHaceFalta: true });
+            }
+        } catch (err) {
+            if (seq !== cargandoMuestrasSeq) return;
+            const fallback = fusionarBorradoresLocales(listaCacheMuestrasTk20_(fecha), fecha);
+            if (fallback.length) {
+                const rawKeep = String(elMuestra?.value || '').trim() || rawAntes;
+                poblarSelectMuestra(fallback, { preserveRaw: rawKeep });
+                asegurarMuestraActivaYDatosTk20_(fecha, rawKeep, { soloSiHaceFalta: true });
+                setStatus(
+                    'Planilla lenta o sin respuesta: listado local. Puedes seguir editando.',
+                    'warn',
+                    { reintentar: true, reintentarKind: 'muestras' }
+                );
+            } else {
+                setStatus(String(err.message || err), 'error', {
+                    reintentar: true,
+                    reintentarKind: 'muestras'
+                });
+                if (elMuestra && !String(elMuestra.value || '').trim()) {
+                    elMuestra.innerHTML = '';
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'Error — reintenta o cambia la fecha';
+                    elMuestra.appendChild(opt);
+                    elMuestra.disabled = false;
+                }
+            }
+        } finally {
+            if (seq === cargandoMuestrasSeq) setSelectLoading(false);
+        }
+    }
+
+    function mensajePlanillaReintentableTk20_(msg) {
+        const s = String(msg || '');
+        return /tardó demasiado|Reintenta|Error de conexión|conexión con el servidor|Timeout JSONP|Error JSONP|No se pudo leer el listado|Redespliega code\.gs/i.test(s);
+    }
+
+    function setStatus(msg, tipo, opts) {
         if (!elStatus) return;
         const texto = msg || '';
+        const kindExplicito = opts && opts.reintentarKind ? String(opts.reintentarKind) : '';
+        const showRetry = !!(opts && opts.reintentar)
+            || (tipo === 'error' && mensajePlanillaReintentableTk20_(texto));
+        if (!texto) {
+            tk20StatusRetryKind_ = '';
+        } else if (kindExplicito) {
+            tk20StatusRetryKind_ = kindExplicito;
+        } else if (showRetry && !tk20StatusRetryKind_) {
+            tk20StatusRetryKind_ = 'ambos';
+        }
         elStatus.textContent = texto;
         elStatus.className = 'packing-status-msg' + (tipo ? ' packing-status-msg--' + tipo : '');
-        elStatus.hidden = !texto;
+        if (elStatusWrap) {
+            elStatusWrap.hidden = !texto;
+            elStatus.hidden = false;
+        } else {
+            elStatus.hidden = !texto;
+        }
+        if (elStatusRetry) {
+            elStatusRetry.hidden = !(showRetry && texto);
+            if (!texto) elStatusRetry.disabled = false;
+        }
         syncFoldBtnAnchor();
+    }
+
+    async function forzarRefrescoPlanillaDesdeStatusTk20_() {
+        if (tk20StatusRetryBusy_) return;
+        if (!navigator.onLine) {
+            setStatus('Sin internet para sincronizar con la planilla.', 'warn');
+            return;
+        }
+        const fecha = normalizarFechaIso(elFecha?.value);
+        if (!fecha) {
+            setStatus('Selecciona una fecha primero.', 'warn');
+            return;
+        }
+        tk20StatusRetryBusy_ = true;
+        if (elStatusRetry) elStatusRetry.disabled = true;
+        const kind = tk20StatusRetryKind_ || 'ambos';
+        try {
+            setStatus('Reintentando consulta a la planilla…', 'info');
+            const necesitaLista = kind === 'muestras' || kind === 'ambos' || kind === 'sync'
+                || !String(elMuestra?.value || '').trim();
+            if (necesitaLista) {
+                await cargarMuestrasPorFecha(fecha);
+            }
+            const sel = ensayoSeleccionado();
+            const necesitaDetalle = (kind === 'detalle' || kind === 'ambos' || kind === 'sync')
+                && !!sel.ensayo_numero;
+            if (necesitaDetalle) {
+                await cargarDetalle(fecha, sel.ensayo_numero);
+            }
+        } catch (err) {
+            setStatus(String(err.message || err), 'error', {
+                reintentar: true,
+                reintentarKind: kind
+            });
+        } finally {
+            tk20StatusRetryBusy_ = false;
+            if (elStatusRetry) elStatusRetry.disabled = false;
+        }
     }
 
     function setSelectLoading(on, mensaje) {
@@ -500,51 +709,155 @@
 
     async function cargarDetalle(fechaIso, ensayoNumero) {
         if (!fechaIso || !ensayoNumero) return;
-        if (!navigator.onLine) {
-            setStatus('Sin internet para cargar el detalle.', 'warn');
-            return;
-        }
         const seq = ++cargandoDetalleSeq;
+        const raw = window.Tk20Header?.getMuestraRaw?.() || String(elMuestra?.value || '').trim()
+            || (String(elMuestra?.value || '').trim());
+        const rawMuestra = String(elMuestra?.value || '').trim() || raw;
+
         window.Tk20Draft?.cancelarGuardadoProgramado?.();
         window.Tk20Draft?.setOmitirAutoguardado?.(true);
-        window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
+
+        async function aplicarDetalleYBorradorLocal_(detalle, opts) {
+            const d = detalle || null;
+            if (d) {
+                lastDetalle = d;
+                pintarPreview(d);
+                actualizarStatusDesdeDetalle(d);
+                window.dispatchEvent(new CustomEvent('tk20:detalle', { detail: { data: d } }));
+            }
+            const campoListo = d
+                ? (campoListoParaTk20Detalle(d) || d.tieneTk20 === true)
+                : false;
+            let restaurado = !!window.Tk20Draft?.restaurarBorradorSiHay?.(fechaIso, rawMuestra, d);
+            if (!restaurado) {
+                const b = window.Tk20Draft?.leerBorrador?.(fechaIso, rawMuestra);
+                if (b?.estado && window.Tk20Draft?.hayDatosCaptura?.(b.estado)) {
+                    window.Tk20Draft?.aplicarEstado?.(b.estado);
+                    restaurado = true;
+                }
+            }
+            if (!restaurado && !opts?.mantenerUi) {
+                window.Tk20Envio?.limpiarCamposCapturaTk20_?.();
+            }
+            if (!d || d.tieneTk20 === true || !campoListo) {
+                window.Tk20Envio?.setRegistroHabilitado?.(false);
+            } else {
+                const fundoOk = window.FundoFlujoTk20?.habilitaDesdeDetalle?.(d) === true;
+                window.Tk20Envio?.setRegistroHabilitado?.(fundoOk && campoListo);
+            }
+            window.Tk20Envio?.actualizarBtnEnviar?.();
+            return restaurado;
+        }
+
+        // Sin internet: trabajar solo con borrador local (no dejar UI vacía).
+        if (!navigator.onLine) {
+            try {
+                limpiarPreviewChips();
+                setResumenVisible(true);
+                setChipsPanelCollapsed(false, false);
+                setPreviewLoading(false);
+                const borrador = window.Tk20Draft?.leerBorrador?.(fechaIso, rawMuestra);
+                if (borrador?.detalleSnap || (borrador?.estado && window.Tk20Draft?.hayDatosCaptura?.(borrador.estado))) {
+                    window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
+                    const ok = await aplicarDetalleYBorradorLocal_(borrador.detalleSnap || null, { mantenerUi: true });
+                    // Offline: permitir seguir editando el borrador local si no está ya en planilla.
+                    if (ok && borrador.detalleSnap?.tieneTk20 !== true) {
+                        window.Tk20Envio?.setRegistroHabilitado?.(true);
+                        window.Tk20Envio?.actualizarBtnEnviar?.();
+                    }
+                    setStatus(
+                        ok
+                            ? 'Sin internet: datos recuperados del borrador local.'
+                            : 'Sin internet: muestra abierta con datos locales.',
+                        'warn'
+                    );
+                    if (elStatus) elStatus.hidden = false;
+                    return;
+                }
+                // Sin borrador de ESTA muestra: vaciar UI (no dejar pegada la anterior).
+                window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
+                lastDetalle = null;
+                limpiarPreview();
+                setStatus('Sin internet. Abre esta muestra con conexión una vez para poder trabajarla offline.', 'warn');
+                if (elStatus) elStatus.hidden = false;
+            } finally {
+                if (seq === cargandoDetalleSeq) {
+                    window.Tk20Draft?.setOmitirAutoguardado?.(false);
+                }
+            }
+            return;
+        }
+
+        // Local-first: si hay captura de ESTA muestra, mostrarla ya y NO bloquear la pestaña.
+        // La planilla se revalida en segundo plano (1 intento). Sin “colgado” de 40–60s.
+        const borradorLocal = window.Tk20Draft?.leerBorrador?.(fechaIso, rawMuestra);
+        const hayLocal = !!(borradorLocal?.detalleSnap
+            || (borradorLocal?.estado && window.Tk20Draft?.hayDatosCaptura?.(borradorLocal.estado)));
         limpiarPreviewChips();
         setResumenVisible(true);
         setChipsPanelCollapsed(false, false);
-        setPreviewLoading(true, 'Cargando datos…');
         setStatus('');
         if (elStatus) elStatus.hidden = true;
+
+        if (hayLocal) {
+            window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
+            await aplicarDetalleYBorradorLocal_(borradorLocal.detalleSnap || null, { mantenerUi: true });
+            if (borradorLocal.detalleSnap?.tieneTk20 !== true) {
+                window.Tk20Envio?.setRegistroHabilitado?.(true);
+                window.Tk20Envio?.actualizarBtnEnviar?.();
+            }
+            setPreviewLoading(false);
+            setStatus('');
+            if (seq === cargandoDetalleSeq) {
+                window.Tk20Draft?.setOmitirAutoguardado?.(false);
+            }
+            // Revalidar chips/meta sin trabar la UI ni pisar un modal abierto.
+            void (async () => {
+                try {
+                    const r = await fetchDetalle(fechaIso, ensayoNumero, { revalidar: true });
+                    if (seq !== cargandoDetalleSeq) return;
+                    if (!r || r.ok !== true || !r.data) return;
+                    if (window.Tk20Modals?.hayModalAbierto?.()) {
+                        lastDetalle = r.data;
+                        pintarPreview(r.data);
+                        actualizarStatusDesdeDetalle(r.data);
+                        return;
+                    }
+                    window.Tk20Draft?.setOmitirAutoguardado?.(true);
+                    try {
+                        await aplicarDetalleYBorradorLocal_(r.data);
+                    } finally {
+                        if (seq === cargandoDetalleSeq) {
+                            window.Tk20Draft?.setOmitirAutoguardado?.(false);
+                        }
+                    }
+                } catch (_) { /* local ya está operativo */ }
+            })();
+            return;
+        }
+
+        window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
+        setPreviewLoading(true, 'Cargando datos…');
         try {
             const r = await withMinLoader(() => fetchDetalle(fechaIso, ensayoNumero));
             if (seq !== cargandoDetalleSeq) return;
             if (!r || r.ok !== true || !r.data) {
                 throw new Error(r?.error || 'Registro no encontrado');
             }
-            lastDetalle = r.data;
-            pintarPreview(r.data);
-            actualizarStatusDesdeDetalle(r.data);
-            window.dispatchEvent(new CustomEvent('tk20:detalle', { detail: { data: r.data } }));
-            const raw = window.Tk20Header?.getMuestraRaw?.() || String(elMuestra?.value || '').trim();
-            const campoListo = campoListoParaTk20Detalle(r.data) || r.data.tieneTk20 === true;
-            if (r.data.tieneTk20 === true) {
-                window.Tk20Draft?.limpiarBorradorMuestra?.(fechaIso, raw);
-                window.Tk20Envio?.limpiarCamposCapturaTk20_?.();
-                window.Tk20Envio?.setRegistroHabilitado?.(false);
-            } else {
-                const restaurado = window.Tk20Draft?.restaurarBorradorSiHay?.(fechaIso, raw, r.data);
-                if (!restaurado) {
-                    window.Tk20Envio?.limpiarCamposCapturaTk20_?.();
-                }
-                if (!campoListo) {
-                    window.Tk20Envio?.setRegistroHabilitado?.(false);
-                }
-            }
-            window.Tk20Envio?.actualizarBtnEnviar?.();
+            await aplicarDetalleYBorradorLocal_(r.data);
+            setStatus('');
         } catch (err) {
             if (seq !== cargandoDetalleSeq) return;
+            const borrador = window.Tk20Draft?.leerBorrador?.(fechaIso, rawMuestra);
+            if (borrador?.detalleSnap || (borrador?.estado && window.Tk20Draft?.hayDatosCaptura?.(borrador.estado))) {
+                await aplicarDetalleYBorradorLocal_(borrador.detalleSnap || null, { mantenerUi: true });
+                setStatus('');
+                if (elStatus) elStatus.hidden = true;
+                return;
+            }
             const msg = window.MensajesFlujo?.traducirErrorTecnico?.(err?.message || err)
                 || String(err.message || err);
-            setStatus(msg, 'error');
+            setStatus(msg, 'error', { reintentar: true, reintentarKind: 'detalle' });
             limpiarPreview();
         } finally {
             if (seq === cargandoDetalleSeq) {
@@ -573,54 +886,6 @@
             await cargarDetalle(fecha, ensayoNumero);
         } catch (_) {
             setPreviewLoading(false);
-        }
-    }
-
-    async function cargarMuestrasPorFecha(fechaIso) {
-        const fecha = normalizarFechaIso(fechaIso);
-        if (!fecha) {
-            poblarSelectMuestra([]);
-            return;
-        }
-        const seq = ++cargandoMuestrasSeq;
-        cargandoDetalleSeq++;
-        setPreviewLoading(false);
-        if (elMuestra) {
-            elMuestra.innerHTML = '';
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = 'Cargando…';
-            elMuestra.appendChild(opt);
-            elMuestra.disabled = true;
-        }
-        limpiarPreview();
-
-        if (!navigator.onLine) {
-            if (seq !== cargandoMuestrasSeq) return;
-            poblarSelectMuestra([]);
-            setStatus('Sin internet. Conéctate para ver muestras del día.', 'warn');
-            return;
-        }
-
-        setSelectLoading(true, 'Cargando muestras…');
-        setStatus('');
-        if (elStatus) elStatus.hidden = true;
-
-        try {
-            const base = await withMinLoader(() => fetchMuestrasPorFecha(fecha));
-            if (seq !== cargandoMuestrasSeq) return;
-            const merged = fusionarBorradoresLocales(base, fecha);
-            actualizarCacheListaMuestrasTk20_(merged, fecha);
-            poblarSelectMuestra(merged);
-            if (!merged.length) {
-                setStatus('No hay registros de campo para esa fecha.', 'warn');
-            }
-        } catch (err) {
-            if (seq !== cargandoMuestrasSeq) return;
-            setStatus(String(err.message || err), 'error');
-            poblarSelectMuestra([]);
-        } finally {
-            if (seq === cargandoMuestrasSeq) setSelectLoading(false);
         }
     }
 
@@ -692,6 +957,13 @@
             && !window.FechaOperativa.esFechaOperativaPermitida(elFecha.value)) {
             window.FechaOperativa.aplicarRangoInputFecha(elFecha, { forzar: true });
         }
+        try {
+            window.Tk20Draft?.persistirSoloLocal?.({ forzar: true });
+        } catch (_) { /* ignore */ }
+        // Cambio de día: sí invalidar detalle en curso.
+        cargandoDetalleSeq++;
+        window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
+        limpiarPreview();
         void cargarMuestrasPorFecha(elFecha.value || '');
     });
 
@@ -709,6 +981,7 @@
         }
         window.Tk20Draft?.cancelarGuardadoProgramado?.();
         if (prev && prev !== raw && fecha) {
+            // Formulario aún tiene la captura de `prev`; no usar persistirSoloLocal (pisaría clave nueva).
             const estadoUi = window.Tk20Draft?.capturarEstadoUi?.();
             window.Tk20Draft?.snapshotBorrador?.(fecha, prev, { activa: false, estado: estadoUi });
         }
@@ -725,12 +998,17 @@
             setStatus('');
             return;
         }
+        // Vaciar UI ya: evita mostrar la captura de la muestra anterior
+        // mientras carga el detalle / borrador de la nueva.
         window.Tk20Envio?.prepararUiNuevaMuestraTk20_?.();
         window.Tk20Draft?.setMuestraActivaClave?.(fecha, raw);
         void cargarDetalle(fecha, sel.ensayo_numero);
     });
 
     elResumenToggle?.addEventListener('click', toggleChipsPanelCollapsed);
+    elStatusRetry?.addEventListener('click', () => {
+        void forzarRefrescoPlanillaDesdeStatusTk20_();
+    });
     window.addEventListener('online', () => {
         actualizarHeaderConexion();
         void window.Tk20Sync?.sincronizarPendientesTk20?.();
@@ -758,10 +1036,26 @@
     } catch (_) { /* ignore */ }
     limpiarPreview();
     syncFoldBtnAnchor();
-    void acotarFechaDesdePlanilla().then(() => {
-        const fecha = elFecha?.value || '';
-        if (fecha) return cargarMuestrasPorFecha(fecha);
-    }).then(() => window.Tk20Sync?.sincronizarPendientesTk20?.());
+
+    function arrancarListaYBorradorTk20_() {
+        if (window.__tk20ListaArrancada) return;
+        window.__tk20ListaArrancada = true;
+        void acotarFechaDesdePlanilla().then(() => {
+            const fecha = elFecha?.value || '';
+            if (fecha) return cargarMuestrasPorFecha(fecha);
+        }).then(() => window.Tk20Sync?.sincronizarPendientesTk20?.());
+    }
+
+    // tk20-draft.js carga después de este archivo: arrancar cuando exista el store.
+    if (window.Tk20Draft) {
+        arrancarListaYBorradorTk20_();
+    } else {
+        window.addEventListener('tk20:draft-listo', arrancarListaYBorradorTk20_, { once: true });
+        // Respaldo si el evento se perdió por orden de scripts.
+        setTimeout(() => {
+            if (!window.__tk20ListaArrancada) arrancarListaYBorradorTk20_();
+        }, 0);
+    }
 
     window.Tk20Header = {
         getLastDetalle: () => lastDetalle,

@@ -38,6 +38,15 @@
         'modules/tk-2.0/index.html',
         'modules/tk-2.0/tk20-formato.js',
         'modules/tk-2.0/tk20-header.js',
+        'modules/tk-2.0/tk20-draft.js',
+        'modules/tk-2.0/tk20-swal.js',
+        'modules/tk-2.0/tk20-sync.js',
+        'modules/tk-2.0/tk20-pdf.js',
+        'modules/tk-2.0/tk20-fab.js',
+        'modules/tk-2.0/tk20-presion.js',
+        'core/presion-vapor.js',
+        'core/nav-persist-draft.js',
+        'core/fecha-operativa.js',
         'modules/tk-2.0/tk20-fields.js',
         'modules/tk-2.0/tk20-pesos-config.js',
         'modules/tk-2.0/tk20-body.js',
@@ -94,7 +103,13 @@
         if (!navigator.onLine) return;
 
         await Promise.allSettled(
-            urls.map((u) => fetch(u).catch(() => undefined))
+            urls.map((u) => {
+                const init = {};
+                if (window.NetworkSync?.fetchConTope) {
+                    return window.NetworkSync.fetchConTope(u, init, 3500).catch(() => undefined);
+                }
+                return fetch(u).catch(() => undefined);
+            })
         );
     }
 

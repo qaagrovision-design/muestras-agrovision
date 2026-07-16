@@ -1229,7 +1229,7 @@
         if (!pendientes.length) return;
         await Promise.all(pendientes.map(async ({ raw, ensayo }) => {
             try {
-                const resp = await callbackJsonp({ fecha, ensayo_numero: ensayo }, 6000);
+                const resp = await callbackJsonp({ fecha, ensayo_numero: ensayo });
                 if (resp?.ok === true && resp.data) {
                     registrarQuotaServidorMuestraPacking_(fecha, raw, resp.data);
                 }
@@ -3081,6 +3081,9 @@
     function hayDatosTrabajoMuestraPacking(estado) {
         if (!estado || typeof estado !== 'object') return false;
         if (estado.flujoTk20 === true) return true;
+        if (String(estado.responsable || '').trim()) return true;
+        if (String(estado.horaInicio || '').trim()) return true;
+        if (String(estado.nViaje || '').trim()) return true;
         const cards = Array.isArray(estado.packingCards) ? estado.packingCards : [];
         if (cards.length > 1) return true;
         if (cards.some((c) => {
@@ -3229,7 +3232,7 @@
         const estado = estadoUi || capturarEstadoMuestraPacking(rawMuestra);
         const store = leerStoreBorradorPacking();
         if (hayDatosTrabajoMuestraPacking(estado)) {
-            store.porClave[key] = estado;
+            store.porClave[key] = Object.assign({}, estado, { actualizado: Date.now() });
         } else {
             const existing = store.porClave[key];
             if (!existing || !hayDatosTrabajoMuestraPacking(existing)) {
@@ -3244,13 +3247,15 @@
         const store = leerStoreBorradorPacking();
         const forzar = !!(opts && opts.forzar);
         if (hayDatosTrabajoMuestraPacking(estado)) {
-            store.porClave[key] = estado;
+            store.porClave[key] = Object.assign({}, estado, { actualizado: Date.now() });
         } else if (forzar) {
             delete store.porClave[key];
         } else {
             const existing = store.porClave[key];
             if (!existing || !hayDatosTrabajoMuestraPacking(existing)) {
                 delete store.porClave[key];
+            } else if (opts?.activa !== false) {
+                store.activa = key;
             }
         }
         if (opts?.activa !== false) store.activa = key;
@@ -3308,23 +3313,35 @@
         }
     }
 
-    function restaurarMuestraActivaDesdeBorrador() {
+    function rawMuestraActivaOMasRecientePacking_(fecha) {
+        const f = normalizarFechaIso(fecha);
+        if (!f) return '';
         const store = leerStoreBorradorPacking();
+        const prefix = f + '::';
         const activa = String(store?.activa || '').trim();
+        if (activa.startsWith(prefix)) {
+            const raw = activa.slice(prefix.length);
+            const row = store.porClave[activa];
+            if (raw && hayDatosTrabajoMuestraPacking(row)) return raw;
+        }
+        let bestRaw = '';
+        let bestTs = -1;
+        Object.keys(store.porClave || {}).forEach((k) => {
+            if (!k.startsWith(prefix)) return;
+            const row = store.porClave[k];
+            if (!hayDatosTrabajoMuestraPacking(row)) return;
+            const ts = Number(row?.ts || row?.actualizado || store.ts) || 0;
+            if (ts >= bestTs) {
+                bestTs = ts;
+                bestRaw = k.slice(prefix.length);
+            }
+        });
+        return bestRaw;
+    }
+
+    function restaurarMuestraActivaDesdeBorrador() {
         const fecha = normalizarFechaIso(elFecha?.value);
-        if (!activa || !fecha || !elMuestra) return false;
-        if (!activa.startsWith(fecha + '::')) return false;
-        const rawMuestra = activa.slice(fecha.length + 2);
-        if (!rawMuestra) return false;
-        const opt = [...elMuestra.options].find((o) => o.value === rawMuestra);
-        if (!opt) return false;
-        packingRestaurandoBorrador = true;
-        elMuestra.value = rawMuestra;
-        packingMuestraAnterior = rawMuestra;
-        packingRestaurandoBorrador = false;
-        const ensayoNumero = rawMuestra.split('|')[1] || '';
-        if (ensayoNumero) void cargarDetalle(fecha, ensayoNumero);
-        return true;
+        return asegurarMuestraActivaPacking_(fecha, '', { soloSiHaceFalta: false });
     }
 
     /** Temp / humedad / presión: Number con 3 decimales (evita "1.148" como texto → miles en Sheets). */
@@ -4190,12 +4207,14 @@
                 reg.intentos = Number(reg.intentos || 0) + 1;
                 reg.actualizado_en = Date.now();
                 try {
-                    await fetch(API_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
+                    await (window.NetworkSync?.fetchApiPost
+                        ? window.NetworkSync.fetchApiPost(API_URL, body)
+                        : fetch(API_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        }));
                     const ok = await confirmarPackingEnServidorTrasPost_(reg);
                     if (ok) {
                         reg.estado = 'subido';
@@ -4416,12 +4435,14 @@
             setButtonLoadingPacking(elBtnEnviarPacking, true, 'Enviando...');
         }
         try {
-            await fetch(API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            await (window.NetworkSync?.fetchApiPost
+                ? window.NetworkSync.fetchApiPost(API_URL, body)
+                : fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }));
             const regTmp = { payload: body };
             const confirmado = await confirmarPackingEnServidorTrasPost_(regTmp);
             if (confirmado) {
@@ -4786,7 +4807,9 @@
     }
 
     let cargandoMuestrasSeq = 0;
+    let cargandoDetalleSeq = 0;
     let lastDetallePacking = null;
+    let packingListaMuestrasCache_ = { fecha: '', items: [] };
 
     const elFabMenu = document.getElementById('fab-menu-packing');
     const elFabOptionsBtn = document.getElementById('fab-options-btn-packing');
@@ -5381,8 +5404,13 @@
     }
 
     function callbackJsonp(params, timeoutMs) {
+        if (!navigator.onLine) {
+            return Promise.reject(new Error('Sin internet'));
+        }
         const limiteMs = Number(timeoutMs);
-        const espera = Number.isFinite(limiteMs) && limiteMs > 0 ? limiteMs : 14000;
+        const espera = window.NetworkSync?.jsonpTimeoutMs
+            ? window.NetworkSync.jsonpTimeoutMs(limiteMs)
+            : (Number.isFinite(limiteMs) && limiteMs > 0 ? Math.min(limiteMs, 25000) : 15000);
         return new Promise((resolve, reject) => {
             const cb = '__pk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
             const noop = function () {};
@@ -5481,18 +5509,23 @@
     }
 
     async function fetchMuestrasPorFecha(fechaIso) {
-        const r = await callbackJsonp({
+        const topes = window.NetworkSync?.listadoTimeoutsMs?.() || [18000, 18000];
+        const run = window.NetworkSync?.conReintentosTimeouts
+            ? (fn) => window.NetworkSync.conReintentosTimeouts(topes, fn)
+            : async (fn) => fn(topes[0] || 18000, 0);
+
+        const r = await run((ms) => callbackJsonp({
             listado_muestras_fecha: '1',
             fecha: fechaIso
-        });
+        }, ms));
         if (r && r.ok === true && Array.isArray(r.muestras)) {
             return r.muestras;
         }
-        const r2 = await callbackJsonp({
+        const r2 = await run((ms) => callbackJsonp({
             listado_registrados: '1',
             fecha_desde: fechaIso,
             fecha_hasta: fechaIso
-        });
+        }, ms));
         if (r2 && r2.ok === true && Array.isArray(r2.registrados)) {
             return armarListaMuestrasDesdeRegistrados(r2.registrados, fechaIso);
         }
@@ -5510,8 +5543,28 @@
         return n || e;
     }
 
-    function poblarSelectMuestra(lista) {
+    function fusionarListaMuestrasPacking_(base, offline) {
+        const merged = [];
+        const seen = new Set();
+        [...(base || []), ...(offline || [])].forEach((item) => {
+            const num = String(item?.num_muestra || '').trim();
+            const en = String(item?.ensayo_numero || '').trim();
+            const key = num + '|' + en;
+            if (!en || seen.has(key)) return;
+            seen.add(key);
+            merged.push(item);
+        });
+        merged.sort((a, b) => {
+            const na = Number(a.ensayo_numero) || 0;
+            const nb = Number(b.ensayo_numero) || 0;
+            return na - nb || String(a.num_muestra || '').localeCompare(String(b.num_muestra || ''));
+        });
+        return merged;
+    }
+
+    function poblarSelectMuestra(lista, opts) {
         if (!elMuestra) return;
+        const preserveRaw = String(opts?.preserveRaw || elMuestra.value || '').trim();
         elMuestra.innerHTML = '';
         const opt0 = document.createElement('option');
         opt0.value = '';
@@ -5534,6 +5587,38 @@
         elMuestra.disabled = n === 0;
         elMuestra.removeAttribute('disabled');
         if (n === 0) elMuestra.setAttribute('disabled', 'disabled');
+        if (preserveRaw && Array.from(elMuestra.options).some((o) => o.value === preserveRaw)) {
+            elMuestra.value = preserveRaw;
+            packingMuestraAnterior = preserveRaw;
+        }
+    }
+
+    function asegurarMuestraActivaPacking_(fecha, rawPreferido, opts) {
+        const fechaIso = normalizarFechaIso(fecha);
+        if (!fechaIso || !elMuestra) return false;
+        const rawActivo = String(rawPreferido || '').trim()
+            || rawMuestraActivaOMasRecientePacking_(fechaIso)
+            || '';
+        if (!rawActivo) return false;
+        if (!Array.from(elMuestra.options).some((o) => o.value === rawActivo)) return false;
+        const yaSeleccionada = String(elMuestra.value || '').trim() === rawActivo;
+        packingRestaurandoBorrador = true;
+        elMuestra.value = rawActivo;
+        packingMuestraAnterior = rawActivo;
+        packingRestaurandoBorrador = false;
+        const store = leerStoreBorradorPacking();
+        store.activa = claveBorradorMuestraPacking(fechaIso, rawActivo);
+        escribirStoreBorradorPacking(store);
+        const ensayoNumero = String(rawActivo.split('|')[1] || '').trim();
+        if (!ensayoNumero) return false;
+        // Solo saltar si la UI YA tiene captura visible.
+        // Si hay borrador en storage pero pantalla vacía (vuelta desde Campo), hay que pintar.
+        if (opts?.soloSiHaceFalta && yaSeleccionada && muestraSeleccionada()) {
+            const estadoUi = capturarEstadoMuestraPacking(rawActivo);
+            if (hayDatosTrabajoMuestraPacking(estadoUi)) return true;
+        }
+        void cargarDetalle(fechaIso, ensayoNumero);
+        return true;
     }
 
     function setChip(id, texto, vacio, extraClass) {
@@ -5591,13 +5676,11 @@
             elPreview.classList.add('is-loaded');
         }
 
-        const yaEnServidor = muestraPackingYaCompletaEnServidor_(packingQuota);
         const key = claveBorradorMuestraPacking(elFecha?.value, elMuestra?.value);
         const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
-        if (yaEnServidor && key && borrador) {
-            borrarBorradorMuestraPacking(key);
-        }
-        if (!yaEnServidor && borrador && hayDatosTrabajoMuestraPacking(borrador)) {
+        // Regla: si hay borrador local con trabajo, siempre restaurarlo (también si el
+        // servidor marca “completo”: puede ser falso positivo). Solo se borra al envío OK.
+        if (borrador && hayDatosTrabajoMuestraPacking(borrador)) {
             aplicarEstadoMuestraPacking(borrador, { skipPreview: true });
         } else {
             limpiarUiCapturaMuestraPacking_();
@@ -5663,21 +5746,31 @@
         }
 
         const seq = ++cargandoMuestrasSeq;
-        if (elMuestra) {
-            elMuestra.innerHTML = '';
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = 'Cargando…';
-            elMuestra.appendChild(opt);
-            elMuestra.disabled = true;
+        const rawAntes = String(elMuestra?.value || '').trim()
+            || rawMuestraActivaOMasRecientePacking_(fecha)
+            || '';
+        try {
+            persistirSoloLocalPacking_();
+        } catch (_) { /* ignore */ }
+
+        const cacheItems = packingListaMuestrasCache_.fecha === fecha
+            ? (packingListaMuestrasCache_.items || [])
+            : [];
+        const listaInmediata = fusionarListaMuestrasPacking_(
+            cacheItems,
+            muestrasOfflineDesdeBorradorPacking(fecha)
+        );
+        if (listaInmediata.length) {
+            poblarSelectMuestra(listaInmediata, { preserveRaw: rawAntes });
+            asegurarMuestraActivaPacking_(fecha, rawAntes, { soloSiHaceFalta: true });
         }
-        limpiarPreview();
 
         if (!navigator.onLine) {
+            if (seq !== cargandoMuestrasSeq) return;
             const listaLocal = muestrasOfflineDesdeBorradorPacking(fecha);
             if (listaLocal.length) {
-                poblarSelectMuestra(listaLocal);
-                restaurarMuestraActivaDesdeBorrador();
+                poblarSelectMuestra(listaLocal, { preserveRaw: rawAntes });
+                asegurarMuestraActivaPacking_(fecha, rawAntes, { soloSiHaceFalta: false });
                 setStatus('Sin internet: muestras recuperadas del borrador local.', 'warn');
                 if (elStatus) elStatus.hidden = false;
             } else {
@@ -5687,29 +5780,50 @@
             return;
         }
 
-        setSelectLoading(true, 'Cargando muestras…');
+        setSelectLoading(true, listaInmediata.length ? 'Actualizando listado…' : 'Cargando muestras…');
         setStatus('');
         if (elStatus) elStatus.hidden = true;
 
         try {
             const lista = await withMinLoader(() => fetchMuestrasPorFecha(fecha));
             if (seq !== cargandoMuestrasSeq) return;
-            poblarSelectMuestra(lista);
-            restaurarMuestraActivaDesdeBorrador();
-            if (!lista.length) {
+            const merged = fusionarListaMuestrasPacking_(lista, muestrasOfflineDesdeBorradorPacking(fecha));
+            packingListaMuestrasCache_ = { fecha, items: merged };
+            const rawKeep = String(elMuestra?.value || '').trim() || rawAntes;
+            poblarSelectMuestra(merged, { preserveRaw: rawKeep });
+            if (!merged.length) {
                 setStatus('No hay registros de campo para esa fecha.', 'warn');
+            } else {
+                asegurarMuestraActivaPacking_(fecha, rawKeep, { soloSiHaceFalta: true });
             }
         } catch (err) {
             if (seq !== cargandoMuestrasSeq) return;
-            const msg = String(err.message || err);
-            setStatus(msg, 'error', { reintentar: true, reintentarKind: 'muestras' });
-            if (elMuestra) {
-                elMuestra.innerHTML = '';
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = 'Error — reintenta o cambia la fecha';
-                elMuestra.appendChild(opt);
-                elMuestra.disabled = false;
+            const fallback = fusionarListaMuestrasPacking_(
+                packingListaMuestrasCache_.fecha === fecha ? packingListaMuestrasCache_.items : [],
+                muestrasOfflineDesdeBorradorPacking(fecha)
+            );
+            if (fallback.length) {
+                const rawKeep = String(elMuestra?.value || '').trim() || rawAntes;
+                poblarSelectMuestra(fallback, { preserveRaw: rawKeep });
+                asegurarMuestraActivaPacking_(fecha, rawKeep, { soloSiHaceFalta: true });
+                setStatus(
+                    'Planilla lenta o sin respuesta: listado local. Puedes seguir editando.',
+                    'warn',
+                    { reintentar: true, reintentarKind: 'muestras' }
+                );
+            } else {
+                setStatus(String(err.message || err), 'error', {
+                    reintentar: true,
+                    reintentarKind: 'muestras'
+                });
+                if (elMuestra && !String(elMuestra.value || '').trim()) {
+                    elMuestra.innerHTML = '';
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'Error — reintenta o cambia la fecha';
+                    elMuestra.appendChild(opt);
+                    elMuestra.disabled = false;
+                }
             }
         } finally {
             if (seq === cargandoMuestrasSeq) setSelectLoading(false);
@@ -5717,8 +5831,11 @@
     }
 
     async function fetchDetallePackingJsonp_(fechaIso, ensayoNumero) {
+        if (!navigator.onLine) {
+            throw new Error('Sin internet');
+        }
         const params = { fecha: fechaIso, ensayo_numero: ensayoNumero };
-        const intentos = [22000, 28000];
+        const intentos = window.NetworkSync?.detalleTimeoutsMs?.() || [16000, 16000];
         let ultimoErr = null;
         for (let i = 0; i < intentos.length; i++) {
             try {
@@ -5734,12 +5851,16 @@
     async function cargarDetalle(fechaIso, ensayoNumero, opts) {
         if (!fechaIso || !ensayoNumero) return;
         const sinOverlay = !!(opts && opts.sinOverlay);
+        const seq = ++cargandoDetalleSeq;
+        // NO persistir aquí: el change de muestra ya guardó la anterior bajo su clave.
+        // Si guardamos ahora (elMuestra = nueva, UI = anterior) se copia data entre muestras.
         cancelarGuardadoBorradorProgramadoPacking_();
         packingOmitirAutoguardado = true;
         const rawMuestra = String(elMuestra?.value || '').trim();
         const key = claveBorradorMuestraPacking(fechaIso, rawMuestra);
         try {
         if (!navigator.onLine) {
+            if (seq !== cargandoDetalleSeq) return;
             const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
             if (borrador && hayDatosTrabajoMuestraPacking(borrador)) {
                 setResumenVisible(true);
@@ -5750,7 +5871,38 @@
                 setStatus('Sin internet: datos recuperados del borrador local.', 'warn');
                 return;
             }
+            // Sin borrador de ESTA muestra: no dejar pegada la captura anterior.
+            if (!sinOverlay) {
+                prepararUiNuevaMuestraPacking_();
+                setPreviewLoading(false);
+            }
             setStatus('Sin internet para cargar el detalle.', 'warn');
+            return;
+        }
+        // Local-first: si hay borrador de ESTA muestra, pintarlo ya y no colgar la pestaña.
+        const borradorPrevio = key ? leerStoreBorradorPacking().porClave[key] : null;
+        const hayLocal = !!(borradorPrevio && hayDatosTrabajoMuestraPacking(borradorPrevio));
+        if (hayLocal) {
+            if (seq !== cargandoDetalleSeq) return;
+            setResumenVisible(true);
+            setChipsPanelCollapsed(false, false);
+            setPreviewLoading(false);
+            aplicarEstadoMuestraPacking(borradorPrevio);
+            setPackingCardHabilitada(puedeHabilitarCapturaPacking_(borradorPrevio.previewMeta));
+            setStatus('');
+            if (elStatus) elStatus.hidden = true;
+            if (seq === cargandoDetalleSeq) packingOmitirAutoguardado = false;
+            void (async () => {
+                try {
+                    const r = await fetchDetallePackingJsonp_(fechaIso, ensayoNumero);
+                    if (seq !== cargandoDetalleSeq) return;
+                    if (!r || r.ok !== true || !r.data) return;
+                    if (String(elMuestra?.value || '').trim() !== rawMuestra) return;
+                    lastDetallePacking = r.data;
+                    pintarPreview(r.data);
+                    aplicarEstadoMuestraPacking(borradorPrevio, { skipPreview: true });
+                } catch (_) { /* local ya operativo */ }
+            })();
             return;
         }
         if (!sinOverlay) {
@@ -5764,13 +5916,25 @@
             const r = await (sinOverlay
                 ? fetchDetallePackingJsonp_(fechaIso, ensayoNumero)
                 : withMinLoader(() => fetchDetallePackingJsonp_(fechaIso, ensayoNumero)));
+            if (seq !== cargandoDetalleSeq) return;
             if (!r || r.ok !== true || !r.data) {
                 throw new Error(r?.error || 'Registro no encontrado');
             }
+            if (String(elMuestra?.value || '').trim() !== rawMuestra) return;
             lastDetallePacking = r.data;
             pintarPreview(r.data);
+            setStatus('');
         } catch (err) {
-            if (!sinOverlay) {
+            if (seq !== cargandoDetalleSeq) return;
+            const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
+            if (borrador && hayDatosTrabajoMuestraPacking(borrador)) {
+                setResumenVisible(true);
+                setChipsPanelCollapsed(false, false);
+                aplicarEstadoMuestraPacking(borrador);
+                setPackingCardHabilitada(puedeHabilitarCapturaPacking_(borrador.previewMeta));
+                setStatus('');
+                if (elStatus) elStatus.hidden = true;
+            } else if (!sinOverlay) {
                 setStatus(String(err.message || err), 'error', {
                     reintentar: true,
                     reintentarKind: 'detalle'
@@ -5778,8 +5942,8 @@
                 limpiarPreview();
             }
         } finally {
-            packingOmitirAutoguardado = false;
-            if (!sinOverlay) setPreviewLoading(false);
+            if (seq === cargandoDetalleSeq) packingOmitirAutoguardado = false;
+            if (!sinOverlay && seq === cargandoDetalleSeq) setPreviewLoading(false);
         }
     }
 
@@ -6048,6 +6212,13 @@
         if (packingOmitirAutoguardado || packingRestaurandoBorrador || !muestraSeleccionada()) return;
         persistirSoloLocalPacking_();
     }, PACKING_DRAFT_AUTOSAVE_MS);
+
+    if (typeof window.solicitarAlmacenamientoPersistenteApp === 'function') {
+        window.solicitarAlmacenamientoPersistenteApp();
+    }
+    if (typeof window.bindNavPersistDraft === 'function') {
+        window.bindNavPersistDraft(() => persistirSoloLocalPacking_(), { topeMs: 220 });
+    }
 
     function fechaDisplayDdMmYyyyPacking(iso) {
         const p = String(iso || hoyIsoLocal()).split('-');
@@ -6559,6 +6730,7 @@
     window.sincronizarConPlanillaPacking = sincronizarConPlanillaPacking;
     window.sincronizarPendientesPacking = sincronizarPendientesPacking;
     window.borrarTodoYCachePacking = borrarTodoYCachePacking;
+    window.persistirSoloLocalPacking = persistirSoloLocalPacking_;
     window.fabIniciarRegistroPacking = fabIniciarRegistroPacking;
     window.agregarCardPacking = agregarCardPacking;
     window.agregarCardPackingYAbrirPesos = agregarCardPackingYAbrirPesos;

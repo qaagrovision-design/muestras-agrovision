@@ -5,6 +5,8 @@
     let restaurandoBorrador = false;
     let omitirAutoguardado = false;
     let ultimaClaveActiva = '';
+    /** Evita reescribir localStorage cada 3–8s si el estado no cambió (presión de RAM/GC). */
+    let ultimoGuardadoFirma_ = '';
 
     function toast() {
         return window.Tk20Swal;
@@ -20,10 +22,28 @@
     function rawMuestraDesdeClaveActiva_(fecha) {
         const f = String(fecha || '').trim();
         if (!f) return '';
-        const activa = String(leerStore().activo || '').trim();
+        const store = leerStore();
+        const activa = String(store.activo || '').trim();
         const prefix = f + '::';
-        if (!activa.startsWith(prefix)) return '';
-        return activa.slice(prefix.length);
+        if (activa.startsWith(prefix)) {
+            const raw = activa.slice(prefix.length);
+            const row = store.porClave[activa];
+            if (raw && row?.estado && hayDatosCaptura(row.estado)) return raw;
+        }
+        // Si no hay "activo" válido: usar el borrador más reciente del día (vuelta desde Campo).
+        let bestRaw = '';
+        let bestTs = -1;
+        Object.keys(store.porClave || {}).forEach((k) => {
+            if (!k.startsWith(prefix)) return;
+            const row = store.porClave[k];
+            if (!row?.estado || !hayDatosCaptura(row.estado)) return;
+            const ts = Number(row.actualizado) || 0;
+            if (ts >= bestTs) {
+                bestTs = ts;
+                bestRaw = k.slice(prefix.length);
+            }
+        });
+        return bestRaw;
     }
 
     function leerStore() {
@@ -95,21 +115,38 @@
         };
     }
 
+    function pesoCapturaTieneValor_(p) {
+        const n = Number(p);
+        if (Number.isFinite(n) && n > 0) return true;
+        const s = String(p ?? '').trim();
+        if (!s || s === '0' || s === '00') return false;
+        return Number(s.replace(',', '.')) > 0;
+    }
+
+    /**
+     * Solo captura real del operador.
+     * NO cuenta horaRegistro: se rellena sola al crear el card y, si contaba,
+     * al reentrar se pisaba el borrador con pesos en 00.
+     */
     function hayDatosCaptura(estado) {
         if (!estado || typeof estado !== 'object') return false;
         if (String(estado.responsable || '').trim()) return true;
         const t = estado.transporte || {};
         if (String(t.placa || '').trim() || String(t.guia || '').trim() || String(t.acopio || '').trim()) return true;
         const ctrl = estado.control || {};
-        if (Object.values(ctrl).some((v) => String(v || '').trim())) return true;
+        if (Object.values(ctrl).some((v) => {
+            if (v && typeof v === 'object') {
+                return Object.values(v).some((x) => String(x ?? '').trim() !== '');
+            }
+            return String(v || '').trim() !== '';
+        })) return true;
         const etapas = estado.etapas || {};
         return Object.keys(etapas).some((k) => {
             const e = etapas[k];
             if (!e) return false;
             if (String(e.observacion || '').trim()) return true;
-            if (String(e.horaRegistro || '').trim()) return true;
             const pesos = e.pesos || {};
-            if (Object.values(pesos).some((p) => Number(p) > 0)) return true;
+            if (Object.values(pesos).some(pesoCapturaTieneValor_)) return true;
             const pres = e.presion || {};
             return Object.values(pres).some((p) => String(p || '').trim());
         });
@@ -137,24 +174,52 @@
         if (!key) return '';
         const estado = opts?.estado || capturarEstadoUi();
         const store = leerStore();
+        const existing = store.porClave[key];
         if (!hayDatosCaptura(estado)) {
-            const existing = store.porClave[key];
             if (!existing?.estado || !hayDatosCaptura(existing.estado)) {
                 if (store.porClave[key]) {
                     delete store.porClave[key];
                     if (store.activo === key) store.activo = '';
                     guardarStore(store);
+                    ultimoGuardadoFirma_ = '';
+                }
+            } else if (opts?.activa) {
+                // UI vacía al reentrar, pero hay borrador: no pisar; solo punta activa.
+                store.activo = key;
+                ultimaClaveActiva = key;
+                guardarStore(store);
+            }
+            return existing && hayDatosCaptura(existing.estado) ? key : '';
+        }
+        // Firma solo del estado de captura: evita stringify de detalleSnap enorme cada tick.
+        let firma = '';
+        try {
+            firma = key + '|' + JSON.stringify(estado);
+        } catch (_) {
+            firma = key + '|' + Date.now();
+        }
+        if (firma === ultimoGuardadoFirma_ && store.porClave[key]) {
+            if (opts?.activa !== false) {
+                ultimaClaveActiva = key;
+                if (store.activo !== key) {
+                    store.activo = key;
+                    guardarStore(store);
                 }
             }
-            return '';
+            return key;
         }
         store.porClave[key] = {
             estado,
-            detalleSnap: opts?.detalleSnap || window.Tk20Header?.getLastDetalle?.() || null,
+            detalleSnap: opts?.detalleSnap || existing?.detalleSnap
+                || window.Tk20Header?.getLastDetalle?.() || null,
             actualizado: Date.now()
         };
-        if (opts?.activa) store.activo = key;
+        if (opts?.activa !== false) {
+            store.activo = key;
+            ultimaClaveActiva = key;
+        }
         guardarStore(store);
+        ultimoGuardadoFirma_ = firma;
         return key;
     }
 
@@ -171,11 +236,31 @@
         }
     }
 
-    function guardarMuestraActivaInmediato() {
-        if (restaurandoBorrador || omitirAutoguardado) return '';
-        const fecha = window.Tk20Header?.getFecha?.() || '';
-        const raw = window.Tk20Header?.getMuestraRaw?.() || '';
-        return snapshotBorrador(fecha, raw, { activa: true });
+    function guardarMuestraActivaInmediato(opts) {
+        const forzar = !!(opts && opts.forzar);
+        // Autoguardado normal respeta omitir; salida de módulo / cierre siempre fuerza.
+        if (restaurandoBorrador) return '';
+        if (omitirAutoguardado && !forzar) return '';
+        let fecha = window.Tk20Header?.getFecha?.() || '';
+        let raw = window.Tk20Header?.getMuestraRaw?.() || '';
+        if ((!fecha || !raw) && ultimaClaveActiva) {
+            const parts = String(ultimaClaveActiva).split('::');
+            if (parts.length >= 2) {
+                if (!fecha) fecha = parts[0];
+                if (!raw) raw = parts.slice(1).join('::');
+            }
+        }
+        if (!fecha || !raw) {
+            // Último recurso: punta activa en store.
+            const store = leerStore();
+            const activa = String(store.activo || '').trim();
+            const ix = activa.indexOf('::');
+            if (ix > 0) {
+                fecha = fecha || activa.slice(0, ix);
+                raw = raw || activa.slice(ix + 2);
+            }
+        }
+        return snapshotBorrador(fecha, raw, { activa: true, forzar });
     }
 
     function programarGuardado() {
@@ -197,10 +282,9 @@
     function restaurarBorradorSiHay(fecha, raw, detalle) {
         const borrador = leerBorrador(fecha, raw);
         if (!borrador?.estado || !hayDatosCaptura(borrador.estado)) return false;
-        if (detalle?.tieneTk20 === true) {
-            limpiarBorradorMuestra(fecha, raw);
-            return false;
-        }
+        // Si hay borrador local, siempre restaurarlo (también con tieneTk20: falso positivo
+        // o carrera). El envío queda bloqueado por UI; el draft se limpia solo al envío OK.
+        void detalle;
         aplicarEstado(borrador.estado);
         return true;
     }
@@ -219,10 +303,11 @@
         snapshotBorrador(fecha, rawMuestra, { activa: false });
     }
 
-    function persistirSoloLocal() {
+    /** Persistencia local. forzar=true al salir de módulo / cerrar app (ignora omitirAutoguardado). */
+    function persistirSoloLocal(opts) {
         cancelarGuardadoProgramado();
         window.Tk20Modals?.persistirAbiertas?.();
-        guardarMuestraActivaInmediato();
+        guardarMuestraActivaInmediato({ forzar: !!(opts && opts.forzar) || !!(opts === true) });
     }
 
     function setOmitirAutoguardado(on) {
@@ -230,12 +315,10 @@
     }
 
     function reafirmarBorradorAlVolverVisible() {
-        persistirSoloLocal();
+        persistirSoloLocal({ forzar: true });
         const fecha = window.Tk20Header?.getFecha?.() || '';
         const raw = window.Tk20Header?.getMuestraRaw?.() || '';
         if (!fecha || !raw) return false;
-        const detalle = window.Tk20Header?.getLastDetalle?.() || null;
-        if (detalle?.tieneTk20 === true) return false;
         const borrador = leerBorrador(fecha, raw);
         if (!borrador?.estado || !hayDatosCaptura(borrador.estado)) return false;
         const actual = capturarEstadoUi();
@@ -308,16 +391,16 @@
         window.addEventListener('tk20:detalle', onDetalleCargado);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
-                persistirSoloLocal();
+                persistirSoloLocal({ forzar: true });
                 return;
             }
             purgarBorradoresTk20OtrosDias_();
             reafirmarBorradorAlVolverVisible();
         });
-        window.addEventListener('beforeunload', persistirSoloLocal);
-        window.addEventListener('pagehide', persistirSoloLocal);
-        window.addEventListener('freeze', persistirSoloLocal);
-        const TK20_DRAFT_AUTOSAVE_MS = 3000;
+        window.addEventListener('beforeunload', () => persistirSoloLocal({ forzar: true }));
+        window.addEventListener('pagehide', () => persistirSoloLocal({ forzar: true }));
+        window.addEventListener('freeze', () => persistirSoloLocal({ forzar: true }));
+        const TK20_DRAFT_AUTOSAVE_MS = 8000;
         setInterval(() => {
             if (document.visibilityState === 'hidden') return;
             if (restaurandoBorrador || omitirAutoguardado) return;
@@ -334,11 +417,22 @@
     }
 
     function notificarPdfVivoTk20_() {
-        window.PdfPreviewLive?.programar?.();
+        if (!window.PdfPreviewLive?.modalAbierto?.()) return;
+        window.PdfPreviewLive.programar();
     }
 
     bindAutosave();
     purgarBorradoresTk20OtrosDias_();
+    if (typeof window.solicitarAlmacenamientoPersistenteApp === 'function') {
+        window.solicitarAlmacenamientoPersistenteApp();
+    }
+    if (typeof window.bindNavPersistDraft === 'function') {
+        // tope más alto: en móvil localStorage necesita un respiro al ir a Campo.
+        window.bindNavPersistDraft(() => persistirSoloLocal({ forzar: true }), { topeMs: 220 });
+    }
+    try {
+        window.dispatchEvent(new Event('tk20:draft-listo'));
+    } catch (_) { /* ignore */ }
 
     window.Tk20Draft = {
         capturarEstadoUi,
