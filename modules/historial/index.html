@@ -513,6 +513,11 @@
                 + '||' + normalizarNumHistFila(numMuestra || '');
         }
 
+        /** Cola local + PDF: una tarjeta por fecha + ensayo (evita duplicar si el N° difiere entre archivado y PDF). */
+        function claveMuestraHistorialLocal_(fecha, ensayoNumero) {
+            return normalizarFechaHist(fecha) + '||' + String(ensayoNumero || '').trim();
+        }
+
         function mergeModulosEnFila_(fila, nuevos) {
             const set = new Set(Array.isArray(fila.modulos) ? fila.modulos : []);
             (nuevos || []).forEach((m) => set.add(m));
@@ -1181,7 +1186,7 @@
         }
 
         function fusionarFilaLocalHistorial_(mapa, fila) {
-            const clave = claveMuestraHistorial_(fila.fecha, fila.ensayo_numero, fila.num_muestra);
+            const clave = claveMuestraHistorialLocal_(fila.fecha, fila.ensayo_numero);
             if (!clave || clave.endsWith('||')) return;
             const prev = mapa.get(clave);
             if (!prev) {
@@ -1208,6 +1213,9 @@
             if (!prev.error && fila.error) prev.error = fila.error;
             prev.intentos = Math.max(prev.intentos, Number(fila.intentos || 0));
             prev.ts = Math.max(prev.ts, Number(fila.ts || 0));
+            const nmPrev = normalizarNumHistFila(prev.num_muestra);
+            const nmNuevo = normalizarNumHistFila(fila.num_muestra);
+            if (nmNuevo && (!nmPrev || fila.ts >= prev.ts)) prev.num_muestra = fila.num_muestra;
             const hm = fila.horas_modulo || {};
             Object.keys(hm).forEach((k) => {
                 if (hm[k] && !prev.horas_modulo[k]) prev.horas_modulo[k] = hm[k];
@@ -1306,7 +1314,14 @@
             document.getElementById('kpi-bloqueados').textContent = String(bloqueados);
             actualizarHeaderHistorial();
 
-            histLocalRows = rowsRecientes.slice(0).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+            histLocalRows = rowsRecientes.slice(0).sort((a, b) => {
+                const tb = Number(b.ts || 0);
+                const ta = Number(a.ts || 0);
+                if (tb !== ta) return tb - ta;
+                const nb = Number(b.ensayo_numero) || 0;
+                const na = Number(a.ensayo_numero) || 0;
+                return na - nb;
+            });
             histLocalPage = 0;
             pintarListaLocal();
         }

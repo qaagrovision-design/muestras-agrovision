@@ -274,22 +274,30 @@
 
     async function borrarCacheTk20() {
         establecerMenuFlotanteTk20(false);
+        let confirmado = false;
         if (window.Swal) {
             const r = await Swal.fire({
                 icon: 'warning',
-                title: '¿Borrar datos locales TK-2.0?',
-                text: 'Recarga la app. No borra la planilla en Google.',
+                title: 'Limpiar datos de captura',
+                text: 'Se vaciarán los inputs y el borrador de la muestra activa en TK-2.0. Pendientes, otras muestras, historial, PDFs, caché y funcionamiento offline se conservarán.',
                 showCancelButton: true,
-                confirmButtonText: 'Borrar y recargar',
+                confirmButtonText: 'Sí, limpiar inputs',
                 cancelButtonText: 'Cancelar'
             });
-            if (!r.isConfirmed) return;
+            confirmado = !!r.isConfirmed;
+        } else {
+            confirmado = window.confirm('Se vaciarán solo los inputs y el borrador de la muestra activa en TK-2.0. ¿Continuar?');
         }
+        if (!confirmado) return;
         try {
-            localStorage.removeItem('mptk_formato_registro_v1');
-            window.Tk20Draft?.limpiarTodo?.();
+            window.Tk20Draft?.limpiarBorradorMuestraActiva?.();
         } catch (_) { /* ignore */ }
-        location.reload();
+        window.Tk20Envio?.limpiarUiCapturaMuestraTk20_?.();
+        window.Tk20Envio?.actualizarBtnEnviar?.();
+        window.Tk20Swal?.success?.(
+            'Inputs limpios',
+            'La app offline, pendientes, historial y PDFs se conservaron.'
+        );
     }
 
     function keyEtapa(etapa, suffix) {

@@ -1420,6 +1420,30 @@
           }
         }
 
+        // NUM_MUESTRA es una reserva global e inmutable. La comprobación debe
+        // ocurrir dentro del mismo lock que la inserción para evitar carreras
+        // entre teléfonos. Un conflicto nunca se renumera silenciosamente.
+        var numsMuestraPost = {};
+        for (var nmpi = 0; nmpi < rows.length; nmpi++) {
+          var nmPost = normalizarNumMuestraClave(rows[nmpi] && rows[nmpi].length > 2 ? rows[nmpi][2] : '');
+          if (nmPost) numsMuestraPost[nmPost] = true;
+        }
+        var numsMuestraPostKeys = Object.keys(numsMuestraPost);
+        for (var nmk = 0; nmk < numsMuestraPostKeys.length; nmk++) {
+          var dupNumPost = buscarDuplicadoNumMuestraGlobal_(ss, numsMuestraPostKeys[nmk]);
+          if (dupNumPost) {
+            return out({
+              ok: false,
+              code: "DUPLICATE_NUM_MUESTRA",
+              error: "NUM_MUESTRA ya existe",
+              num_muestra: dupNumPost.num_muestra,
+              fecha: dupNumPost.fecha,
+              ensayo_numero: dupNumPost.ensayo_numero,
+              detail: dupNumPost
+            });
+          }
+        }
+
         const NUM_COLS = numColsRegistroEsAcopio_(esAcopio);
         const minExpanded = registroPostExpandedLenEsAcopio_(esAcopio);
         const PRE_JARRA = registroPreJarraColsEsAcopio_(esAcopio);
@@ -1524,6 +1548,25 @@
           return !isNaN(n) && n >= 1;
         }
 
+        /** Orden canónico TIEMPOS V./A.: FECHA → ENSAYO → N_JARRA (1, 2, 3…). */
+        function ordenarFilasHojaJarrasGs_(filas) {
+          if (!filas || !filas.length) return filas || [];
+          filas.sort(function(a, b) {
+            var fa = normalizarParaClave(a[0]);
+            var fb = normalizarParaClave(b[0]);
+            if (fa !== fb) return fa < fb ? -1 : 1;
+            var ea = parseInt(String(a[1] || ''), 10);
+            var eb = parseInt(String(b[1] || ''), 10);
+            if (!isNaN(ea) && !isNaN(eb) && ea !== eb) return ea - eb;
+            var ja = parseInt(String(a[2] || ''), 10);
+            var jb = parseInt(String(b[2] || ''), 10);
+            if (isNaN(ja)) ja = 999999;
+            if (isNaN(jb)) jb = 999999;
+            return ja - jb;
+          });
+          return filas;
+        }
+
         var nuevasFilas = [];
         var filasHoja2 = [];
         var errorNumMuestraVacio = '';
@@ -1596,8 +1639,9 @@
         if (filasHoja2.length > 0) {
           var sheet2 = obtenerHojaPorIndice_(ss, indiceHojaRegistroJarras_(esAcopio));
           asegurarEncabezadoHojaJarras_(sheet2);
+          var filasHoja2Orden = ordenarFilasHojaJarrasGs_(filasHoja2);
           var startRow2 = sheet2.getLastRow() + 1;
-          sheet2.getRange(startRow2, 1, filasHoja2.length, 9).setValues(filasHoja2);
+          sheet2.getRange(startRow2, 1, filasHoja2Orden.length, 9).setValues(filasHoja2Orden);
         }
 
         if (nuevasFilas.length === 0 && rows.length > 0) {

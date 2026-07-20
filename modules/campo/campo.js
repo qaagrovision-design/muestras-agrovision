@@ -64,6 +64,30 @@ const META_SAVE_IDS = [
             return 'tiempos-operativo-meta-' + claveModoCampoActual_() + '-v4';
         }
 
+        function numRevalidarTrasLimpiezaKeyCampo_() {
+            return 'tiempos-num-revalidar-limpieza-' + claveModoCampoActual_() + '-v1';
+        }
+
+        function marcarNumRevalidarTrasLimpieza_(activo) {
+            try {
+                if (activo) {
+                    localStorage.setItem(numRevalidarTrasLimpiezaKeyCampo_(), hoyIsoLocal());
+                } else {
+                    localStorage.removeItem(numRevalidarTrasLimpiezaKeyCampo_());
+                }
+            } catch (_) { /* ignore */ }
+        }
+
+        function debeRevalidarNumTrasLimpieza_() {
+            try {
+                const fecha = localStorage.getItem(numRevalidarTrasLimpiezaKeyCampo_());
+                if (!fecha) return false;
+                if (fecha === hoyIsoLocal()) return true;
+                localStorage.removeItem(numRevalidarTrasLimpiezaKeyCampo_());
+            } catch (_) { /* ignore */ }
+            return false;
+        }
+
         function todasClavesDraftCampo_() {
             return [
                 'tiempos-draft-full-visual-v1',
@@ -161,6 +185,7 @@ const META_SAVE_IDS = [
                 try { localStorage.removeItem(k); } catch (_) { /* ignore */ }
             });
             try { localStorage.removeItem(metaStorageKeyCampo_()); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(NUM_MUESTRA_SNAPSHOT_OFFLINE_KEY); } catch (_) { /* ignore */ }
             try {
                 const raw = localStorage.getItem(REGISTRADOS_HOY_CACHE_KEY);
                 if (raw) {
@@ -220,6 +245,7 @@ const META_SAVE_IDS = [
         /** Pie OBSERVACIONES del PDF / input por clamshell. */
         const OBSERVACION_CLAMSHELL_MAX_CHARS = 57;
         const REGISTRADOS_HOY_CACHE_KEY = 'tiempos-registrados-hoy-cache-v1';
+        const NUM_MUESTRA_SNAPSHOT_OFFLINE_KEY = 'tiempos-num-muestra-offline-snapshot-v2';
         const ULTIMO_DIA_CAMP_KEY_PREFIX = 'muestras-ultimo-dia-campo-v1:';
         let campoInicioLimpioNuevoDia_ = false;
         const CAMPO_LLENADO_COMPLETO_AVISO_KEY = 'tiempos-campo-llenado-completo-aviso-v1';
@@ -450,14 +476,12 @@ const META_SAVE_IDS = [
                     try { localStorage.removeItem(k); } catch (_) { /* ignore */ }
                 });
                 localStorage.removeItem(DEMO_META_CAMPO_SEED_KEY);
-                localStorage.removeItem(SYNC_QUEUE_KEY);
-                localStorage.removeItem(SYNC_HISTORY_KEY);
                 NUM_MUESTRA_LS_KEYS_A_PURGAR.forEach((k) => localStorage.removeItem(k));
                 localStorage.setItem(CLEAN_START_DONE_KEY, '1');
             } catch (_) { /* ignore */ }
         }());
 
-        /** N° muestra: nunca desde localStorage; solo memoria de esta sesión o servidor en vivo. */
+        /** Descarta únicamente claves antiguas; las reservas vigentes viven dentro del borrador diario. */
         (function descartarCacheNumMuestraAlIniciar() {
             try {
                 NUM_MUESTRA_LS_KEYS_A_PURGAR.forEach((k) => {
@@ -767,7 +791,7 @@ const META_SAVE_IDS = [
                 const resp = await swalFireSafe({
                     icon: 'warning',
                     title: 'N° muestra ya existe',
-                    text: `El N° muestra "${nm}" ya está registrado. El sistema lo reasignará al enviar; si persiste, revisa conexión.`,
+                    text: `El N° muestra "${nm}" ya está registrado. El envío se bloqueará para no duplicarlo ni cambiar un registro encapsulado.`,
                     showDenyButton: true,
                     confirmButtonText: 'Entendido',
                     denyButtonText: 'No enviar',
@@ -775,7 +799,7 @@ const META_SAVE_IDS = [
                 });
                 if (resp.isDenied) return 'cancel';
             } else {
-                alert(`El N° muestra "${nm}" ya está registrado. El sistema lo reasignará al enviar.`);
+                alert(`El N° muestra "${nm}" ya está registrado. El envío se bloqueará sin renumerarlo.`);
             }
             establecerAcordeonMetaAbierto(true);
             return 'keep';
@@ -1836,7 +1860,7 @@ const META_SAVE_IDS = [
         let servidorOperativoFallosSeguidos = 0;
         let servidorOperativoRetryTimer = null;
         let refrescoVisibleCampoTimer = null;
-        /** N° asignado por muestra en esta sesión (no recalcular tras cada envío). */
+        /** N° fijo por muestra, respaldado también en el borrador local diario. */
         const numerosMuestraFijadosSesion = {};
         /** Debe declararse antes de leerNumMuestraDesdePantalla (arranque temprano). */
         let envioRegistroEnCurso = false;
@@ -1878,11 +1902,9 @@ const META_SAVE_IDS = [
 
         function leerNumMuestraDesdePantalla(ensayo) {
             const e = String(ensayo || metaActivoEnsayo || ensayoDesdeFormulario() || 'Ensayo 1').trim() || 'Ensayo 1';
-            // Solo durante envío se respeta el N° congelado (evita 94 “pegado” en UI/PDF).
-            if (envioRegistroEnCurso) {
-                const fijadoEnvio = numerosMuestraFijadosSesion[e];
-                if (fijadoEnvio) return fijadoEnvio;
-            }
+            // Primera visita a una muestra = reserva local estable durante la sesión.
+            const fijadoSesion = numerosMuestraFijadosSesion[e];
+            if (fijadoSesion) return fijadoSesion;
             const calc = calcularNumMuestraDesdeServidorParaEnsayo(e);
             if (calc) return calc;
             const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
@@ -1893,7 +1915,7 @@ const META_SAVE_IDS = [
             return normalizarNumMuestraInput(metaPorEnsayo[e]?.['visual-num-muestra']) || '';
         }
 
-        /** Solo pantalla: N° desde servidor (estado_operativo); nunca localStorage ni borrador. */
+        /** Primera asignación desde servidor: reservar el N° para la muestra activa. */
         function sincronizarNumMuestraPantallaDesdeServidor() {
             const activo = metaActivoEnsayo || ensayoDesdeFormulario();
             if (!activo) return;
@@ -1906,12 +1928,15 @@ const META_SAVE_IDS = [
             }
             const actual = normalizarNumMuestraInput(inp?.value);
             if (actual === num) {
+                if (!numerosMuestraFijadosSesion[activo]) {
+                    fijarNumMuestraEnsayoSesion(activo, num, 'confirmarNumeroVisibleServidor');
+                }
                 actualizarVistaCompacta();
                 return;
             }
             purgarTodosNumerosMuestraEnMeta();
             logNumMuestra('sincronizarNumMuestraPantallaDesdeServidor', { ensayo: activo, calculado: num });
-            aplicarNumMuestraEnsayo(activo, num, false, 'sincronizarNumMuestraPantallaDesdeServidor');
+            fijarNumMuestraEnsayoSesion(activo, num, 'sincronizarNumMuestraPantallaDesdeServidor');
         }
 
         function reiniciarNumeracionParaConsultaServidor() {
@@ -1927,7 +1952,22 @@ const META_SAVE_IDS = [
             if (inp) inp.value = '';
         }
 
-        /** N° muestra no se persiste en meta: siempre planilla + 1 (o caché solo offline). */
+        function prepararRevalidacionNumMuestraTrasLimpieza_() {
+            Object.keys(numerosMuestraFijadosSesion).forEach((k) => delete numerosMuestraFijadosSesion[k]);
+            purgarTodosNumerosMuestraEnMeta();
+            numMuestraSincronizadoServidor = false;
+            numMuestraMaxServidorCache = 0;
+            proximoNumMuestraServidorCache = '';
+            numMuestraPrefijoCache = '';
+            ultimoMaxPlanillaConocido = 0;
+            ultimaRespuestaEstadoServidor = null;
+            ultimoRefreshServidorOperativoMs = 0;
+            ultimaFirmaEstadoServidor = '';
+            const inp = document.getElementById('visual-num-muestra');
+            if (inp) inp.value = '';
+        }
+
+        /** N° muestra se separa de la meta para evitar herencia entre muestras. */
         function purgarTodosNumerosMuestraEnMeta() {
             Object.keys(metaPorEnsayo).forEach((k) => {
                 if (!metaPorEnsayo[k]) return;
@@ -1962,6 +2002,13 @@ const META_SAVE_IDS = [
             if (wrap) {
                 wrap.classList.toggle('is-loading', numMuestraLoaderCount > 0);
                 wrap.setAttribute('aria-busy', numMuestraLoaderCount > 0 ? 'true' : 'false');
+            }
+            const pNum = document.getElementById('preview-num');
+            if (pNum && numMuestraLoaderCount > 0) {
+                pNum.textContent = 'N° …';
+                pNum.classList.add('meta-preview-pill--empty');
+            } else if (pNum && numMuestraLoaderCount === 0) {
+                actualizarVistaCompacta();
             }
             actualizarHintNumMuestraPantalla();
         }
@@ -2002,29 +2049,13 @@ const META_SAVE_IDS = [
             logNumMuestra('avisarFalloSincronizacionNumMuestra', { origen: origen || '(sin origen)' });
         }
 
-        function contarMuestrasAnterioresEnSecuencia(numeroDestino) {
-            const destino = Number(numeroDestino) || 1;
-            let n = 0;
-            for (let m = 1; m < destino; m++) {
-                if (ensayoNumeroRegistradoHoy(String(m))) continue;
-                if (!muestraEstaEnSecuenciaLlenado(m)) continue;
-                const eName = ensayoNombreDesdeNumero(m);
-                const ya = parseNumMuestraSoloDigitos(
-                    numerosMuestraFijadosSesion[eName]
-                    || metaPorEnsayo[eName]?.['visual-num-muestra']
-                );
-                if (ya > 0) continue;
-                n++;
-            }
-            return n;
-        }
-
         function fijarNumMuestraEnsayoSesion(ensayo, num, origen) {
             const e = String(ensayo || '').trim();
             const t = normalizarNumMuestraInput(num);
             if (!e || !t) return '';
             numerosMuestraFijadosSesion[e] = t;
             aplicarNumMuestraEnsayo(e, t, true, origen || 'fijarNumMuestraEnsayoSesion');
+            programarGuardadoDraftCompleto();
             return t;
         }
 
@@ -2052,14 +2083,43 @@ const META_SAVE_IDS = [
 
         function aplicarNumMuestraParaEnsayoActivo(origen) {
             const e = String(metaActivoEnsayo || ensayoDesdeFormulario() || 'Ensayo 1').trim() || 'Ensayo 1';
+            const fijo = numerosMuestraFijadosSesion[e];
+            const duplicadoEnOtra = fijo && Object.keys(numerosMuestraFijadosSesion).some((otro) => (
+                otro !== e && numerosMuestraFijadosSesion[otro] === fijo
+            ));
+            if (fijo && !duplicadoEnOtra) {
+                aplicarNumMuestraEnsayo(e, fijo, true, origen || 'reservaLocalExistente');
+                return fijo;
+            }
+            if (duplicadoEnOtra) delete numerosMuestraFijadosSesion[e];
             const num = calcularNumMuestraDesdeServidorParaEnsayo(e);
-            if (num) aplicarNumMuestraEnsayo(e, num, false, origen || 'aplicarNumMuestraParaEnsayoActivo');
+            if (num) {
+                fijarNumMuestraEnsayoSesion(e, num, origen || 'reservarPrimeraVisita');
+            }
+            return num;
+        }
+
+        function fijarReservaVisibleParaEnsayo_(ensayo) {
+            const e = String(ensayo || '').trim();
+            if (!e || ensayoEstaRegistradoHoy(e)) return '';
+            const num = normalizarNumMuestraInput(
+                numerosMuestraFijadosSesion[e]
+                || document.getElementById('visual-num-muestra')?.value
+            );
+            if (num) numerosMuestraFijadosSesion[e] = num;
             return num;
         }
 
         /** Cambio de muestra: vacía/carga meta al instante; N° sube en orden (8206, 8207…). */
         function aplicarCambioMuestraRapido(ensayo) {
             const e = String(ensayo || '').trim() || 'Ensayo 1';
+            const anterior = String(metaActivoEnsayo || '').trim();
+            if (anterior && anterior !== e) {
+                fijarReservaVisibleParaEnsayo_(anterior);
+                persistirModalesAbiertasCampo_(anterior);
+                persistirLogisticaAcopioDesdeInputs(anterior);
+                snapshotMetaEnsayoActual(anterior);
+            }
             metaActivoEnsayo = e;
             asegurarMetaEnsayoSinDatosFantasma_(e);
             if (!metaPorEnsayo[e]) {
@@ -2082,6 +2142,14 @@ const META_SAVE_IDS = [
             }
 
             pintarNum();
+            // La numeración ya fue cargada al iniciar. Cambiar entre muestras de
+            // un mismo lote reserva el siguiente localmente, sin volver a mostrar
+            // una consulta a planilla por cada opción.
+            if (numMuestraSincronizadoServidor) {
+                setNumMuestraCargando(false);
+                aplicarBloqueoMuestrasCacheLocal();
+                return;
+            }
             setNumMuestraCargando(true);
             void refrescarEstadoServidorOperativo(false, {
                 reposicionarPrimera: false,
@@ -2138,12 +2206,6 @@ const META_SAVE_IDS = [
         function invalidarNumerosMuestraFijadosObsoletos() {
             Object.keys(numerosMuestraFijadosSesion).forEach((ensayo) => {
                 if (ensayoEstaRegistradoHoy(ensayo)) {
-                    delete numerosMuestraFijadosSesion[ensayo];
-                    return;
-                }
-                const calc = calcularNumMuestraBaseDesdeContexto(ensayo);
-                const fij = numerosMuestraFijadosSesion[ensayo];
-                if (!fij || parseNumMuestraSoloDigitos(fij) !== parseNumMuestraSoloDigitos(calc)) {
                     delete numerosMuestraFijadosSesion[ensayo];
                 }
             });
@@ -2204,6 +2266,26 @@ const META_SAVE_IDS = [
                 metaPorEnsayo[e] = metaPlantillaVaciaEnsayo_(e);
                 return;
             }
+            // Migración segura de pruebas anteriores: una cabecera SIMULACIÓN
+            // copiada a una muestra sin captura propia no debe aparecer como 8/8.
+            const esCabeceraSimulada = /^SIMULACION\s+(CAMPO|ACOPIO)$/i
+                .test(String(meta['visual-responsable'] || '').trim());
+            if (esCabeceraSimulada) {
+                const items = data.filter((it) => String(it?.ensayo || 'Ensayo 1') === e);
+                const tieneCapturaPropia = items.some((it) => {
+                    if (!esClamshellSinDatos_(it)) return true;
+                    const metric = it?.metric || {};
+                    return Object.values(metric).some((grupo) =>
+                        grupo && typeof grupo === 'object'
+                        && Object.values(grupo).some((v) => String(v ?? '').trim() !== '')
+                    );
+                }) || ensayoTieneFilasLlenadoJarrasConDatos_(e);
+                if (!tieneCapturaPropia) {
+                    metaPorEnsayo[e] = metaPlantillaVaciaEnsayo_(e);
+                    delete ensayoMeta[e];
+                    return;
+                }
+            }
             // Solo limpia si no hay trabajo real. Nunca borrar meta con datos
             // solo porque la sesión aún no marcó el ensayo como “visitado”
             // (eso vaciaba Acopio al cambiar de muestra).
@@ -2212,42 +2294,6 @@ const META_SAVE_IDS = [
             if (!tieneTrabajo && !completa) {
                 metaPorEnsayo[e] = metaPlantillaVaciaEnsayo_(e);
             }
-        }
-
-        /** Cabecera + logística Acopio se copian a una muestra nueva vacía. */
-        const META_IDS_HEREDAR_CAMBIO_MUESTRA_ = [
-            'visual-responsable', 'visual-guia-precosecha', 'visual-hora',
-            'visual-meta-fundo', 'visual-meta-variedad', 'visual-traz-etapa', 'visual-traz-campo',
-            'visual-traz-turno', 'visual-traz-acopio', 'visual-trazabilidad',
-            'visual-guia-acopio', 'visual-placa-vehiculo', 'visual-observacion-formato'
-        ];
-
-        function heredarMetaCabeceraEntreEnsayos_(origen, destino) {
-            const fromKey = String(origen || '').trim();
-            const toKey = String(destino || '').trim();
-            if (!fromKey || !toKey || fromKey === toKey) return;
-            const from = metaPorEnsayo[fromKey];
-            if (!from || typeof from !== 'object') return;
-            if (ensayoMetaTieneDatosTrabajo(toKey) || metaEnsayoCompletaParaOrden(toKey)) return;
-            const to = { ...(metaPorEnsayo[toKey] || metaPlantillaVaciaEnsayo_(toKey)) };
-            let copio = false;
-            META_IDS_HEREDAR_CAMBIO_MUESTRA_.forEach((id) => {
-                const v = String(from[id] ?? '').trim();
-                if (!v) return;
-                to[id] = from[id];
-                copio = true;
-            });
-            if (!copio) return;
-            to['visual-meta-muestra'] = toKey;
-            to['visual-rotulo'] = toKey;
-            delete to['visual-num-muestra'];
-            delete to._num_muestra_fijo;
-            metaPorEnsayo[toKey] = to;
-            ensayoMeta[toKey] = {
-                guiaRemision: String(to['visual-guia-acopio'] || '').trim(),
-                placaVehiculo: String(to['visual-placa-vehiculo'] || '').trim().toUpperCase()
-            };
-            marcarEnsayoEnUsoSesion(toKey);
         }
 
         let metaGuardadoSuspendido = 0;
@@ -2613,6 +2659,20 @@ const META_SAVE_IDS = [
             return META_CAMPOS_ORDEN_LLENADO.every((id) => metaCampoOrdenCompleto(nombre, id));
         }
 
+        /**
+         * Completitud usada solo para calcular el correlativo.
+         * Excluye N° muestra para evitar:
+         * calcular N° → revisar meta completa → calcular N° (recursión).
+         */
+        function metaEnsayoCompletaSinNumeroParaOrden_(ensayo) {
+            if (ensayoEstaRegistradoHoy(ensayo)) return true;
+            const nombre = String(ensayo || '').trim();
+            if (!nombre) return false;
+            return META_CAMPOS_ORDEN_LLENADO
+                .filter((id) => id !== 'visual-num-muestra')
+                .every((id) => metaCampoOrdenCompleto(nombre, id));
+        }
+
         function progresoMetaCompletado() {
             const ensayo = ensayoDesdeFormulario();
             if (!ensayo) return 0;
@@ -2729,11 +2789,12 @@ const META_SAVE_IDS = [
                             actualizarProgresoMeta();
                             return;
                         }
+                        // Guardar la muestra saliente sin copiarla al destino.
+                        persistirModalesAbiertasCampo_(anterior);
                         persistirLogisticaAcopioDesdeInputs(anterior);
                         snapshotMetaEnsayoActual(anterior);
                         marcarEnsayoEnUsoSesion(anterior);
                         programarActualizarErroresMetaFormulario();
-                        heredarMetaCabeceraEntreEnsayos_(anterior, muestra);
                         asegurarMetaEnsayoSinDatosFantasma_(muestra);
                         if (!metaPorEnsayo[muestra]) {
                             metaPorEnsayo[muestra] = metaPlantillaVaciaEnsayo_(muestra);
@@ -2992,6 +3053,52 @@ const META_SAVE_IDS = [
             } catch (_) { /* ignore */ }
         }
 
+        /** Última numeración confirmada hoy; permite reservar correlativos sin internet. */
+        function guardarSnapshotNumeracionOffline_(r) {
+            if (!r || r.ok !== true) return;
+            const max = Number(r.ultimo_num_muestra_en_hoja ?? r.max_en_hoja);
+            const proximo = normalizarNumMuestraInput(r.proximo_num_muestra);
+            if ((!Number.isFinite(max) || max < 0) && !proximo) return;
+            try {
+                localStorage.setItem(NUM_MUESTRA_SNAPSHOT_OFFLINE_KEY, JSON.stringify({
+                    fecha: hoyIsoLocal(),
+                    max: Number.isFinite(max) && max >= 0
+                        ? Math.floor(max)
+                        : Math.max(0, parseNumMuestraSoloDigitos(proximo) - 1),
+                    proximo,
+                    prefijo: String(r.num_muestra_prefijo || '').trim().toUpperCase(),
+                    ensayos: Array.isArray(r.ensayos)
+                        ? r.ensayos.map((e) => String(e).trim()).filter(Boolean)
+                        : []
+                }));
+            } catch (_) { /* ignore */ }
+        }
+
+        function cargarSnapshotNumeracionOffline_() {
+            try {
+                const raw = localStorage.getItem(NUM_MUESTRA_SNAPSHOT_OFFLINE_KEY);
+                if (!raw) return false;
+                const snap = JSON.parse(raw);
+                if (!snap || snap.fecha !== hoyIsoLocal()) {
+                    localStorage.removeItem(NUM_MUESTRA_SNAPSHOT_OFFLINE_KEY);
+                    return false;
+                }
+                const max = Number(snap.max);
+                if (!Number.isFinite(max) || max < 0) return false;
+                numMuestraMaxServidorCache = Math.floor(max);
+                proximoNumMuestraServidorCache = normalizarNumMuestraInput(snap.proximo)
+                    || formatearNumMuestraAutoDesdeN(numMuestraMaxServidorCache + 1, snap.prefijo || undefined);
+                if (snap.prefijo) numMuestraPrefijoCache = String(snap.prefijo);
+                bloqueoMuestraCacheNums = new Set(
+                    (Array.isArray(snap.ensayos) ? snap.ensayos : []).map((e) => String(e))
+                );
+                numMuestraSincronizadoServidor = true;
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
         async function obtenerEnsayosRegistradosHoyServidor(force = false) {
             if (!API_URL || !navigator.onLine) return null;
             const now = Date.now();
@@ -3183,7 +3290,7 @@ const META_SAVE_IDS = [
             const n = Number(numeroDesdeEnsayoTexto(ensayoKey)) || 0;
             // Solo N° reales de muestras en secuencia o fijados (evita fantasma → saltos 091→093).
             if (numerosMuestraFijadosSesion[ensayoKey]) return true;
-            if (n >= 1 && muestraEstaEnSecuenciaLlenado(n)) return true;
+            if (n >= 1 && metaEnsayoCompletaSinNumeroParaOrden_(ensayoKey)) return true;
             return false;
         }
 
@@ -4105,6 +4212,20 @@ const META_SAVE_IDS = [
                 lista.forEach((it) => limpiarPresionesSinFuenteMetrica_(it.metric));
                 return;
             }
+            // Temperatura, humedad y tiempos también son captura real aunque
+            // todavía no existan pesos. No borrarlos al cambiar de muestra.
+            const tieneMetricaCapturada = lista.some((it) => {
+                const metric = it?.metric;
+                if (!metric || typeof metric !== 'object') return false;
+                return Object.values(metric).some((grupo) =>
+                    grupo && typeof grupo === 'object'
+                    && Object.values(grupo).some((v) => String(v ?? '').trim() !== '')
+                );
+            });
+            if (tieneMetricaCapturada) {
+                lista.forEach((it) => limpiarPresionesSinFuenteMetrica_(it.metric));
+                return;
+            }
             lista.forEach((it) => {
                 it.metric = metricaVacia();
                 it.observacion = '';
@@ -4274,7 +4395,7 @@ const META_SAVE_IDS = [
         }
 
         function aplicarControlGlobalDesdeFormulario(cerrarAlFinal = false, opts = {}) {
-            const ensayo = String(obtenerEnsayoActivo() || 'Ensayo 1');
+            const ensayo = String(opts.ensayo || obtenerEnsayoActivo() || 'Ensayo 1');
             const itemsEnsayo = data.filter((item) => String(item.ensayo || 'Ensayo 1') === ensayo);
             if (controlGlobalState.tipo === 'temperatura') {
                 const ambInicio = document.getElementById('visual-temp-amb-inicio')?.value ?? '';
@@ -5080,9 +5201,35 @@ const META_SAVE_IDS = [
             document.getElementById('llenado-horas-modal-overlay').style.display = 'flex';
             inicializarFlatpickrInputs(document.getElementById('llenado-horas-modal-overlay'));
             prepararCustomTimePickers(document.getElementById('llenado-horas-modal-overlay'));
+            ['visual-lhm-inicio', 'visual-lhm-termino'].forEach((id) => {
+                const input = document.getElementById(id);
+                if (!input) return;
+                const persistir = () => {
+                    persistirModalHorasLlenadoAbierto_();
+                    programarGuardadoDraftCompleto();
+                };
+                input.addEventListener('input', persistir);
+                input.addEventListener('change', persistir);
+            });
+        }
+
+        function persistirModalHorasLlenadoAbierto_() {
+            const ensayo = String(horasLlenadoModalState.ensayo || '').trim();
+            const idFila = horasLlenadoModalState.idFila;
+            if (!ensayo || idFila == null) return false;
+            const fila = obtenerFilasLlenadoJarras(ensayo)
+                .find((f) => Number(f.id) === Number(idFila));
+            if (!fila) return false;
+            fila.inicio = document.getElementById('visual-lhm-inicio')?.value || '';
+            fila.termino = document.getElementById('visual-lhm-termino')?.value || '';
+            fila.tiempo = calcularTiempoEmpleado(fila.inicio, fila.termino);
+            sincronizarTiempoPorJarra(ensayo);
+            return true;
         }
 
         function cerrarModalHorasLlenado() {
+            persistirModalHorasLlenadoAbierto_();
+            programarGuardadoDraftCompleto();
             document.getElementById('llenado-horas-modal-overlay').style.display = 'none';
         }
 
@@ -5101,9 +5248,7 @@ const META_SAVE_IDS = [
                 mostrarAlertaRegla('Horario inválido', 'La hora final no puede ser menor que la hora de inicio.');
                 return;
             }
-            fila.inicio = inicioVal;
-            fila.termino = terminoVal;
-            fila.tiempo = calcularTiempoEmpleado(fila.inicio, fila.termino);
+            persistirModalHorasLlenadoAbierto_();
             cerrarModalHorasLlenado();
             renderizarPanelLlenadoJarras();
             sincronizarTiempoPorJarra(ensayo);
@@ -5334,6 +5479,27 @@ const META_SAVE_IDS = [
             return [...set].sort((a, b) => a - b);
         }
 
+        function agregarJarraAlSetTiemposPost_(set, jarraVal) {
+            if (jarraVaciaItem_(jarraVal)) return;
+            const txt = String(jarraVal ?? '').trim();
+            const r = parseRangoJarraLlenado(txt);
+            if (r) {
+                set.add(r.a);
+                set.add(r.b);
+                return;
+            }
+            const n = Number(txt);
+            if (Number.isFinite(n) && n >= 1) set.add(n);
+        }
+
+        /** Unión panel + clamshells, orden N° jarra (1, 2, 3…) para TIEMPOS V./A. */
+        function jarrasEnsayoParaTiemposPost_(ensayo, items) {
+            const set = new Set();
+            jarrasDelPanelLlenado_(ensayo).forEach((n) => set.add(n));
+            (items || []).forEach((it) => agregarJarraAlSetTiemposPost_(set, it?.jarra));
+            return [...set].sort((a, b) => a - b);
+        }
+
         /**
          * Fila solo-TIEMPOS: lleva N_JARRA + horas C/T; sin clamshell ni pesos
          * → el servidor no la inserta en VISUAL/ACOPIO, solo en TIEMPOS V./A.
@@ -5359,8 +5525,7 @@ const META_SAVE_IDS = [
             return fila.slice(0, pre).concat(h6, fila.slice(pre, nCols));
         }
 
-        // Filas POST: clamshells + jarras del panel que no van en ningún clamshell
-        // (solo-TIEMPOS → TIEMPOS V./A., igual visual y acopio).
+        // Filas POST: primero TIEMPOS V./A. en orden N° jarra; luego clamshells (VISUAL/ACOPIO).
         function construirRowsRegistroBasePorEnsayo(ensayoObjetivo) {
             const ensayo = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
             sincronizarInicioCosechaDesdeAnterior(ensayo);
@@ -5373,27 +5538,18 @@ const META_SAVE_IDS = [
                 .sort((a, b) => Number(a.id) - Number(b.id));
             const n = items.length;
             const horaRegistro = horaLocalActual();
-            const rows = items.map((item, idx) => construirFilaPostExpandidaConHoja2(item, idx, n, horaRegistro));
+            const rows = [];
 
-            const jarrasEnClamshell = new Set();
-            items.forEach((it) => {
-                if (jarraVaciaItem_(it?.jarra)) return;
-                const r = parseRangoJarraLlenado(String(it.jarra).trim());
-                if (r) {
-                    jarrasEnClamshell.add(r.a);
-                    jarrasEnClamshell.add(r.b);
-                    return;
-                }
-                const num = Number(String(it.jarra).trim());
-                if (Number.isFinite(num) && num >= 1) jarrasEnClamshell.add(num);
-            });
-
-            jarrasDelPanelLlenado_(ensayo).forEach((nJarra) => {
-                if (jarrasEnClamshell.has(nJarra)) return;
+            // Solo-TIEMPOS primero → servidor deduplica por jarra; orden 1, 2, 3…
+            jarrasEnsayoParaTiemposPost_(ensayo, items).forEach((nJarra) => {
                 const h6 = seisCeldasHoja2DesdeLlenadoJarras(ensayo, nJarra);
                 const hayTiempo = h6.some((v) => String(v || '').trim() !== '');
                 if (!hayTiempo) return;
                 rows.push(construirFilaPostSoloTiemposJarra_(ensayo, nJarra, horaRegistro));
+            });
+
+            items.forEach((item, idx) => {
+                rows.push(construirFilaPostExpandidaConHoja2(item, idx, n, horaRegistro));
             });
             return rows;
         }
@@ -5553,6 +5709,22 @@ const META_SAVE_IDS = [
             return disp === 'flex' || disp === 'block';
         }
 
+        function propagarMetricaCompartidaEnsayo_(item, kind) {
+            const ensayo = String(item?.ensayo || 'Ensayo 1');
+            const fuente = item?.metric?.[kind] || {};
+            const campos = kind === 'tiempo'
+                ? ['llegadaAcopio', 'despachoAcopio', 'acopioCalibrado', 'terminoCalibrado']
+                : (kind === 'temperatura' ? CAMPOS_TEMP_MUESTRA : CAMPOS_HUM_MUESTRA);
+            data.forEach((it) => {
+                if (String(it.ensayo || 'Ensayo 1') !== ensayo) return;
+                it.metric = it.metric || metricaVacia();
+                it.metric[kind] = it.metric[kind] || metricaVacia()[kind] || {};
+                campos.forEach((campo) => {
+                    it.metric[kind][campo] = String(fuente[campo] ?? '');
+                });
+            });
+        }
+
         function persistirModalMetricaAbiertaCampo_() {
             if (!metricModalState.itemId || !metricModalState.kind) return;
             const item = data.find((entry) => entry.id === metricModalState.itemId);
@@ -5566,26 +5738,12 @@ const META_SAVE_IDS = [
                 item.metric[kind][input.getAttribute('data-metric')] = input.value;
             });
             if (metricModalState.kind === 'tiempo') {
-                const llegada = String(item.metric?.tiempo?.llegadaAcopio || '').trim();
-                const despacho = String(item.metric?.tiempo?.despachoAcopio || '').trim();
-                const acopioCalibrado = String(item.metric?.tiempo?.acopioCalibrado || '').trim();
-                const terminoCalibrado = String(item.metric?.tiempo?.terminoCalibrado || '').trim();
-                if (llegada || despacho || acopioCalibrado || terminoCalibrado) {
-                    const clave = String(item.ensayo || 'Ensayo 1');
-                    data.forEach((it) => {
-                        if (String(it.ensayo || 'Ensayo 1') !== clave) return;
-                        it.metric = it.metric || metricaVacia();
-                        it.metric.tiempo = it.metric.tiempo || {};
-                        if (llegada) it.metric.tiempo.llegadaAcopio = llegada;
-                        if (despacho) it.metric.tiempo.despachoAcopio = despacho;
-                        if (acopioCalibrado) it.metric.tiempo.acopioCalibrado = acopioCalibrado;
-                        if (terminoCalibrado) it.metric.tiempo.terminoCalibrado = terminoCalibrado;
-                    });
-                }
+                propagarMetricaCompartidaEnsayo_(item, 'tiempo');
                 sincronizarTiempoPorJarra(item.ensayo || 'Ensayo 1');
             }
             if (metricModalState.kind === 'temperatura' || metricModalState.kind === 'humedad') {
-                recalcularPresionesParaTodos();
+                propagarMetricaCompartidaEnsayo_(item, metricModalState.kind);
+                recalcularPresionesParaEnsayo(item.ensayo || 'Ensayo 1');
             }
         }
 
@@ -5614,9 +5772,15 @@ const META_SAVE_IDS = [
             aplicarDatosModalAClamshell_(item, jarraSel, p1Val, p2Val, acopioVal, p4Val, despachoVal);
         }
 
-        function persistirModalesAbiertasCampo_() {
+        function persistirModalesAbiertasCampo_(ensayoSaliente) {
             if (modalCampoEstaAbierto_('control-global-modal-overlay') && controlGlobalState.tipo) {
-                aplicarControlGlobalDesdeFormulario(false, { silencioso: true });
+                aplicarControlGlobalDesdeFormulario(false, {
+                    silencioso: true,
+                    ensayo: ensayoSaliente
+                });
+            }
+            if (modalCampoEstaAbierto_('llenado-horas-modal-overlay')) {
+                persistirModalHorasLlenadoAbierto_();
             }
             if (modalCampoEstaAbierto_('metric-modal-overlay')) {
                 persistirModalMetricaAbiertaCampo_();
@@ -5632,10 +5796,20 @@ const META_SAVE_IDS = [
         }
 
         function capturarNumMuestraBorradorPorEnsayo_() {
-            const out = { ...numerosMuestraFijadosSesion };
+            const candidatos = { ...numerosMuestraFijadosSesion };
             const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
             const val = normalizarNumMuestraInput(document.getElementById('visual-num-muestra')?.value || '');
-            if (activo && val) out[activo] = val;
+            if (activo && val) candidatos[activo] = val;
+            const out = {};
+            const vistos = new Set();
+            Object.keys(candidatos)
+                .sort((a, b) => (Number(numeroDesdeEnsayoTexto(a)) || 0) - (Number(numeroDesdeEnsayoTexto(b)) || 0))
+                .forEach((ensayo) => {
+                    const num = normalizarNumMuestraInput(candidatos[ensayo]);
+                    if (!num || vistos.has(num)) return;
+                    vistos.add(num);
+                    out[ensayo] = num;
+                });
             return out;
         }
 
@@ -5653,8 +5827,8 @@ const META_SAVE_IDS = [
                 metaActivoEnsayo: metaActivoEnsayo,
                 metaPorEnsayo: clonarMetaPorEnsayoSinNumeros(metaPorEnsayo),
                 inputsCriticos: leerInputsCriticosActuales(),
-                // N° muestra no se guarda en borrador (evita 94 pegado entre Visual/Acopio).
-                numMuestraPorEnsayo: {}
+                // Reserva diaria y por modo: sobrevive navegación, cierre y uso offline.
+                numMuestraPorEnsayo: capturarNumMuestraBorradorPorEnsayo_()
             };
         }
 
@@ -5670,7 +5844,7 @@ const META_SAVE_IDS = [
                 ultimoPayloadDraftCampo_ = payload;
                 localStorage.setItem(draftStorageKeyCampo_(), JSON.stringify(payload));
                 if (typeof window.guardarBorradorCampoIdb === 'function') {
-                    void window.guardarBorradorCampoIdb(payload);
+                    void window.guardarBorradorCampoIdb(payload).catch(() => false);
                 }
             } catch (_) { /* ignore */ }
         }
@@ -5943,6 +6117,7 @@ const META_SAVE_IDS = [
             if (hayTextoNoVacioEnObjeto(d.metaPorEnsayo)) return true;
             if (hayTextoNoVacioEnObjeto(d.llenadoJarrasState?.porEnsayo)) return true;
             if (hayTextoNoVacioEnObjeto(d.inputsCriticos)) return true;
+            if (hayTextoNoVacioEnObjeto(d.numMuestraPorEnsayo)) return true;
             return false;
         }
 
@@ -6102,6 +6277,20 @@ const META_SAVE_IDS = [
             });
         }
 
+        function restaurarNumerosMuestraDesdeBorrador_(mapa) {
+            if (!mapa || typeof mapa !== 'object') return;
+            const vistos = new Set();
+            Object.keys(mapa)
+                .sort((a, b) => (Number(numeroDesdeEnsayoTexto(a)) || 0) - (Number(numeroDesdeEnsayoTexto(b)) || 0))
+                .forEach((ensayo) => {
+                    const e = String(ensayo || '').trim();
+                    const num = normalizarNumMuestraInput(mapa[ensayo]);
+                    if (!e || !num || vistos.has(num) || ensayoEstaRegistradoHoy(e)) return;
+                    vistos.add(num);
+                    numerosMuestraFijadosSesion[e] = num;
+                });
+        }
+
         function aplicarDraftDesdeObjeto_(d) {
             if (!d || typeof d !== 'object') return false;
             if (!borradorCampoCoincideModoActual_(d)) return false;
@@ -6134,8 +6323,7 @@ const META_SAVE_IDS = [
                 metaActivoEnsayo = String(d.metaActivoEnsayo).trim() || metaActivoEnsayo;
             }
             if (d.numMuestraPorEnsayo && typeof d.numMuestraPorEnsayo === 'object') {
-                // N° muestra NO se restaura del borrador (quedaba “pegado” p.ej. 94 vs planilla 93).
-                // Se recalcula siempre desde el servidor / contexto al sincronizar.
+                restaurarNumerosMuestraDesdeBorrador_(d.numMuestraPorEnsayo);
             }
             if (d.inputsCriticos && typeof d.inputsCriticos === 'object') {
                 delete d.inputsCriticos['visual-num-muestra'];
@@ -6146,6 +6334,10 @@ const META_SAVE_IDS = [
             aplicarInputsCriticosGuardados(d.inputsCriticos);
             metaActivoEnsayo = ensayoDraft;
             reaplicarMetaFormularioCampo_(ensayoDraft);
+            const numRestaurado = numerosMuestraFijadosSesion[ensayoDraft];
+            if (numRestaurado) {
+                aplicarNumMuestraEnsayo(ensayoDraft, numRestaurado, true, 'restaurarBorrador');
+            }
             asegurarOpcionesSelectAcopio(
                 d.inputsCriticos?.['visual-traz-acopio']
                 || metaPorEnsayo[ensayoDraft]?.['visual-traz-acopio']
@@ -6203,13 +6395,20 @@ const META_SAVE_IDS = [
         function guardarColaSync(queue) {
             try {
                 localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(Array.isArray(queue) ? queue : []));
-            } catch (_) { /* ignore */ }
-            actualizarBarraHeaderEstado();
+                actualizarBarraHeaderEstado();
+                return true;
+            } catch (_) {
+                actualizarBarraHeaderEstado();
+                return false;
+            }
         }
 
-        function limpiarColaSyncSoloPendientes(queue) {
+        function limpiarColaSyncNoFinalizados(queue) {
             const arr = Array.isArray(queue) ? queue : [];
-            return arr.filter((q) => String(q?.estado || '') === 'pendiente');
+            return arr.filter((q) => {
+                const estado = String(q?.estado || 'pendiente');
+                return estado === 'pendiente' || estado === 'bloqueado' || estado === 'conflicto';
+            });
         }
 
         function cargarHistorialSync() {
@@ -6297,70 +6496,68 @@ const META_SAVE_IDS = [
         }
         window.archivarEnvioLocalExitoso_ = archivarEnvioLocalExitoso_;
 
-        function limpiarPersistenciaLocalPostSync() {
-            try { localStorage.removeItem(SYNC_QUEUE_KEY); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(SYNC_HISTORY_KEY); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(SYNC_ENVIADOS_KEY); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(draftStorageKeyCampo_()); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(metaStorageKeyCampo_()); } catch (_) { /* ignore */ }
-            try { localStorage.removeItem(DEMO_META_CAMPO_SEED_KEY); } catch (_) { /* ignore */ }
-        }
-
         async function borrarTodoYCacheRapido() {
             let confirmado = false;
             if (window.Swal && typeof window.Swal.fire === 'function') {
                 const resp = await swalFireSafe({
                     icon: 'warning',
-                    title: 'Eliminar todo local',
-                    text: 'Se borrará todo: inputs, borradores, pendientes, historial y caché local. ¿Continuar?',
+                    title: 'Limpiar datos de captura',
+                    text: 'Se vaciarán los inputs y reservas no enviadas de este módulo. El N° muestra volverá al siguiente valor real de la planilla o del último estado offline. Pendientes, historial y PDFs se conservarán.',
                     showCancelButton: true,
-                    confirmButtonText: 'Sí, borrar',
+                    confirmButtonText: 'Sí, limpiar inputs',
                     cancelButtonText: 'Cancelar',
                     confirmButtonColor: '#D92D20',
                     allowOutsideClick: false
                 });
                 confirmado = !!resp.isConfirmed;
             } else {
-                confirmado = window.confirm('Se borrarán datos en pantalla, cola pendiente e historial local. ¿Continuar?');
+                confirmado = window.confirm('Se vaciarán los inputs y reservas no enviadas; el N° muestra volverá al siguiente valor real disponible. ¿Continuar?');
             }
             if (!confirmado) return;
 
-            try {
-                if (typeof caches !== 'undefined' && caches && typeof caches.keys === 'function') {
-                    const keys = await caches.keys();
-                    await Promise.all(keys.map((k) => caches.delete(k)));
-                }
-            } catch (_) { /* ignore */ }
-
-            try {
-                if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistrations === 'function') {
-                    const regs = await navigator.serviceWorker.getRegistrations();
-                    await Promise.all(regs.map((r) => r.unregister()));
-                }
-            } catch (_) { /* ignore */ }
-
-            reiniciarNumeracionParaConsultaServidor();
-            try {
-                if (window.HistPdfStore && typeof window.HistPdfStore.borrarTodo === 'function') {
-                    await window.HistPdfStore.borrarTodo();
-                }
-            } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(draftStorageKeyCampo_()); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(metaStorageKeyCampo_()); } catch (_) { /* ignore */ }
+            try { localStorage.removeItem(DEMO_META_CAMPO_SEED_KEY); } catch (_) { /* ignore */ }
             if (typeof window.borrarBorradorCampoIdb === 'function') {
                 try { await window.borrarBorradorCampoIdb(); } catch (_) { /* ignore */ }
             }
-            try { localStorage.clear(); } catch (_) { /* ignore */ }
-            try { sessionStorage.clear(); } catch (_) { /* ignore */ }
-            try {
-                sessionStorage.setItem(FORZAR_NUM_DESDE_SERVIDOR_KEY, '1');
-            } catch (_) { /* ignore */ }
             resetearPantallaEnCeroPostSync();
-            establecerMenuFlotanteAbierto(false);
-            mostrarToast('success', 'Limpieza completa', 'Se recargará y el N° muestra se tomará de la planilla.');
-            setTimeout(() => {
+            ensayosActivadosSesion = new Set();
+            prepararRevalidacionNumMuestraTrasLimpieza_();
+            actualizarVistaCompacta();
+
+            let numeracionActualizada = false;
+            if (navigator.onLine && API_URL) {
+                setNumMuestraCargando(true);
                 try {
-                    window.location.reload();
-                } catch (_) { /* ignore */ }
-            }, 450);
+                    numeracionActualizada = await refrescarEstadoServidorOperativo(true, {
+                        reposicionarPrimera: false,
+                        invalidarFijados: true,
+                        avisar: false
+                    });
+                    if (numeracionActualizada && ultimaRespuestaEstadoServidor) {
+                        propagarCambiosPlanillaServidorALaPantalla(ultimaRespuestaEstadoServidor, {
+                            forzarUi: true,
+                            invalidarFijados: true,
+                            reposicionarPrimera: false,
+                            avisar: false
+                        });
+                    }
+                } finally {
+                    setNumMuestraCargando(false);
+                }
+            }
+            marcarNumRevalidarTrasLimpieza_(!numeracionActualizada);
+            if (!numeracionActualizada) {
+                cargarSnapshotNumeracionOffline_();
+                refrescarEstadoOperativoLocal();
+            }
+            aplicarBloqueoMuestrasCacheLocal();
+            aplicarNumMuestraParaEnsayoActivo('limpiarInputs');
+            actualizarVistaCompacta();
+            actualizarProgresoMeta();
+            establecerMenuFlotanteAbierto(false);
+            mostrarToast('success', 'Inputs limpios', 'N° muestra normalizado; pendientes, historial y PDFs se conservaron.');
         }
         window.borrarTodoYCacheRapido = borrarTodoYCacheRapido;
 
@@ -6495,14 +6692,12 @@ const META_SAVE_IDS = [
             const siguiente = siguienteEnsayoPendienteTrasEnvio_(enviado);
             if (metaEnviadoSnap) metaPorEnsayo[enviado] = metaEnviadoSnap;
             if (siguiente) {
-                heredarMetaCabeceraEntreEnsayos_(enviado, siguiente);
                 delete metaPorEnsayo[enviado];
                 aplicarCambioMuestraRapido(siguiente);
             } else {
                 const num = Number(numeroDesdeEnsayoTexto(enviado)) || 1;
                 const prox = ensayoNombreDesdeNumero(num + 1);
                 if (prox && num < MAX_MUESTRAS_CAMPO) {
-                    heredarMetaCabeceraEntreEnsayos_(enviado, prox);
                     delete metaPorEnsayo[enviado];
                     if (!metaPorEnsayo[prox]) {
                         metaPorEnsayo[prox] = metaPlantillaVaciaEnsayo_(prox);
@@ -6922,7 +7117,13 @@ const META_SAVE_IDS = [
         function reposicionarPantallaPrimeraMuestraLibre(origen) {
             const primera = obtenerPrimeraMuestraLibreNombre();
             const destino = primera;
-            Object.keys(numerosMuestraFijadosSesion).forEach((k) => delete numerosMuestraFijadosSesion[k]);
+            const anterior = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+            if (anterior && anterior !== destino) {
+                persistirModalesAbiertasCampo_(anterior);
+                persistirLogisticaAcopioDesdeInputs(anterior);
+                snapshotMetaEnsayoActual(anterior);
+            }
+            invalidarNumerosMuestraFijadosObsoletos();
 
             metaActivoEnsayo = destino;
             const sel = document.getElementById('visual-meta-muestra');
@@ -6934,7 +7135,7 @@ const META_SAVE_IDS = [
 
             const num = calcularNumMuestraDesdeServidorParaEnsayo(destino);
             if (num) {
-                aplicarNumMuestraEnsayo(destino, num, false, origen || 'reposicionarPrimeraLibre');
+                fijarNumMuestraEnsayoSesion(destino, num, origen || 'reposicionarPrimeraLibre');
             } else {
                 const inp = document.getElementById('visual-num-muestra');
                 if (inp) inp.value = '';
@@ -6963,8 +7164,9 @@ const META_SAVE_IDS = [
 
             const preservarBorrador = debePreservarBorradorCampoEnSync_();
 
-            // N° muestra siempre sigue la planilla; el borrador no debe congelarlo (Acopio 93 / Visual 94).
-            if (!envioRegistroEnCurso && (opts.invalidarFijados || maxCambio || cambioFirma || opts.forzarUi || opts.alinearNumMuestra !== false)) {
+            // Las reservas locales no se borran por un refresco normal. Solo una
+            // invalidación explícita puede reasignarlas antes de encapsular.
+            if (!envioRegistroEnCurso && opts.invalidarFijados === true) {
                 Object.keys(numerosMuestraFijadosSesion).forEach((k) => {
                     if (!ensayoEstaRegistradoHoy(k)) delete numerosMuestraFijadosSesion[k];
                 });
@@ -7211,8 +7413,8 @@ const META_SAVE_IDS = [
         }
 
         /**
-         * N° = último real (planilla + cola + N° ya asignados a OTRAS muestras) + 1.
-         * No suma “huecos” por muestras previas sin N° (eso causaba saltos de +2…+5).
+         * Regla única: N° = mayor número realmente confirmado o encapsulado + 1.
+         * Una muestra solo abierta/llenada no reserva números ni crea saltos.
          */
         function calcularNumMuestraBaseDesdeContexto(ensayo) {
             const eAct = String(ensayo || '').trim();
@@ -7232,17 +7434,12 @@ const META_SAVE_IDS = [
             if (ensayoEstaRegistradoHoy(ensayo)) {
                 return calcularNumMuestraLoteAdicionalEnsayoRegistrado_(ensayo);
             }
-            if (navigator.onLine && API_URL && !numMuestraSincronizadoServidor) return '';
             const e = String(ensayo || '').trim();
+            const fijado = numerosMuestraFijadosSesion[e];
+            if (fijado) return fijado;
+            if (navigator.onLine && API_URL && !numMuestraSincronizadoServidor) return '';
             if (!numMuestraSincronizadoServidor) prepararProximoNumMuestraOffline();
             const calculado = calcularNumMuestraBaseDesdeContexto(ensayo);
-            const fijado = numerosMuestraFijadosSesion[e];
-            if (fijado) {
-                const f = parseNumMuestraSoloDigitos(fijado);
-                const c = parseNumMuestraSoloDigitos(calculado);
-                if (f && c && f === c) return fijado;
-                delete numerosMuestraFijadosSesion[e];
-            }
             if (numMuestraSincronizadoServidor || (!navigator.onLine || !API_URL)) {
                 return calculado;
             }
@@ -7266,6 +7463,7 @@ const META_SAVE_IDS = [
 
         /** Sin red: bloqueo + numeración desde último max persistido. */
         function refrescarEstadoOperativoLocal() {
+            if (!numMuestraSincronizadoServidor) cargarSnapshotNumeracionOffline_();
             sincronizarMaxNumMuestraDesdeContextoLocal();
             invalidarNumerosMuestraFijadosObsoletos();
             purgarMetaNumMuestraEnsayosRegistradosHoy();
@@ -7338,7 +7536,10 @@ const META_SAVE_IDS = [
                     servidorOperativoFallosSeguidos = 0;
                     ultimoRefreshServidorOperativoMs = Date.now();
                     ultimaRespuestaEstadoServidor = r;
-                    establecerEstadoNumMuestraDesdeServidor(r);
+                    guardarSnapshotNumeracionOffline_(r);
+                    // Persistir primero los ensayos confirmados. Si luego falla
+                    // cualquier repintado, el modo offline conserva la verdad
+                    // de la última lectura de planilla.
                     if (Array.isArray(r.ensayos)) {
                         bloqueoMuestraCacheNums = new Set(r.ensayos.map((e) => String(e).trim()).filter(Boolean));
                         bloqueoMuestraUltimoFetchMs = Date.now();
@@ -7347,6 +7548,7 @@ const META_SAVE_IDS = [
                         bloqueoMuestraCacheNums = new Set();
                         guardarCacheRegistradosHoy(bloqueoMuestraCacheNums);
                     }
+                    establecerEstadoNumMuestraDesdeServidor(r);
                     limpiarNumerosMuestraLocalesNoRegistrados();
                     const preservarBorradorSync = debePreservarBorradorCampoEnSync_();
                     const reposicionarPrimera = opciones.reposicionarPrimera !== undefined
@@ -7554,27 +7756,6 @@ const META_SAVE_IDS = [
                     logNumMuestra('purgarUsadosLocalTrasSyncPlanilla_', { quedan: Object.keys(map).length });
                 }
             } catch (_) { /* ignore */ }
-            // Cola: si el N° ya está en planilla, no debe inflar el siguiente.
-            try {
-                const queue = cargarColaSync();
-                let qChanged = false;
-                const next = queue.filter((reg) => {
-                    const dig = parseNumMuestraSoloDigitos(reg?.num_muestra);
-                    const st = String(reg?.estado || '').toLowerCase();
-                    if ((st === 'pendiente' || st === 'bloqueado') && dig > 0 && dig <= maxPlanilla) {
-                        qChanged = true;
-                        return false;
-                    }
-                    return true;
-                });
-                if (qChanged) {
-                    guardarColaSync(next);
-                    logNumMuestra('purgarColaNumMuestraYaEnPlanilla_', {
-                        max_planilla: maxPlanilla,
-                        quedan: next.length
-                    });
-                }
-            } catch (_) { /* ignore */ }
         }
 
         function numMuestraDuplicadoEnMeta(ensayo, mn) {
@@ -7603,7 +7784,7 @@ const META_SAVE_IDS = [
 
         function necesitaReasignarNumMuestra(ensayo, mn) {
             if (ensayoEstaRegistradoHoy(ensayo)) return false;
-            if (envioRegistroEnCurso && numerosMuestraFijadosSesion[String(ensayo || '').trim()]) return false;
+            if (numerosMuestraFijadosSesion[String(ensayo || '').trim()]) return false;
             const esperadoSeq = parseNumMuestraSoloDigitos(calcularNumMuestraBaseDesdeContexto(ensayo));
             const actualSeq = parseNumMuestraSoloDigitos(mn);
             if (!actualSeq) return true;
@@ -7682,31 +7863,6 @@ const META_SAVE_IDS = [
                 : calcularNumMuestraDesdeServidorParaEnsayo(e);
             if (!num) return;
             aplicarNumMuestraEnsayo(e, num, true);
-        }
-
-        function reaplicarNumMuestraARegistroPendiente(reg) {
-            const ensayoReb = String(reg?.ensayo || 'Ensayo 1');
-            const limpio = normalizarNumMuestraInput(calcularNumMuestraDesdeServidorParaEnsayo(ensayoReb));
-            reg.num_muestra = limpio;
-            aplicarNumMuestraEnsayo(ensayoReb, limpio, true);
-            if (Array.isArray(reg.rows)) {
-                reg.rows.forEach((row) => {
-                    if (row && row.length > 2) row[2] = limpio;
-                });
-            }
-            reg.uid = uidLocal();
-        }
-
-        async function reboteNumMuestraRegistroPendienteSiAplica(reg) {
-            const rebotes = Number(reg._num_muestra_rebotes || 0);
-            if (rebotes >= 12) return false;
-            await refrescarEstadoServidorOperativo(true);
-            reg._num_muestra_rebotes = rebotes + 1;
-            reaplicarNumMuestraARegistroPendiente(reg);
-            reg.estado = 'pendiente';
-            reg.error = '';
-            reg.actualizado_en = Date.now();
-            return true;
         }
 
         async function avisarNumMuestraDuplicadoConDetalle(detalle, origen) {
@@ -7868,6 +8024,29 @@ const META_SAVE_IDS = [
             const primero = ensayos[0];
             payload.nums_por_ensayo = nums;
             payload.num_muestra = String(nums[primero] || payload.num_muestra || '').trim();
+            return { ok: true, num_muestra: payload.num_muestra };
+        }
+
+        /** Cola offline: valida y estampa el N° encapsulado, sin recalcularlo. */
+        function validarYStampNumMuestraFijoCola_(payload) {
+            if (!payload || !Array.isArray(payload.rows) || !payload.rows.length) {
+                return { ok: false, error: 'Sin filas para enviar.' };
+            }
+            const ensayos = Array.isArray(payload.ensayos_incluidos) && payload.ensayos_incluidos.length
+                ? payload.ensayos_incluidos.map((e) => String(e || '').trim()).filter(Boolean)
+                : [String(payload.ensayo || 'Ensayo 1').trim()];
+            const nums = payload.nums_por_ensayo && typeof payload.nums_por_ensayo === 'object'
+                ? { ...payload.nums_por_ensayo }
+                : {};
+            const fijo = normalizarNumMuestraInput(payload.num_muestra);
+            if (!fijo && !Object.values(nums).some((n) => normalizarNumMuestraInput(n))) {
+                return { ok: false, error: 'N° muestra offline vacío.' };
+            }
+            if (fijo && ensayos[0] && !nums[ensayos[0]]) nums[ensayos[0]] = fijo;
+            const stamp = stampNumMuestraEnFilasRegistro_(payload.rows, nums);
+            if (!stamp.ok) return stamp;
+            payload.nums_por_ensayo = nums;
+            payload.num_muestra = normalizarNumMuestraInput(nums[ensayos[0]] || fijo);
             return { ok: true, num_muestra: payload.num_muestra };
         }
 
@@ -8398,6 +8577,14 @@ const META_SAVE_IDS = [
                 await refrescarEstadoServidorOperativo(false);
             } else {
                 refrescarEstadoOperativoLocal();
+                if (!numMuestraSincronizadoServidor && !cargarSnapshotNumeracionOffline_()) {
+                    mostrarToast(
+                        'warning',
+                        'Numeración offline no disponible',
+                        'Conéctate una vez hoy para leer el último N° de la planilla. La muestra no se limpiará ni se enviará con un número estimado.'
+                    );
+                    return null;
+                }
             }
             asegurarNumMuestraAsignadoSiVacio(ensayo);
             snapshotMetaEnsayoActual();
@@ -8495,7 +8682,18 @@ const META_SAVE_IDS = [
                 error: ''
             };
             queue.push(reg);
-            guardarColaSync(queue);
+            const colaGuardada = guardarColaSync(queue);
+            const colaVerificada = colaGuardada
+                && cargarColaSync().some((q) => String(q?.uid || '') === String(reg.uid || ''));
+            if (!colaVerificada) {
+                queue.pop();
+                mostrarToast(
+                    'error',
+                    'No se pudo guardar offline',
+                    'El registro no fue encapsulado en el teléfono. No se limpiará la muestra; libera espacio y reintenta.'
+                );
+                return null;
+            }
             pushEstadoSync(reg);
             registrarNumMuestraUsadoLocal(reg.num_muestra, {
                 fecha: reg.fecha,
@@ -8531,6 +8729,7 @@ const META_SAVE_IDS = [
                     }
                 }
             );
+            guardarColaSync(queue);
             return reg;
         }
 
@@ -8555,6 +8754,18 @@ const META_SAVE_IDS = [
             let huboCambios = false;
             let huboSubidaExitosa = false;
             try {
+                // Nunca reproducir una cola offline usando una numeración
+                // estimada. Primero releer la planilla; si no responde, la cola
+                // permanece local y se reintenta después.
+                const estadoNumeracionOk = await refrescarEstadoServidorOperativo(true, {
+                    reposicionarPrimera: false,
+                    invalidarFijados: false,
+                    avisar: false
+                });
+                if (!estadoNumeracionOk) {
+                    actualizarBarraHeaderEstado();
+                    return resumenEstadosSync();
+                }
                 for (let i = 0; i < queue.length; i++) {
                     const reg = queue[i];
                     if (!reg || String(reg.estado || '') !== 'pendiente') continue;
@@ -8597,22 +8808,13 @@ const META_SAVE_IDS = [
                         continue;
                     }
 
-                    // Si el código ya existe en la hoja, reasignar N° muestra automático y reintentar (evita duplicados).
+                    // El N° de una cola offline es inmutable. Si ya existe, conservar
+                    // payload + UID completos como conflicto; nunca renumerar en replay.
                     if (reg.num_muestra) {
                         const numInfoPre = await existeNumMuestraServidor(reg.num_muestra);
                         if (numInfoPre && numInfoPre.existe === true) {
-                            const okRebote = await reboteNumMuestraRegistroPendienteSiAplica(reg);
-                            if (okRebote) {
-                                huboCambios = true;
-                                pushEstadoSync(reg);
-                                guardarColaSync(queue);
-                                mostrarToast('info', 'N° muestra ajustado', `Se reintentará con ${reg.num_muestra}.`);
-                                i--;
-                                actualizarBarraHeaderEstado();
-                                continue;
-                            }
                             reg.estado = 'bloqueado';
-                            reg.error = `NUM_MUESTRA ${reg.num_muestra} ya existe y no se pudo reasignar automáticamente.`;
+                            reg.error = `NUM_MUESTRA ${reg.num_muestra} ya existe; el registro encapsulado se conservó sin cambios.`;
                             reg.actualizado_en = Date.now();
                             huboCambios = true;
                             pushEstadoSync(reg);
@@ -8627,10 +8829,8 @@ const META_SAVE_IDS = [
                                     fecha: String(numInfoPre?.fecha || reg.fecha || ''),
                                     ensayo_numero: String(numInfoPre?.ensayo_numero || reg.ensayo_numero || '')
                                 },
-                                'Ese N° muestra ya existe. Revisa conexión o contacta soporte si se repite.'
+                                'Ese N° muestra ya existe. El registro offline quedó conservado sin renumerarse.'
                             );
-                            queue.splice(i, 1);
-                            i--;
                             guardarColaSync(queue);
                             actualizarBarraHeaderEstado();
                             continue;
@@ -8649,7 +8849,7 @@ const META_SAVE_IDS = [
                             rows: reg.rows,
                             num_muestra: reg.num_muestra
                         };
-                        const valNumCola = validarYStampNumMuestraEnPayload_(payloadReplay);
+                        const valNumCola = validarYStampNumMuestraFijoCola_(payloadReplay);
                         if (!valNumCola.ok) {
                             reg.estado = 'bloqueado';
                             reg.error = valNumCola.error || 'NUM_MUESTRA vacío en cola';
@@ -8729,6 +8929,12 @@ const META_SAVE_IDS = [
                         || errorServidor.includes('clave duplicada');
 
                     if (okServidor) {
+                        const ensayoPdfSync = String(reg.ensayo || ('Ensayo ' + reg.ensayo_numero));
+                        const numReal = window.HistPdfEnvio?.numMuestraDesdeFilasPost_
+                            ? (window.HistPdfEnvio.numMuestraDesdeFilasPost_(ensayoPdfSync, reg.rows)
+                                || String(reg.num_muestra || '').trim().toUpperCase())
+                            : String(reg.num_muestra || '').trim().toUpperCase();
+                        if (numReal) reg.num_muestra = numReal;
                         reg.estado = 'subido';
                         reg.error = '';
                         reg.actualizado_en = Date.now();
@@ -8740,11 +8946,8 @@ const META_SAVE_IDS = [
                             yaHayPdf = await window.HistPdfStore.existe(reg.fecha, reg.ensayo_numero, reg.num_muestra, moduloPdf);
                         }
                         if (!yaHayPdf) {
-                            const ensayoPdf = String(reg.ensayo || ('Ensayo ' + reg.ensayo_numero));
-                            const numPdf = window.HistPdfEnvio?.numMuestraDesdeFilasPost_
-                                ? (window.HistPdfEnvio.numMuestraDesdeFilasPost_(ensayoPdf, reg.rows)
-                                    || String(reg.num_muestra || '').trim().toUpperCase())
-                                : String(reg.num_muestra || '').trim().toUpperCase();
+                            const ensayoPdf = ensayoPdfSync;
+                            const numPdf = numReal;
                             await asegurarPdfCampoHistorialTrasEnvio_(
                                 [ensayoPdf],
                                 reg.fecha,
@@ -8782,17 +8985,6 @@ const META_SAVE_IDS = [
                         continue;
                     }
                     if (esDuplicadoServidor) {
-                        const okReboteDup = await reboteNumMuestraRegistroPendienteSiAplica(reg);
-                        if (okReboteDup) {
-                            huboCambios = true;
-                            pushEstadoSync(reg);
-                            guardarColaSync(queue);
-                            mostrarToast('info', 'N° muestra ajustado', `Se reintentará con ${reg.num_muestra}.`);
-                            i--;
-                            actualizarBarraHeaderEstado();
-                            logSync('Reasignación NUM_MUESTRA tras duplicado en confirmación', { uid: reg.uid, num_muestra: reg.num_muestra });
-                            continue;
-                        }
                         reg.estado = 'bloqueado';
                         reg.error = postResp?.error
                             ? String(postResp.error)
@@ -8815,10 +9007,8 @@ const META_SAVE_IDS = [
                                 fecha: String(postResp?.fecha || reg.fecha || ''),
                                 ensayo_numero: String(postResp?.ensayo_numero || reg.ensayo_numero || '')
                             },
-                            'Ya existe ese N° muestra. Revisa conexión o contacta soporte si se repite.'
+                            'Ya existe ese N° muestra. El registro offline quedó conservado sin renumerarse.'
                         );
-                        queue.splice(i, 1);
-                        i--;
                         guardarColaSync(queue);
                         actualizarBarraHeaderEstado();
                         continue;
@@ -8829,18 +9019,8 @@ const META_SAVE_IDS = [
                     if (reg.num_muestra) {
                         const numInfoPost = await existeNumMuestraServidor(reg.num_muestra);
                         if (numInfoPost && numInfoPost.existe === true) {
-                            const okRebotePost = await reboteNumMuestraRegistroPendienteSiAplica(reg);
-                            if (okRebotePost) {
-                                huboCambios = true;
-                                pushEstadoSync(reg);
-                                guardarColaSync(queue);
-                                mostrarToast('info', 'N° muestra ajustado', `Se reintentará con ${reg.num_muestra}.`);
-                                i--;
-                                actualizarBarraHeaderEstado();
-                                continue;
-                            }
                             reg.estado = 'bloqueado';
-                            reg.error = `NUM_MUESTRA ${reg.num_muestra} ya existe y no se pudo reasignar automáticamente.`;
+                            reg.error = `NUM_MUESTRA ${reg.num_muestra} ya existe; el registro encapsulado se conservó sin cambios.`;
                             reg.actualizado_en = Date.now();
                             huboCambios = true;
                             pushEstadoSync(reg);
@@ -8855,10 +9035,8 @@ const META_SAVE_IDS = [
                                     fecha: String(numInfoPost?.fecha || reg.fecha || ''),
                                     ensayo_numero: String(numInfoPost?.ensayo_numero || reg.ensayo_numero || '')
                                 },
-                                'Ese N° muestra ya existe. Revisa conexión o contacta soporte si se repite.'
+                                'Ese N° muestra ya existe. El registro offline quedó conservado sin renumerarse.'
                             );
-                            queue.splice(i, 1);
-                            i--;
                             guardarColaSync(queue);
                             actualizarBarraHeaderEstado();
                             bloqueoPorCodigo = true;
@@ -8881,7 +9059,7 @@ const META_SAVE_IDS = [
                 }
             } finally {
                 if (huboCambios) {
-                    guardarColaSync(limpiarColaSyncSoloPendientes(queue));
+                    guardarColaSync(limpiarColaSyncNoFinalizados(queue));
                 }
                 syncEnCurso = false;
                 actualizarBarraHeaderEstado();
@@ -9321,6 +9499,14 @@ const META_SAVE_IDS = [
                     </details>
                 `;
             }).join('');
+            document.querySelectorAll('[data-ensayo-placa], [data-ensayo-guia]').forEach((input) => {
+                const persistir = () => {
+                    capturarPlacaGuiaResumenModal_();
+                    programarGuardadoDraftCompleto();
+                };
+                input.addEventListener('input', persistir);
+                input.addEventListener('change', persistir);
+            });
             document.getElementById('essential-modal-overlay').style.display = 'flex';
             if (typeof window.precalentarPdfAvancePacking === 'function') {
                 window.precalentarPdfAvancePacking();
@@ -9339,6 +9525,11 @@ const META_SAVE_IDS = [
                 const placa = (placaInput?.value || '').trim().toUpperCase();
                 const guia = (guiaInput?.value || '').trim();
                 ensayoMeta[ensayo] = { placaVehiculo: placa, guiaRemision: guia };
+                if (!metaPorEnsayo[ensayo]) {
+                    metaPorEnsayo[ensayo] = metaPlantillaVaciaEnsayo_(ensayo);
+                }
+                metaPorEnsayo[ensayo]['visual-placa-vehiculo'] = placa;
+                metaPorEnsayo[ensayo]['visual-guia-acopio'] = guia;
                 data.forEach((item) => {
                     if ((item.ensayo || 'Ensayo 1') === ensayo) {
                         item.placaVehiculo = placa;
@@ -9466,6 +9657,8 @@ const META_SAVE_IDS = [
         window.enviarModalResumenGlobalWhatsApp = enviarModalResumenGlobalWhatsApp;
 
         function cerrarModalResumen() {
+            capturarPlacaGuiaResumenModal_();
+            programarGuardadoDraftCompleto();
             document.getElementById('essential-modal-overlay').style.display = 'none';
         }
 
@@ -9476,7 +9669,10 @@ const META_SAVE_IDS = [
             if (actual === objetivo) return;
             const permitido = await bloquearCambioMuestraFueraDeOrden(objetivo, actual);
             if (!permitido) return;
-            snapshotMetaEnsayoActual();
+            fijarReservaVisibleParaEnsayo_(actual);
+            persistirModalesAbiertasCampo_(actual);
+            persistirLogisticaAcopioDesdeInputs(actual);
+            snapshotMetaEnsayoActual(actual);
             if (!metaPorEnsayo[objetivo]) {
                 metaPorEnsayo[objetivo] = { 'visual-meta-muestra': objetivo, 'visual-rotulo': objetivo };
             }
@@ -9499,7 +9695,6 @@ const META_SAVE_IDS = [
             } else {
                 refrescarEstadoOperativoLocal();
             }
-            await precongelarNumerosMuestraParaEnvio(ensayosCandidatosConDatosCampo());
         }
 
         async function seleccionarEnsayoCompletoParaEnviar_(preferido) {
@@ -9704,7 +9899,7 @@ const META_SAVE_IDS = [
                         num_muestra: String(rs?.payload?.num_muestra || ''),
                         fecha: String(rs?.payload?.fecha || ''),
                         ensayo_numero: String(rs?.payload?.ensayo_numero || '')
-                    }, 'Ese N° muestra ya existe; el sistema intentará reasignarlo al sincronizar.');
+                    }, 'Ese N° muestra ya existe. El dato se conserva sin renumerarlo automáticamente.');
                     return;
                 }
                 mostrarToast(
@@ -9944,26 +10139,12 @@ const META_SAVE_IDS = [
                 item.metric[metricModalState.kind][input.getAttribute('data-metric')] = input.value;
             });
             if (metricModalState.kind === 'tiempo') {
-                const llegada = String(item.metric?.tiempo?.llegadaAcopio || '').trim();
-                const despacho = String(item.metric?.tiempo?.despachoAcopio || '').trim();
-                const acopioCalibrado = String(item.metric?.tiempo?.acopioCalibrado || '').trim();
-                const terminoCalibrado = String(item.metric?.tiempo?.terminoCalibrado || '').trim();
-                if (llegada || despacho || acopioCalibrado || terminoCalibrado) {
-                    const clave = String(item.ensayo || 'Ensayo 1');
-                    data.forEach((it) => {
-                        if (String(it.ensayo || 'Ensayo 1') !== clave) return;
-                        it.metric = it.metric || metricaVacia();
-                        it.metric.tiempo = it.metric.tiempo || {};
-                        if (llegada) it.metric.tiempo.llegadaAcopio = llegada;
-                        if (despacho) it.metric.tiempo.despachoAcopio = despacho;
-                        if (acopioCalibrado) it.metric.tiempo.acopioCalibrado = acopioCalibrado;
-                        if (terminoCalibrado) it.metric.tiempo.terminoCalibrado = terminoCalibrado;
-                    });
-                }
+                propagarMetricaCompartidaEnsayo_(item, 'tiempo');
                 sincronizarTiempoPorJarra(item.ensayo || 'Ensayo 1');
             }
             if (metricModalState.kind === 'temperatura' || metricModalState.kind === 'humedad') {
-                recalcularPresionesParaTodos();
+                propagarMetricaCompartidaEnsayo_(item, metricModalState.kind);
+                recalcularPresionesParaEnsayo(item.ensayo || 'Ensayo 1');
             }
             cerrarModalMetrica();
             renderizarTarjetas();
@@ -9993,13 +10174,20 @@ const META_SAVE_IDS = [
             cerrarAlertaModoOfflineSiAbierta();
             actualizarHeaderConexionUI();
             purgarCacheNumMuestraLocalStorage();
-            void refrescarEstadoServidorOperativo(true).then((ok) => {
+            const revalidarTrasLimpieza = debeRevalidarNumTrasLimpieza_();
+            if (revalidarTrasLimpieza) prepararRevalidacionNumMuestraTrasLimpieza_();
+            void refrescarEstadoServidorOperativo(true, {
+                reposicionarPrimera: revalidarTrasLimpieza ? false : undefined,
+                invalidarFijados: revalidarTrasLimpieza ? true : undefined,
+                avisar: true
+            }).then((ok) => {
+                if (ok && revalidarTrasLimpieza) marcarNumRevalidarTrasLimpieza_(false);
                 if (ok && ultimaRespuestaEstadoServidor) {
-                    const preservar = debePreservarBorradorCampoEnSync_();
+                    const preservar = !revalidarTrasLimpieza && debePreservarBorradorCampoEnSync_();
                     propagarCambiosPlanillaServidorALaPantalla(ultimaRespuestaEstadoServidor, {
                         forzarUi: true,
                         invalidarFijados: !preservar,
-                        reposicionarPrimera: !preservar,
+                        reposicionarPrimera: revalidarTrasLimpieza ? false : !preservar,
                         avisar: true
                     });
                 }
@@ -10159,6 +10347,8 @@ const META_SAVE_IDS = [
 
         async function arranqueServidorCampoTrasBorrador_(borradorActivoInicial) {
             let borradorActivo = campoInicioLimpioNuevoDia_ ? false : !!borradorActivoInicial;
+            const revalidarTrasLimpieza = debeRevalidarNumTrasLimpieza_();
+            if (revalidarTrasLimpieza) prepararRevalidacionNumMuestraTrasLimpieza_();
             if (!borradorActivo && !campoInicioLimpioNuevoDia_) {
                 const res = await cargarMejorBorradorCampoAsync_({ silencioso: true, repintar: true });
                 borradorActivo = res.aplicado;
@@ -10179,8 +10369,14 @@ const META_SAVE_IDS = [
             }
             setNumMuestraCargando(true);
             try {
-                await refrescarEstadoServidorOperativo(true);
-                const preservarBorrador = !campoInicioLimpioNuevoDia_
+                const numeracionOk = await refrescarEstadoServidorOperativo(true, {
+                    reposicionarPrimera: revalidarTrasLimpieza ? false : undefined,
+                    invalidarFijados: revalidarTrasLimpieza ? true : undefined,
+                    avisar: false
+                });
+                if (numeracionOk && revalidarTrasLimpieza) marcarNumRevalidarTrasLimpieza_(false);
+                const preservarBorrador = !revalidarTrasLimpieza
+                    && !campoInicioLimpioNuevoDia_
                     && (borradorActivo || debePreservarBorradorCampoEnSync_());
                 if (campoInicioLimpioNuevoDia_) {
                     reposicionarPantallaPrimeraMuestraLibre('nuevoDia');

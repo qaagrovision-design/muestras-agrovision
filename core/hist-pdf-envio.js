@@ -133,7 +133,30 @@
         return guardarCampoDesdeDatos(datos, ensayos, fechaIso, opts);
     }
 
+    async function guardarPackingDesdeDatos(datos, fechaIso, opts) {
+        opts = opts || {};
+        if (!window.HistPdfStore || typeof window.generarPdfPackingBlob !== 'function') return false;
+        if (!datos?.muestras?.length) return false;
+        const modulo = String(opts?.modulo || window.PACKING_MODULO_ID || 'packing').trim().toLowerCase();
+        const fecha = window.HistPdfStore.normalizarFecha(fechaIso);
+        const ensayo_numero = String(opts.ensayo_numero || '').trim();
+        const num_muestra = String(opts.num_muestra || '').trim().toUpperCase();
+        if (!ensayo_numero || !num_muestra) return false;
+        const meta = { fecha, ensayo_numero, num_muestra, modulo };
+        return conReintentosEnvio_('packing ' + num_muestra, async () => {
+            const blob = await window.generarPdfPackingBlob(datos);
+            const nombre = typeof window.nombreArchivoPdfPacking === 'function'
+                ? window.nombreArchivoPdfPacking(datos)
+                : 'packing.pdf';
+            return guardarBlobVerificado_(blob, nombre, meta);
+        });
+    }
+
     async function guardarPacking(capturas, fechaIso, opts) {
+        opts = opts || {};
+        if (opts.datos?.muestras?.length) {
+            return guardarPackingDesdeDatos(opts.datos, fechaIso, opts);
+        }
         if (!window.HistPdfStore || typeof window.generarPdfPackingBlob !== 'function') return false;
         if (typeof window.obtenerDatosPdfPackingParaCapturas !== 'function') return false;
         const lista = (Array.isArray(capturas) ? capturas : []).filter((c) => c && c.estado);
@@ -219,6 +242,7 @@
         guardarCampo,
         guardarCampoDesdeDatos,
         guardarPacking,
+        guardarPackingDesdeDatos,
         guardarTk20,
         guardarMptk,
         numMuestraDesdeFilasPost_,

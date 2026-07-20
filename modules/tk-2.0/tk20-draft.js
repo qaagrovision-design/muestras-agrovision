@@ -358,11 +358,6 @@
         setTimeout(() => { omitirAutoguardado = false; }, 400);
     }
 
-    function limpiarTodo() {
-        try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch (_) { /* ignore */ }
-        ultimaClaveActiva = '';
-    }
-
     function muestrasConBorradorEnFecha(fecha) {
         const f = String(fecha || '').trim();
         if (!f) return [];
@@ -452,7 +447,6 @@
         limpiarBorradorMuestraActiva,
         limpiarTrasEnvioLocal,
         persistirSoloLocal,
-        limpiarTodo,
         purgarBorradoresOtrosDias: purgarBorradoresTk20OtrosDias_,
         muestrasConBorradorEnFecha,
         notificarCambio,

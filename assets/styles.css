@@ -6529,6 +6529,12 @@
             border-color: #d8e3ee;
         }
 
+        #packing-hora-row.packing-cabecera--falta:not(.is-disabled) .packing-hora-inicio-inp,
+        #packing-hora-row.packing-cabecera--falta:not(.is-disabled) .packing-responsable-inp {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+        }
+
         #mptk-hora-row.is-disabled .packing-responsable-inp {
             opacity: 0.55;
             cursor: not-allowed;

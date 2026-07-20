@@ -4,18 +4,14 @@
 (function mptkPdfModule() {
     const LOGO_URL = '../../assets/images/log.png';
 
-    function profundidadDesdeRaizProyectoMptkPdf_() {
-        const path = String(window.location.pathname || '').replace(/\\/g, '/');
-        const segments = path.split('/').filter(Boolean);
-        if (!segments.length) return 0;
-        const last = segments[segments.length - 1];
-        return /\.html?$/i.test(last) ? segments.length - 1 : segments.length;
-    }
-
     function baseRaizMptkPdf_() {
-        const depth = profundidadDesdeRaizProyectoMptkPdf_();
-        if (depth <= 0) return './assets/';
-        return '../'.repeat(depth) + 'assets/';
+        try {
+            const manifestSrc = document.querySelector('link[rel="manifest"]')?.href;
+            if (manifestSrc) return new URL('./', manifestSrc).href;
+            return new URL('../../assets/', document.baseURI || window.location.href).href;
+        } catch (_) {
+            return '../../assets/';
+        }
     }
 
     function urlMptkPdfDesdeRaiz_(rel) {

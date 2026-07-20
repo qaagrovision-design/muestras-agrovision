@@ -2,19 +2,14 @@
  * PDF Agrovision (Campo) — Hoja 1 igual al formulario físico PE-F-QPH-306.
  */
 (function campoPdfModule() {
-    /** Raíz assets del proyecto según profundidad de la URL (modules/campo/, etc.). */
-    function profundidadDesdeRaizProyectoCampoPdf_() {
-        const path = String(window.location.pathname || '').replace(/\\/g, '/');
-        const segments = path.split('/').filter(Boolean);
-        if (!segments.length) return 0;
-        const last = segments[segments.length - 1];
-        return /\.html?$/i.test(last) ? segments.length - 1 : segments.length;
-    }
-
     function baseRaizCampoPdf_() {
-        const depth = profundidadDesdeRaizProyectoCampoPdf_();
-        if (depth <= 0) return './assets/';
-        return '../'.repeat(depth) + 'assets/';
+        try {
+            const manifestSrc = document.querySelector('link[rel="manifest"]')?.href;
+            if (manifestSrc) return new URL('./', manifestSrc).href;
+            return new URL('../../assets/', document.baseURI || window.location.href).href;
+        } catch (_) {
+            return '../../assets/';
+        }
     }
 
     function urlCampoPdfDesdeRaiz_(rel) {

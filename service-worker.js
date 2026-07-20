@@ -98,6 +98,12 @@ const APP_SHELL = [
     './modules/recomendaciones/index.html'
 ];
 
+/**
+ * Todo archivo real del shell es obligatorio. Las rutas terminadas en "/"
+ * son alias de navegación y tienen fallback a su index.html ya obligatorio.
+ */
+const OFFLINE_APP_CRITICAL = APP_SHELL.filter((url) => !url.endsWith('/'));
+
 const SHELL_BY_SECTION = [
     { test: /\/packing-rc5(\/|$)|\/packingRC5(\/|$)/i, url: './modules/packing-rc5/index.html' },
     { test: /\/packing(\/|$)/i, url: './modules/packing/index.html' },
@@ -124,23 +130,42 @@ async function cacheAddAllResiliente(cache, urls) {
     );
 }
 
+async function prepararCacheOfflineCompleto(cache) {
+    // Si falla un archivo crítico, abortar esta instalación. El navegador
+    // conserva el Service Worker y la caché funcionales de la versión anterior.
+    await Promise.all(
+        OFFLINE_APP_CRITICAL.map((url) =>
+            cache.add(new Request(url, { cache: 'reload' }))
+        )
+    );
+    const criticalSet = new Set(OFFLINE_APP_CRITICAL);
+    await cacheAddAllResiliente(cache, APP_SHELL.filter((url) => !criticalSet.has(url)));
+}
+
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(STATIC_CACHE)
-            .then((cache) => cacheAddAllResiliente(cache, APP_SHELL))
+            .then((cache) => prepararCacheOfflineCompleto(cache))
             .then(() => self.skipWaiting())
     );
 });
 
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(
-                keys
-                    .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
-                    .map((key) => caches.delete(key))
-            )
-        ).then(() => self.clients.claim())
+        caches.open(STATIC_CACHE).then(async (cache) => {
+            const checks = await Promise.all(
+                OFFLINE_APP_CRITICAL.map((url) => cache.match(url))
+            );
+            const cacheNuevaCompleta = checks.every(Boolean);
+            if (cacheNuevaCompleta) {
+                const keys = await caches.keys();
+                await Promise.all(
+                    keys
+                        .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
+                        .map((key) => caches.delete(key))
+                );
+            }
+        }).then(() => self.clients.claim())
     );
 });
 
@@ -241,16 +266,15 @@ function revalidarEnSegundoPlano(req, event) {
     );
 }
 
-/** Online: red con tope corto, luego caché. Offline: caché primero (sin esperar fallo de red). */
+/** Arranque tipo APK: caché inmediata; con red se revalida sin bloquear la interfaz. */
 async function respondNavigate(req, event) {
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    if (offline) {
-        const cachedOff = await offlineNavigateFallback(req);
-        if (cachedOff) return cachedOff;
-        const home = await caches.match('./index.html');
-        if (home) return home;
-        return Response.error();
+    const cached = await offlineNavigateFallback(req);
+    if (cached) {
+        if (!offline) revalidarEnSegundoPlano(req, event);
+        return cached;
     }
+    if (offline) return Response.error();
 
     try {
         const res = await Promise.race([
@@ -263,8 +287,6 @@ async function respondNavigate(req, event) {
         }
     } catch (_) { /* sin red / timeout */ }
 
-    const cached = await offlineNavigateFallback(req);
-    if (cached) return cached;
     return caches.match('./index.html');
 }
 
@@ -290,6 +312,13 @@ async function respondAsset(req, event) {
 self.addEventListener('fetch', (event) => {
     const req = event.request;
     if (req.method !== 'GET') return;
+    const url = new URL(req.url);
+
+    // Las llamadas JSONP/API deben ir directamente a Apps Script. No convertir
+    // sus 404, redirecciones o fallos de red en respuestas del caché de la PWA.
+    if (url.hostname === 'script.google.com' || url.hostname.endsWith('.googleusercontent.com')) {
+        return;
+    }
 
     if (req.mode === 'navigate') {
         event.respondWith(respondNavigate(req, event));

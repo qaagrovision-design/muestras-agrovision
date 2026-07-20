@@ -1,13 +1,18 @@
 /* script.js - bootstrap PWA, actualización controlada y reconexión */
 (function bootstrapPwaAndSync() {
     let actualizacionAppEnCurso = false;
+    const APP_ROOT_URL = (() => {
+        try {
+            const scriptSrc = document.currentScript?.src;
+            if (scriptSrc) return new URL('../', scriptSrc).href;
+            const manifestSrc = document.querySelector('link[rel="manifest"]')?.href;
+            if (manifestSrc) return new URL('../', manifestSrc).href;
+        } catch (_) { /* fallback abajo */ }
+        return new URL('./', window.location.href).href;
+    })();
 
     function prefijoRaizApp() {
-        const segs = String(window.location.pathname || '/').split('/').filter(Boolean);
-        const depth = segs.length > 0 && /\.html?$/i.test(segs[segs.length - 1])
-            ? segs.length - 1
-            : segs.length;
-        return depth <= 0 ? './' : '../'.repeat(depth);
+        return APP_ROOT_URL;
     }
 
     function rutasPwaDesdePagina() {
@@ -17,100 +22,6 @@
             scope: root,
             root
         };
-    }
-
-    const MODULOS_PRECARGA = [
-        'modules/',
-        'modules/campo/',
-        'modules/packing/',
-        'modules/mp-tk/',
-        'modules/tk-2.0/',
-        'modules/acopio/',
-        'modules/historial/',
-        'modules/recomendaciones/',
-        'index.html',
-        'modules/index.html',
-        'modules/campo/index.html',
-        'modules/packing/index.html',
-        'modules/mp-tk/index.html',
-        'modules/mp-tk/thermoking.js',
-        'modules/mp-tk/mptk-ui.js',
-        'modules/tk-2.0/index.html',
-        'modules/tk-2.0/tk20-formato.js',
-        'modules/tk-2.0/tk20-header.js',
-        'modules/tk-2.0/tk20-draft.js',
-        'modules/tk-2.0/tk20-swal.js',
-        'modules/tk-2.0/tk20-sync.js',
-        'modules/tk-2.0/tk20-pdf.js',
-        'modules/tk-2.0/tk20-fab.js',
-        'modules/tk-2.0/tk20-presion.js',
-        'core/presion-vapor.js',
-        'core/nav-persist-draft.js',
-        'core/fecha-operativa.js',
-        'modules/tk-2.0/tk20-fields.js',
-        'modules/tk-2.0/tk20-pesos-config.js',
-        'modules/tk-2.0/tk20-body.js',
-        'modules/tk-2.0/tk20-modals.js',
-        'modules/tk-2.0/tk20-control.js',
-        'modules/tk-2.0/tk20-envio.js',
-        'modules/tk-2.0/tk20-transporte.js',
-        'modules/mp-tk/mptk-formato.js',
-        'modules/acopio/index.html',
-        'modules/historial/index.html',
-        'modules/recomendaciones/index.html',
-        'assets/styles.css',
-        'core/api-config.js',
-        'core/mensajes-usuario.js',
-        'core/fundo-flujo-tk20.js',
-        'core/flujo-bienvenida.css',
-        'core/flujo-bienvenida.js',
-        'core/pdf-nombre.js',
-        'core/pdf-preview-live.js',
-        'modules/campo/campo-pdf.js',
-        'core/hist-pdf-store.js',
-        'core/hist-pdf-envio.js',
-        'assets/librerias/jspdf.umd.min.js',
-        'assets/librerias/pdf.min.js',
-        'assets/librerias/pdf.worker.min.js',
-        'core/network.js',
-        'core/script.js',
-        'core/catalogo-json.js',
-        'core/mapeo-parcelas-data.js',
-        'assets/data/catalogo-app.json',
-        'core/time-picker.js',
-        'modules/packing/packing.js',
-        'assets/librerias/lucide.min.js',
-        'assets/librerias/sweetalert2.all.min.js',
-        'assets/librerias/flatpickr.min.js',
-        'assets/librerias/flatpickr.min.css',
-        'assets/librerias/flatpickr-l10n-es.js',
-        'assets/images/QA2026-2.0.png',
-        'core/icono-app.js',
-        'assets/images/log.png'
-    ];
-
-    /** Precarga todas las pestañas y sus archivos (una vez con internet basta para siempre offline). */
-    async function precalentarNavegacionModulos(root) {
-        const base = root || prefijoRaizApp();
-        const urls = MODULOS_PRECARGA.map((rel) => {
-            try {
-                return new URL(base + rel, window.location.href).href;
-            } catch (_) {
-                return '';
-            }
-        }).filter(Boolean);
-
-        if (!navigator.onLine) return;
-
-        await Promise.allSettled(
-            urls.map((u) => {
-                const init = {};
-                if (window.NetworkSync?.fetchConTope) {
-                    return window.NetworkSync.fetchConTope(u, init, 3500).catch(() => undefined);
-                }
-                return fetch(u).catch(() => undefined);
-            })
-        );
     }
 
     function cerrarMenusFabSiExisten() {
@@ -398,7 +309,6 @@
             scope: scopeUrl,
             updateViaCache: 'none'
         });
-        void precalentarNavegacionModulos(rutas.root);
     }
 
     function prefijoModulosDesdePagina_() {
@@ -428,15 +338,12 @@
             limpiarParametroRefreshEnUrl();
             try {
                 await registrarPwaGlobal();
-            } catch (_) {
-                void precalentarNavegacionModulos();
-            }
+            } catch (_) { /* la versión activa continúa funcionando */ }
         });
     } else {
         window.addEventListener('load', () => {
             resolverHrefCampoNav();
             limpiarParametroRefreshEnUrl();
-            void precalentarNavegacionModulos();
         });
     }
 

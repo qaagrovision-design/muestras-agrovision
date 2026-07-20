@@ -32,14 +32,33 @@
 
     async function guardarBorradorCampoIdb(payload) {
         if (!window.indexedDB || payload == null) return false;
-        const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
-        const db = await abrirDb();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE, 'readwrite');
-            tx.objectStore(STORE).put({ id: draftIdbKey_(), json, ts: Date.now() });
-            tx.oncomplete = () => resolve(true);
-            tx.onerror = () => reject(tx.error);
-        });
+        try {
+            const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+            const db = await abrirDb();
+            return await new Promise((resolve) => {
+                let terminado = false;
+                const finalizar = (ok) => {
+                    if (terminado) return;
+                    terminado = true;
+                    try { db.close(); } catch (_) { /* ignore */ }
+                    resolve(ok);
+                };
+                let tx;
+                try {
+                    tx = db.transaction(STORE, 'readwrite');
+                    tx.objectStore(STORE).put({ id: draftIdbKey_(), json, ts: Date.now() });
+                } catch (_) {
+                    finalizar(false);
+                    return;
+                }
+                tx.oncomplete = () => finalizar(true);
+                tx.onerror = () => finalizar(false);
+                tx.onabort = () => finalizar(false);
+            });
+        } catch (_) {
+            // localStorage sigue siendo el respaldo principal; IndexedDB es redundancia.
+            return false;
+        }
     }
 
     async function leerBorradorCampoIdb() {

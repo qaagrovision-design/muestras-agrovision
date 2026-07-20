@@ -1675,15 +1675,15 @@
         establecerMenuFlotanteMptk(false);
         const confirmado = await confirmarSwalMptk_({
             icon: 'warning',
-            title: 'Eliminar borradores MP-TK',
+            title: 'Limpiar datos de captura',
             html: '<p style="margin:0 0 8px;font-size:14px;line-height:1.45;">'
-                + 'Se borrarán borradores locales de MP-TK, tiempos, pesos, control y pendientes Thermo-King en cola.'
+                + 'Se vaciarán los inputs, tiempos, pesos, control y borrador de la muestra activa en MP-TK.'
                 + '</p>'
                 + '<p style="margin:0;font-size:13px;color:#64748b;line-height:1.4;">'
-                + 'La app se recargará. Responsable y hora salida frío quedarán vacíos para capturar de nuevo.'
+                + 'Pendientes, otras muestras, historial, PDFs, caché y funcionamiento offline se conservarán.'
                 + '</p>',
             showCancelButton: true,
-            confirmButtonText: 'Sí, borrar',
+            confirmButtonText: 'Sí, limpiar inputs',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#D92D20',
             allowOutsideClick: false
@@ -1693,22 +1693,14 @@
         omitirAutoguardado = true;
         if (draftSaveTimer) clearTimeout(draftSaveTimer);
 
-        try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch (_) { /* ignore */ }
-        try { localStorage.removeItem(CHIPS_COLLAPSED_KEY); } catch (_) { /* ignore */ }
-        try {
-            const queue = cargarColaSync().filter((r) => !esRegistroColaTk(r));
-            guardarColaSync(queue);
-        } catch (_) { /* ignore */ }
+        try { limpiarBorradorMuestraActiva_(); } catch (_) { /* ignore */ }
 
-        lastDetalleTk = null;
         tkYaEnServidor = false;
         limpiarUiCapturaMuestraMptk_();
         limpiarPreview();
         actualizarHeaderPendientes();
-        mostrarToastTk('success', 'Limpieza completa', 'Recargando MP-TK…');
-        setTimeout(() => {
-            try { window.location.reload(); } catch (_) { /* ignore */ }
-        }, 450);
+        omitirAutoguardado = false;
+        mostrarToastTk('success', 'Inputs limpios', 'La app offline, pendientes, historial y PDFs se conservaron.');
     }
 
     function minutosDesdeHoraMptk_(hora) {

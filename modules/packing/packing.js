@@ -91,20 +91,23 @@
         return String(elResponsable?.value || '').trim();
     }
 
+    /** Solo demo FAB: no rellena hora en captura real (la pone el usuario). */
     function initHoraInicio(refrescar) {
-        if (!elHoraInicio) return;
-        if (refrescar) elHoraInicio.value = horaLocalAhora();
+        if (!elHoraInicio || !refrescar) return;
+        elHoraInicio.value = horaLocalAhora();
+        elHoraInicio.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    function asegurarHoraInicioAlEnfocarPacking_() {
-        if (!elHoraInicio || elHoraInicio.dataset.pkHoraFocusBound === '1') return;
-        elHoraInicio.dataset.pkHoraFocusBound = '1';
-        elHoraInicio.addEventListener('focus', () => {
-            if (!String(elHoraInicio.value || '').trim()) {
-                elHoraInicio.value = horaLocalAhora();
-                programarGuardadoBorradorPacking();
-            }
-        });
+    /** Validación en vivo cabecera: hora y responsable (sin autocompletar). */
+    function validarCabeceraPackingEnVivo_() {
+        if (!muestraSeleccionada()) return;
+        const horaOk = esHoraHhMmValidaPacking_(getHoraPersonal());
+        const respOk = !!String(getResponsablePacking() || '').trim();
+        if (elHoraInicio) elHoraInicio.classList.toggle('is-filled', horaOk);
+        if (elResponsable) elResponsable.classList.toggle('is-filled', respOk);
+        if (elHoraRow && !elHoraRow.classList.contains('is-disabled')) {
+            elHoraRow.classList.toggle('packing-cabecera--falta', !horaOk || !respOk);
+        }
     }
 
     function ensayoSeleccionado() {
@@ -447,15 +450,20 @@
     }
 
     function tiemposObjetoDesdeEstadoPacking_(estado) {
-        const arr = Array.isArray(estado?.tiempos) ? estado.tiempos : [];
+        const arr = normalizarTiemposArrayPacking_(estado?.tiempos);
         return {
             horaInicio: String(estado?.horaInicio || '').trim(),
-            recepcion: String(arr[0] || '').trim(),
-            ingresoGas: String(arr[1] || '').trim(),
-            salidaGas: String(arr[2] || '').trim(),
-            ingresoPre: String(arr[3] || '').trim(),
-            salidaPre: String(arr[4] || '').trim()
+            recepcion: arr[0] || '',
+            ingresoGas: arr[1] || '',
+            salidaGas: arr[2] || '',
+            ingresoPre: arr[3] || '',
+            salidaPre: arr[4] || ''
         };
+    }
+
+    /** Tiempos + hora cabecera leídos del DOM (validación/envío en pantalla). */
+    function tiemposCapturaPackingEnPantalla_() {
+        return obtenerTiemposDesdeModalPacking();
     }
 
     function recogerCandidatosMuestrasPackingDelDia_(fechaIso) {
@@ -1376,7 +1384,7 @@
         const cuota = validarCuotaClamshellsDesdeEstado_(estado, quotaSnap);
         if (!cuota.ok) errores.push(cuota.error);
 
-        if (!String(estado?.horaInicio || '').trim()) {
+        if (!esHoraHhMmValidaPacking_(String(estado?.horaInicio || '').trim())) {
             errores.push(msgErrorGlobalPacking('Cabecera', 'Completa Hora inicio recepción.'));
         }
         if (!String(estado?.responsable || '').trim()) {
@@ -1404,6 +1412,37 @@
         });
 
         return { ok: errores.length === 0, errores };
+    }
+
+    function etiquetaCortaMuestraPacking_(item, cap) {
+        const ensayo = item?.ensayo_numero || cap?.ensayo_numero || '';
+        if (ensayo) return 'Muestra ' + ensayo;
+        return String(item?.etiqueta || cap?.num_muestra || 'Muestra').trim() || 'Muestra';
+    }
+
+    function textoAmigableErrorPacking_(texto) {
+        const t = String(texto || '').trim();
+        if (/Completa Hora inicio recepci/i.test(t)) return 'Falta llenar hora recepción';
+        if (/Completa Responsable/i.test(t)) return 'Falta llenar responsable';
+        return t.replace(/^(Cabecera|Global)\s·\s/, '');
+    }
+
+    function prefijarErroresMuestraPacking_(etiquetaMuestra, errores) {
+        const pref = String(etiquetaMuestra || 'Muestra').trim();
+        return (Array.isArray(errores) ? errores : []).map((e) => pref + ' · ' + textoAmigableErrorPacking_(e));
+    }
+
+    function validarCapturasAntesEnvioLotePacking_(capturas) {
+        const todosErrores = [];
+        (capturas || []).forEach(({ item, cap }) => {
+            if (!cap?.estado) return;
+            const etiqueta = etiquetaCortaMuestraPacking_(item, cap);
+            const val = validarCompletitudPackingParaEnvioDesdeEstado_(cap.estado, cap.quotaSnap);
+            if (!val.ok) {
+                prefijarErroresMuestraPacking_(etiqueta, val.errores).forEach((e) => todosErrores.push(e));
+            }
+        });
+        return { ok: todosErrores.length === 0, errores: todosErrores };
     }
 
     function muestraPackingEstadoCompleto_(estado, quotaSnap) {
@@ -2389,6 +2428,7 @@
             const onTiempoInput = () => {
                 actualizarContadoresTiempo();
                 validarTiemposModalEnVivo();
+                validarCabeceraPackingEnVivo_();
                 programarGuardadoBorradorPacking();
                 notificarPdfVivoPacking_();
             };
@@ -2731,6 +2771,7 @@
             return;
         }
         actualizarContadoresTiempo();
+        validarCabeceraPackingEnVivo_();
         tiemposModalBackup = getTiemposMuestra();
         cerrarTiemposMuestra(false);
         mostrarToastPacking('success', 'Tiempos guardados', 'Los tiempos quedaron listos para enviar.');
@@ -2800,8 +2841,10 @@
             cerrarModalPresionPacking();
             cerrarModalObservacionPacking();
             cerrarModalViajePacking();
+            if (elHoraRow) elHoraRow.classList.remove('packing-cabecera--falta');
         } else {
             ensureCardPorDefectoPacking();
+            validarCabeceraPackingEnVivo_();
         }
         if (habilitada) crearIconosPacking();
         actualizarFabRestanteBadge();
@@ -3205,6 +3248,7 @@
         actualizarContadoresTiempo();
         actualizarContadoresPresionPacking();
         actualizarFabRestanteBadge();
+        validarCabeceraPackingEnVivo_();
         if (estado.flujoTk20 === true) {
             setFlujoTk20ActivoPacking_(true, leerDetalleMetaPacking_(elMuestra?.value), {
                 silencioso: true,
@@ -3594,6 +3638,7 @@
 
     function validarCompletitudPackingParaEnvio() {
         recalcularPresionesPacking();
+        persistirModalesAbiertasPacking_();
         const errores = [];
 
         const cuota = validarCuotaClamshellsRegistroPacking();
@@ -3606,17 +3651,16 @@
             if (msgFlujo) errores.push(msgFlujo);
         }
 
-        if (!String(getHoraPersonal() || '').trim()) {
+        const tiemposPantalla = tiemposCapturaPackingEnPantalla_();
+        if (!esHoraHhMmValidaPacking_(tiemposPantalla.horaInicio)) {
             errores.push(msgErrorGlobalPacking('Cabecera', 'Completa Hora inicio recepción.'));
         }
         if (!String(getResponsablePacking() || '').trim()) {
             errores.push(msgErrorGlobalPacking('Cabecera', 'Completa Responsable.'));
         }
 
-        // Enviar progresivo: solo coherencia entre lo capturado (sin pares obligatorios).
-        validarSecuenciaTiemposPacking(
-            tiemposObjetoDesdeEstadoPacking_(capturarEstadoMuestraPacking())
-        ).forEach((e) => {
+        // Enviar progresivo: coherencia entre lo capturado (lee DOM en tiempo real).
+        validarSecuenciaTiemposPacking(tiemposPantalla).forEach((e) => {
             errores.push(msgErrorTiemposPacking(e));
         });
 
@@ -3998,6 +4042,7 @@
     }
 
     function getMetaEnvioPacking() {
+        persistirModalesAbiertasPacking_();
         const sel = ensayoSeleccionado();
         const hora = getHoraPersonal();
         const responsable = getResponsablePacking();
@@ -4089,25 +4134,6 @@
         } catch (_) { /* ignore */ }
     }
 
-    function colaSinRegistrosModuloActual_(queue) {
-        return (Array.isArray(queue) ? queue : []).filter((r) => !esRegistroColaPacking(r));
-    }
-
-    function limpiarColaSyncModuloActual_() {
-        guardarColaSyncPacking(colaSinRegistrosModuloActual_(cargarColaSyncPacking()));
-    }
-
-    function limpiarHistorialSyncModuloActual_() {
-        try {
-            const raw = localStorage.getItem(SYNC_HISTORY_KEY);
-            const arr = raw ? JSON.parse(raw) : [];
-            const hist = Array.isArray(arr) ? arr : [];
-            const mod = packingModuloId_();
-            const kept = hist.filter((h) => String(h?.modo || '').toLowerCase() !== mod);
-            localStorage.setItem(SYNC_HISTORY_KEY, JSON.stringify(kept));
-        } catch (_) { /* ignore */ }
-    }
-
     function esRegistroColaPacking(reg) {
         const modo = String(reg?.modo || reg?.payload?.mode || '').toLowerCase();
         return modo === packingModuloId_();
@@ -4125,7 +4151,7 @@
         });
     }
 
-    function encolarPackingPendiente(payload) {
+    function encolarPackingPendiente(payload, pdfOpts) {
         const body = payload || getMetaEnvioPacking();
         const f = String(body.fecha || '').trim();
         const en = String(body.ensayo_numero || '').trim();
@@ -4145,14 +4171,90 @@
             intentos: 0,
             creado_en: Date.now(),
             actualizado_en: Date.now(),
-            error: ''
+            error: '',
+            pdf_local_ok: false,
+            pdf_datos: null,
+            pdf_captura: null
         };
+        if (pdfOpts?.captura?.estado) {
+            reg.pdf_captura = pdfOpts.captura;
+        }
+        if (pdfOpts?.datos?.muestras?.length) {
+            reg.pdf_datos = pdfOpts.datos;
+        }
         const queue = cargarColaSyncPacking();
         queue.push(reg);
         guardarColaSyncPacking(queue);
         pushEstadoSyncPacking(reg);
         actualizarHeaderPendientes();
         return reg;
+    }
+
+    function actualizarRegistroColaPacking_(uid, parches) {
+        const id = String(uid || '').trim();
+        if (!id) return false;
+        const queue = cargarColaSyncPacking();
+        const idx = queue.findIndex((q) => String(q?.uid || '') === id);
+        if (idx < 0) return false;
+        Object.assign(queue[idx], parches || {});
+        queue[idx].actualizado_en = Date.now();
+        guardarColaSyncPacking(queue);
+        return true;
+    }
+
+    async function asegurarPdfPackingHistorialTrasEnvio_(capturas, fechaIso, extras) {
+        extras = extras || {};
+        const ok = await guardarPdfPackingHistorialTrasEnvio_(capturas, fechaIso, extras);
+        if (ok) return true;
+        return guardarPdfPackingHistorialTrasEnvio_(capturas, fechaIso, extras);
+    }
+
+    async function asegurarPdfPackingAlEncolar_(captura, fechaIso) {
+        if (!captura?.estado) return { pdfOk: false, datos: null };
+        let datos = null;
+        try {
+            if (typeof window.obtenerDatosPdfPackingParaCapturas === 'function') {
+                datos = window.obtenerDatosPdfPackingParaCapturas([captura]);
+            }
+        } catch (err) {
+            console.warn('[HistPDF] No se pudieron armar datos PDF packing al encolar:', err);
+        }
+        const extras = {
+            datos,
+            ensayo_numero: captura.ensayo_numero,
+            num_muestra: captura.num_muestra
+        };
+        const pdfOk = await asegurarPdfPackingHistorialTrasEnvio_([captura], fechaIso, extras);
+        return { pdfOk, datos };
+    }
+
+    async function encolarPackingConPdfLocal_(body, sel, cards) {
+        const rawMuestra = (sel.num_muestra && sel.ensayo_numero)
+            ? (sel.num_muestra + '|' + sel.ensayo_numero)
+            : (elMuestra?.value || '');
+        const fechaIso = normalizarFechaIso(elFecha?.value || body.fecha);
+        const captura = armarCapturaPdfPacking_(fechaIso, rawMuestra, sel, cards);
+        let datosPdf = null;
+        try {
+            if (typeof window.obtenerDatosPdfPackingParaCapturas === 'function') {
+                datosPdf = window.obtenerDatosPdfPackingParaCapturas([captura]);
+            }
+        } catch (err) {
+            console.warn('[HistPDF] Snapshot PDF packing al encolar:', err);
+        }
+        const encolado = encolarPackingPendiente(body, { captura, datos: datosPdf });
+        if (encolado?.duplicado) return { ok: false, duplicado: true };
+        if (!encolado) return { ok: false };
+        const { pdfOk, datos } = await asegurarPdfPackingAlEncolar_(captura, fechaIso);
+        actualizarRegistroColaPacking_(encolado.uid, {
+            pdf_local_ok: pdfOk,
+            pdf_datos: datos?.muestras?.length ? datos : (datosPdf || null),
+            pdf_captura: captura
+        });
+        if (!pdfOk) {
+            console.warn('[HistPDF] PDF packing no guardado al encolar; quedó captura en cola para reintento.');
+        }
+        return { ok: true, pdfOk, encolado };
     }
 
     let syncPackingEnCurso = false;
@@ -4230,19 +4332,40 @@
                                 reg.fecha, reg.ensayo_numero, reg.num_muestra, moduloPdfPk
                             );
                         }
-                        if (!yaHayPdfPk && rawMuestraSync) {
-                            const borradorSync = leerBorradorMuestraPacking_(reg.fecha, rawMuestraSync);
-                            const cardsSync = borradorSync?.packingCards;
-                            if (Array.isArray(cardsSync) && cardsSync.length) {
-                                await guardarPdfPackingHistorialTrasEnvio_(
-                                    [armarCapturaPdfPacking_(
-                                        reg.fecha,
-                                        rawMuestraSync,
-                                        { num_muestra: reg.num_muestra, ensayo_numero: reg.ensayo_numero },
-                                        cardsSync
-                                    )],
-                                    normalizarFechaIso(reg.fecha)
+                        if (!yaHayPdfPk) {
+                            if (reg.pdf_datos?.muestras?.length) {
+                                await asegurarPdfPackingHistorialTrasEnvio_([], reg.fecha, {
+                                    datos: reg.pdf_datos,
+                                    ensayo_numero: reg.ensayo_numero,
+                                    num_muestra: reg.num_muestra
+                                });
+                            } else if (reg.pdf_captura?.estado) {
+                                await asegurarPdfPackingHistorialTrasEnvio_(
+                                    [reg.pdf_captura],
+                                    normalizarFechaIso(reg.fecha),
+                                    {
+                                        ensayo_numero: reg.ensayo_numero,
+                                        num_muestra: reg.num_muestra
+                                    }
                                 );
+                            } else if (rawMuestraSync) {
+                                const borradorSync = leerBorradorMuestraPacking_(reg.fecha, rawMuestraSync);
+                                const cardsSync = borradorSync?.packingCards;
+                                if (Array.isArray(cardsSync) && cardsSync.length) {
+                                    await asegurarPdfPackingHistorialTrasEnvio_(
+                                        [armarCapturaPdfPacking_(
+                                            reg.fecha,
+                                            rawMuestraSync,
+                                            { num_muestra: reg.num_muestra, ensayo_numero: reg.ensayo_numero },
+                                            cardsSync
+                                        )],
+                                        normalizarFechaIso(reg.fecha),
+                                        {
+                                            ensayo_numero: reg.ensayo_numero,
+                                            num_muestra: reg.num_muestra
+                                        }
+                                    );
+                                }
                             }
                         }
                         if (typeof window.archivarEnvioLocalExitoso_ === 'function') {
@@ -4295,19 +4418,26 @@
         }
     }
 
-    async function guardarPdfPackingHistorialTrasEnvio_(capturas, fechaIso) {
+    async function guardarPdfPackingHistorialTrasEnvio_(capturas, fechaIso, extras) {
+        extras = extras || {};
         if (!window.HistPdfEnvio || typeof window.HistPdfEnvio.guardarPacking !== 'function') return false;
+        const opts = {
+            modulo: packingModuloId_(),
+            datos: extras.datos || null,
+            ensayo_numero: extras.ensayo_numero,
+            num_muestra: extras.num_muestra
+        };
         try {
-            const ok = await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() });
+            const ok = await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, opts);
             if (!ok) {
                 console.warn('[HistPDF] PDF packing no verificado tras envío; reintento…');
-                return !!(await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() }));
+                return !!(await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, opts));
             }
             return true;
         } catch (err) {
             console.warn('[HistPDF] No se pudo guardar PDF packing:', err);
             try {
-                return !!(await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, { modulo: packingModuloId_() }));
+                return !!(await window.HistPdfEnvio.guardarPacking(capturas, fechaIso, opts));
             } catch (err2) {
                 console.warn('[HistPDF] Reintento PDF packing falló:', err2);
                 return false;
@@ -4316,7 +4446,8 @@
     }
 
     function armarCapturaPdfPacking_(fecha, rawMuestra, sel, cards) {
-        const key = claveBorradorMuestraPacking(fecha, rawMuestra);
+        const fechaNorm = normalizarFechaIso(fecha);
+        const key = claveBorradorMuestraPacking(fechaNorm, rawMuestra);
         const borrador = key ? leerStoreBorradorPacking().porClave[key] : null;
         const raw = String(rawMuestra || '').trim();
         let estadoBase = borrador && hayDatosTrabajoMuestraPacking(borrador)
@@ -4332,11 +4463,17 @@
             };
         // Siempre relee #pk-tiempo-recepcion_rc5 (u homologo) para PDF / historial.
         estadoBase = enriquecerEstadoTiemposPacking_(estadoBase, raw);
+        if (!estadoBase.previewMeta || !String(estadoBase.previewMeta?.traz || '').trim()) {
+            const pm = capturarPreviewMetaPacking(raw);
+            if (pm) estadoBase.previewMeta = pm;
+        }
+        const detalleMeta = leerDetalleMetaPacking_(raw);
         return {
-            fecha: normalizarFechaIso(fecha),
+            fecha: fechaNorm,
             num_muestra: String(sel?.num_muestra || '').trim(),
             ensayo_numero: String(sel?.ensayo_numero || '').trim(),
             raw,
+            detalleMeta: detalleMeta || null,
             estado: estadoBase
         };
     }
@@ -4401,18 +4538,14 @@
         }
 
         if (!navigator.onLine) {
-            const encolado = encolarPackingPendiente(body);
-            if (encolado?.duplicado) {
+            const encolado = await encolarPackingConPdfLocal_(body, sel, cards);
+            if (encolado.duplicado) {
                 if (!opts.sinToast) {
                     mostrarToastPacking('info', 'Ya en cola', 'Este packing ya está pendiente de envío cuando vuelva internet.');
                 }
                 return false;
             }
-            if (encolado) {
-                await guardarPdfPackingHistorialTrasEnvio_(
-                    [armarCapturaPdfPacking_(elFecha?.value || '', rawMuestra, sel, cards)],
-                    normalizarFechaIso(elFecha?.value)
-                );
+            if (encolado.ok) {
                 limpiarTrasEnvioLocal_();
                 if (!opts.sinUi) {
                     setStatus('');
@@ -4420,9 +4553,11 @@
                 }
                 if (!opts.sinToast) {
                     mostrarToastPacking(
-                        'warning',
-                        'Sin internet',
-                        'Quedó en cola y se enviará a la planilla al volver la conexión.'
+                        encolado.pdfOk ? 'success' : 'warning',
+                        encolado.pdfOk ? 'Sin internet' : 'Sin internet · PDF pendiente',
+                        encolado.pdfOk
+                            ? 'Quedó en cola. PDF guardado en Historial; se enviará al volver la conexión.'
+                            : 'Quedó en cola para enviar. El PDF se guardará al sincronizar.'
                     );
                 }
                 return true;
@@ -4458,12 +4593,8 @@
                 actualizarFabRestanteBadge();
                 return true;
             }
-            const encolado = encolarPackingPendiente(body);
-            if (encolado && !encolado.duplicado) {
-                await guardarPdfPackingHistorialTrasEnvio_(
-                    [armarCapturaPdfPacking_(elFecha?.value || '', rawMuestra, sel, cards)],
-                    normalizarFechaIso(elFecha?.value)
-                );
+            const encolado = await encolarPackingConPdfLocal_(body, sel, cards);
+            if (encolado.ok && !encolado.duplicado) {
                 limpiarTrasEnvioLocal_();
             }
             if (!opts.sinToast) {
@@ -4479,18 +4610,16 @@
             }
             return true;
         } catch (err) {
-            const encolado = encolarPackingPendiente(body);
-            if (encolado && !encolado.duplicado) {
-                await guardarPdfPackingHistorialTrasEnvio_(
-                    [armarCapturaPdfPacking_(elFecha?.value || '', rawMuestra, sel, cards)],
-                    normalizarFechaIso(elFecha?.value)
-                );
+            const encolado = await encolarPackingConPdfLocal_(body, sel, cards);
+            if (encolado.ok && !encolado.duplicado) {
                 limpiarTrasEnvioLocal_();
                 if (!opts.sinToast) {
                     mostrarToastPacking(
-                        'warning',
+                        encolado.pdfOk ? 'warning' : 'warning',
                         'Conexión inestable',
-                        'Falló el envío directo; quedó en cola para reenviar con internet.'
+                        encolado.pdfOk
+                            ? 'Falló el envío directo; quedó en cola. PDF guardado en Historial.'
+                            : 'Falló el envío directo; quedó en cola para reenviar con internet.'
                     );
                 }
                 if (!opts.sinUi) {
@@ -4666,6 +4795,13 @@
             capturas.push({ item, cap });
         }
 
+        const preVal = validarCapturasAntesEnvioLotePacking_(capturas);
+        if (!preVal.ok) {
+            await mostrarErroresCompletitudPacking_(preVal.errores, 'Revisa antes de enviar');
+            await refrescarMuestraPackingActivaTrasLote_(rawActivo, ordenadasAsc);
+            return false;
+        }
+
         const okGas = await confirmarEnvioSinGasificadoPacking_(capturas.map((c) => c.cap.estado));
         if (!okGas) {
             await refrescarMuestraPackingActivaTrasLote_(rawActivo, ordenadasAsc);
@@ -4677,16 +4813,18 @@
         setButtonLoadingPacking(elBtnEnviarPacking, true, 'Enviando muestras...');
         let enviados = 0;
         try {
-            for (const { cap } of capturas) {
+            for (const { item, cap } of capturas) {
                 const ok = await enviarPackingDesdeCaptura_(cap, optsLote);
                 if (!ok) {
-                    if (enviados > 0) {
-                        mostrarToastPacking(
-                            'info',
-                            'Envío parcial',
-                            enviados + ' muestra(s) enviada(s); revisa la siguiente.'
-                        );
-                    }
+                    const etiqueta = etiquetaCortaMuestraPacking_(item, cap);
+                    const val = validarCompletitudPackingParaEnvioDesdeEstado_(cap.estado, cap.quotaSnap);
+                    const errs = val.ok
+                        ? [etiqueta + ' · No se pudo enviar. Revisa conexión o datos.']
+                        : prefijarErroresMuestraPacking_(etiqueta, val.errores);
+                    await mostrarErroresCompletitudPacking_(
+                        errs,
+                        enviados > 0 ? 'Envío parcial' : 'Revisa antes de enviar'
+                    );
                     await refrescarMuestraPackingActivaTrasLote_(rawActivo, ordenadasAsc);
                     return false;
                 }
@@ -4908,17 +5046,17 @@
         establecerMenuFlotantePacking(false);
         const confirmado = await confirmarSwalPacking_({
             icon: 'warning',
-            title: 'Eliminar todo local',
+            title: 'Limpiar datos de captura',
             html: '<p style="margin:0 0 8px;font-size:14px;line-height:1.45;">'
-                + 'Se borrará todo lo guardado en '
+                + 'Se vaciarán los inputs y el borrador de la muestra activa en '
                 + (PACKING_RC5_MODULE ? 'Packing RC5' : 'Packing')
-                + ': borradores, clamshells, tiempos, control, cola pendiente e historial local de este módulo.'
+                + '.'
                 + '</p>'
                 + '<p style="margin:0;font-size:13px;color:#64748b;line-height:1.4;">'
-                + 'La app se recargará. Los chips de trazabilidad pueden volver desde la planilla; responsable y hora de packing quedan vacíos para capturar de nuevo.'
+                + 'Pendientes, otras muestras, historial, PDFs, caché y funcionamiento offline se conservarán.'
                 + '</p>',
             showCancelButton: true,
-            confirmButtonText: 'Sí, borrar',
+            confirmButtonText: 'Sí, limpiar inputs',
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#D92D20',
             allowOutsideClick: false
@@ -4928,14 +5066,9 @@
         packingOmitirAutoguardado = true;
         clearTimeout(packingDraftSaveTimer);
 
-        try { localStorage.removeItem(PACKING_DRAFT_STORAGE_KEY); } catch (_) { /* ignore */ }
-        try { limpiarColaSyncModuloActual_(); } catch (_) { /* ignore */ }
-        try { limpiarHistorialSyncModuloActual_(); } catch (_) { /* ignore */ }
-        try { localStorage.removeItem(PACKING_CHIPS_COLLAPSED_KEY); } catch (_) { /* ignore */ }
         try {
-            if (window.HistPdfStore && typeof window.HistPdfStore.borrarPorModulo === 'function') {
-                await window.HistPdfStore.borrarPorModulo(packingModuloId_());
-            }
+            const keyActiva = claveBorradorMuestraPacking(elFecha?.value || '', elMuestra?.value || '');
+            borrarBorradorMuestraPacking(keyActiva);
         } catch (_) { /* ignore */ }
 
         packingCards = [];
@@ -4950,24 +5083,8 @@
         actualizarFabRestanteBadge();
         actualizarBtnEnviarPacking();
         actualizarHeaderPendientes();
-
-        try {
-            if (typeof caches !== 'undefined' && caches?.keys) {
-                const keys = await caches.keys();
-                await Promise.all(keys.map((k) => caches.delete(k)));
-            }
-            if (navigator.serviceWorker?.getRegistrations) {
-                const regs = await navigator.serviceWorker.getRegistrations();
-                await Promise.all(regs.map((r) => r.unregister()));
-            }
-        } catch (_) { /* ignore */ }
-
-        mostrarToastPacking('success', 'Limpieza completa', 'Recargando packing…');
-        setTimeout(() => {
-            try {
-                window.location.reload();
-            } catch (_) { /* ignore */ }
-        }, 450);
+        packingOmitirAutoguardado = false;
+        mostrarToastPacking('success', 'Inputs limpios', 'La app offline, pendientes, historial y PDFs se conservaron.');
     }
 
     function sumarMinutosHoraPacking(hora, minutosAgregar) {
@@ -6109,14 +6226,28 @@
     enlazarInputsTiemposPacking_();
 
     elHoraInicio?.addEventListener('change', () => {
+        validarCabeceraPackingEnVivo_();
         if (elTiemposModal?.style.display === 'flex' && !tiemposModalSoloLectura) {
             validarTiemposModalEnVivo();
         }
         programarGuardadoBorradorPacking();
+        actualizarBtnEnviarPacking();
     });
-    elHoraInicio?.addEventListener('input', programarGuardadoBorradorPacking);
-    elResponsable?.addEventListener('change', programarGuardadoBorradorPacking);
-    elResponsable?.addEventListener('input', programarGuardadoBorradorPacking);
+    elHoraInicio?.addEventListener('input', () => {
+        validarCabeceraPackingEnVivo_();
+        programarGuardadoBorradorPacking();
+        actualizarBtnEnviarPacking();
+    });
+    elResponsable?.addEventListener('change', () => {
+        validarCabeceraPackingEnVivo_();
+        programarGuardadoBorradorPacking();
+        actualizarBtnEnviarPacking();
+    });
+    elResponsable?.addEventListener('input', () => {
+        validarCabeceraPackingEnVivo_();
+        programarGuardadoBorradorPacking();
+        actualizarBtnEnviarPacking();
+    });
 
     elViajeInputPacking?.addEventListener('input', () => {
         if (!elViajeInputPacking) return;
@@ -6586,7 +6717,8 @@
             }
             const detalle = leerDetalleMetaPacking_(c.raw || ((c.num_muestra && c.ensayo_numero)
                 ? (c.num_muestra + '|' + c.ensayo_numero)
-                : ''));
+                : ''))
+                || (c.detalleMeta && typeof c.detalleMeta === 'object' ? c.detalleMeta : null);
             const item = construirDatosPdfPackingDesdeEstado_(
                 c.num_muestra,
                 c.ensayo_numero,
@@ -6750,7 +6882,6 @@
         window.CustomTimePicker.init(document.getElementById('packing-main') || document);
     }
 
-    asegurarHoraInicioAlEnfocarPacking_();
     purgarBorradoresPackingOtrosDias_();
     purgarBorradoresFantasmaPacking_();
     actualizarHeaderConexion();
