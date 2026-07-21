@@ -387,6 +387,34 @@
       return Object.keys(ensSet).sort();
     }
 
+    /**
+     * Ensayos registrados hoy por modo (Visual vs Acopio no se mezclan para bloqueo de cupo 1–10).
+     * soloAcopio=true → solo hoja Acopio; false → solo hoja Visual.
+     */
+    function ensayosRegistradosEnFechaPorModo_(ss, fechaNorm, soloAcopio) {
+      var ensSet = {};
+      var hojas = hojasRegistroNumMuestra_(ss);
+      for (var hi = 0; hi < hojas.length; hi++) {
+        var sh = hojas[hi];
+        var esAc = esHojaRegistroAcopio_(ss, sh);
+        if (soloAcopio && !esAc) continue;
+        if (!soloAcopio && esAc) continue;
+        var lastRow = sh.getLastRow();
+        if (lastRow < 2) continue;
+        var dataOp = sh.getRange(2, 1, lastRow, Math.max(15, IDX_REGISTRO_ENSAYO_NUMERO + 1)).getValues();
+        for (var oi = 0; oi < dataOp.length; oi++) {
+          var fOp = formatFechaPacking(dataOp[oi][0]);
+          if (fOp !== fechaNorm) continue;
+          var enOp = dataOp[oi][IDX_REGISTRO_ENSAYO_NUMERO];
+          var enOpStr = (enOp !== null && enOp !== undefined && enOp !== '')
+            ? (Number(enOp) === Math.floor(Number(enOp)) ? String(Number(enOp)) : String(enOp).trim())
+            : '';
+          if (enOpStr) ensSet[enOpStr] = true;
+        }
+      }
+      return Object.keys(ensSet).sort();
+    }
+
     /** Visual: quita columnas fantasma PESO_RESERVA y TIEMPO_RESERVA (esquema 50→48). Solo hoja VISUAL. */
     function migrarRegistroVisualQuitarReservas_(sheet, ss) {
       if (!sheet || sheet.getLastRow() === 0) return;
@@ -422,7 +450,7 @@
     }
 
     /**
-    * Columna TRAZ_ACOPIO (select Acopio 1–25 + Acopio Central 1/2) justo después de PLACA_VEHICULO.
+    * Columna TRAZ_ACOPIO (select Acopio 1–35 + Acopio Central 1/2) justo después de PLACA_VEHICULO.
     * Si quedó MODO_REGISTRO por error, lo renombra (no es Visual/Acopio de modo).
     */
     function migrarInsertarTrazAcopioTrasPlaca_(sheet, ss) {
@@ -3131,9 +3159,14 @@
           result.num_muestra_prefijo = pmOp.num_muestra_prefijo;
           result.proximo_num_muestra = pmOp.proximo_num_muestra;
           result.ensayos = [];
+          result.ensayos_visual = [];
+          result.ensayos_acopio = [];
           var fechaOp = (params.fecha || '').toString().trim();
           if (fechaOp) {
             var fechaOpNorm = formatFechaPacking(fechaOp) || fechaOp;
+            result.ensayos_visual = ensayosRegistradosEnFechaPorModo_(ssOp, fechaOpNorm, false);
+            result.ensayos_acopio = ensayosRegistradosEnFechaPorModo_(ssOp, fechaOpNorm, true);
+            // Legacy: unión (otros módulos). Campo/Acopio usan ensayos_visual / ensayos_acopio.
             result.ensayos = ensayosRegistradosEnFechaGlobal_(ssOp, fechaOpNorm);
           }
           return returnOutput(result);
@@ -3484,4 +3517,4 @@
     function outputJsonp(obj, callbackName) {
       var body = callbackName + '(' + JSON.stringify(obj) + ')';
       return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
+    } 

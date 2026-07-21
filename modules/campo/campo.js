@@ -895,24 +895,28 @@ const META_SAVE_IDS = [
             return hoyIsoLocal();
         }
 
-        /** Todas las muestras del selector (1–10) ya registradas hoy en planilla/cola. */
+        /** Todas las muestras del selector (1–10) ya registradas hoy en ESTE modo (Visual u Acopio). */
         function todasMuestrasCampoRegistradasHoy() {
             const sel = document.getElementById('visual-meta-muestra');
             if (!sel) return false;
             const opciones = [...sel.options].filter((o) => String(o.value || '').trim());
-            if (!opciones.length) return false;
-            return opciones.every((op) => {
-                const num = numeroDesdeEnsayoTexto(op.value);
-                return !!(num && ensayoNumeroRegistradoHoy(String(num)));
-            });
+            if (opciones.length < MAX_MUESTRAS_CAMPO) return false;
+            let count = 0;
+            for (let i = 0; i < opciones.length; i++) {
+                const num = numeroDesdeEnsayoTexto(opciones[i].value);
+                if (!(num && ensayoNumeroRegistradoHoy(String(num)))) return false;
+                count++;
+            }
+            return count >= MAX_MUESTRAS_CAMPO;
+        }
+
+        function claveAvisoCupoCompletoModo_() {
+            return hoyIsoLocal() + '|' + (esModoRegistroAcopio_() ? 'acopio' : 'visual');
         }
 
         function yaMostroAvisoLlenadoCompletoCampo(fechaClave) {
             try {
-                const raw = localStorage.getItem(CAMPO_LLENADO_COMPLETO_AVISO_KEY);
-                if (!raw) return false;
-                const parsed = JSON.parse(raw);
-                return String(parsed?.fecha || '') === String(fechaClave || '');
+                return sessionStorage.getItem(CAMPO_LLENADO_COMPLETO_AVISO_KEY) === String(fechaClave || '');
             } catch (_) {
                 return false;
             }
@@ -920,28 +924,27 @@ const META_SAVE_IDS = [
 
         function marcarAvisoLlenadoCompletoCampoMostrado(fechaClave) {
             try {
-                localStorage.setItem(
-                    CAMPO_LLENADO_COMPLETO_AVISO_KEY,
-                    JSON.stringify({ fecha: String(fechaClave || ''), at: Date.now() })
-                );
+                sessionStorage.setItem(CAMPO_LLENADO_COMPLETO_AVISO_KEY, String(fechaClave || ''));
             } catch (_) { /* ignore */ }
         }
 
         function mostrarNubeAvisoLlenadoCompletoCampo() {
-            const fechaClave = hoyIsoLocal();
+            const fechaClave = claveAvisoCupoCompletoModo_();
             if (yaMostroAvisoLlenadoCompletoCampo(fechaClave)) return;
             if (document.getElementById('campo-nube-llenado-completo')) return;
 
-            const fechaEtiqueta = etiquetaFechaCampoParaAviso();
+            const esAcopio = esModoRegistroAcopio_();
             const el = document.createElement('div');
             el.id = 'campo-nube-llenado-completo';
-            el.className = 'campo-nube-aviso';
+            el.className = 'campo-nube-aviso campo-nube-aviso--centro';
             el.setAttribute('role', 'status');
             el.setAttribute('aria-live', 'polite');
             el.innerHTML = `
                 <div class="campo-nube-aviso__inner">
-                    <p class="campo-nube-aviso__titulo">¡Listo!</p>
-                    <p class="campo-nube-aviso__texto">Se terminó el llenado para esta fecha (${fechaEtiqueta}). Gracias por tu comprensión.</p>
+                    <p class="campo-nube-aviso__titulo">Muestras completadas</p>
+                    <p class="campo-nube-aviso__texto">${esAcopio
+                        ? 'Muestras completadas en Acopio. Mañana se continúa.'
+                        : 'Muestras completadas en Visual. Mañana se continúa.'}</p>
                     <button type="button" class="campo-nube-aviso__cerrar">Entendido</button>
                 </div>
             `;
@@ -959,11 +962,38 @@ const META_SAVE_IDS = [
             };
             el.querySelector('.campo-nube-aviso__cerrar')?.addEventListener('click', cerrar);
             clearTimeout(el.__autoHideTimer);
-            el.__autoHideTimer = setTimeout(cerrar, 16000);
+            el.__autoHideTimer = setTimeout(cerrar, 14000);
+        }
+
+        /**
+         * Cupo 10/10 del modo actual → bloquea TODO el formulario de ese modo.
+         * Visual lleno NO bloquea Acopio (y viceversa).
+         */
+        function aplicarBloqueoEscrituraCampoPorRegistro_() {
+            const cupoFull = todasMuestrasCampoRegistradasHoy();
+            const esAcopio = esModoRegistroAcopio_();
+            document.body.classList.toggle('campo-escritura-bloqueada', cupoFull);
+            document.body.classList.toggle('campo-cupo-visual-completo', cupoFull && !esAcopio);
+            document.body.classList.toggle('campo-cupo-acopio-completo', cupoFull && esAcopio);
+
+            const btn = document.getElementById('btn-guardar-enviar-campo');
+            if (btn) {
+                btn.disabled = !!cupoFull;
+                btn.setAttribute('aria-disabled', cupoFull ? 'true' : 'false');
+                if (cupoFull) {
+                    btn.title = esAcopio
+                        ? 'Las 10 muestras de Acopio ya están registradas hoy'
+                        : 'Las 10 muestras de Visual ya están registradas hoy';
+                } else {
+                    btn.removeAttribute('title');
+                }
+            }
+            return cupoFull;
         }
 
         function evaluarAvisoLlenadoCompletoCampo() {
-            if (!todasMuestrasCampoRegistradasHoy()) return;
+            const cupoFull = aplicarBloqueoEscrituraCampoPorRegistro_();
+            if (!cupoFull) return;
             mostrarNubeAvisoLlenadoCompletoCampo();
         }
 
@@ -1837,6 +1867,8 @@ const META_SAVE_IDS = [
         let ensayosActivadosSesion = new Set();
         /** Último max y próximo N° devueltos por Apps Script (fuente de verdad con internet). */
         let numMuestraMaxServidorCache = 0;
+        /** Evita bajar el max local si el POST aún no aparece en planilla. */
+        let ultimoFusionarMaxMs = 0;
         let numMuestraPrefijoCache = '';
         let proximoNumMuestraServidorCache = '';
         /** true tras el primer estado_operativo OK: el N° muestra sale del servidor, no del localStorage. */
@@ -1923,6 +1955,7 @@ const META_SAVE_IDS = [
             const inp = document.getElementById('visual-num-muestra');
             if (!num) {
                 if (inp && navigator.onLine && API_URL && inp.value !== '') inp.value = '';
+                corregirNumMuestraSiPegado_(activo, 'syncPantallaVacio');
                 actualizarVistaCompacta();
                 return;
             }
@@ -1931,12 +1964,14 @@ const META_SAVE_IDS = [
                 if (!numerosMuestraFijadosSesion[activo]) {
                     fijarNumMuestraEnsayoSesion(activo, num, 'confirmarNumeroVisibleServidor');
                 }
+                corregirNumMuestraSiPegado_(activo, 'syncPantallaIgual');
                 actualizarVistaCompacta();
                 return;
             }
             purgarTodosNumerosMuestraEnMeta();
             logNumMuestra('sincronizarNumMuestraPantallaDesdeServidor', { ensayo: activo, calculado: num });
             fijarNumMuestraEnsayoSesion(activo, num, 'sincronizarNumMuestraPantallaDesdeServidor');
+            corregirNumMuestraSiPegado_(activo, 'syncPantallaNuevo');
         }
 
         function reiniciarNumeracionParaConsultaServidor() {
@@ -2071,14 +2106,63 @@ const META_SAVE_IDS = [
             } else {
                 refrescarEstadoOperativoLocal();
             }
+
+            const digUsados = new Set();
+            const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+
+            function leerReservaPantalla_(ensayo) {
+                return normalizarNumMuestraInput(
+                    numerosMuestraFijadosSesion[ensayo]
+                    || metaPorEnsayo[ensayo]?.['visual-num-muestra']
+                    || (ensayo === activo
+                        ? document.getElementById('visual-num-muestra')?.value
+                        : '')
+                );
+            }
+
+            // 1) Conservar el N° que el usuario ya ve en cada muestra (no pisar 009→011 al enviar).
             lista.forEach((ensayo) => {
-                const ya = numerosMuestraFijadosSesion[ensayo];
-                if (ya) return;
-                const num = ensayoEstaRegistradoHoy(ensayo)
-                    ? calcularNumMuestraLoteAdicionalEnsayoRegistrado_(ensayo)
-                    : calcularNumMuestraDesdeServidorParaEnsayo(ensayo);
-                if (num) fijarNumMuestraEnsayoSesion(ensayo, num, 'precongelarEnvio');
+                const ya = leerReservaPantalla_(ensayo);
+                const dig = parseNumMuestraSoloDigitos(ya);
+                if (!ya || dig <= 0 || digUsados.has(dig)) return;
+                if (numMuestraReservadoEnColaLocal(normalizarNumMuestraClave(ya), ensayo)) return;
+                digUsados.add(dig);
+                fijarNumMuestraEnsayoSesion(ensayo, ya, 'precongelarConservar');
             });
+
+            // 2) Solo completar las que no tienen reserva válida (sin borrar las conservadas).
+            lista.forEach((ensayo) => {
+                const actual = normalizarNumMuestraInput(numerosMuestraFijadosSesion[ensayo]);
+                const digAct = parseNumMuestraSoloDigitos(actual);
+                if (actual && digAct > 0 && digUsados.has(digAct)
+                    && parseNumMuestraSoloDigitos(leerReservaPantalla_(ensayo)) === digAct) {
+                    return;
+                }
+                delete numerosMuestraFijadosSesion[ensayo];
+                if (metaPorEnsayo[ensayo]) {
+                    delete metaPorEnsayo[ensayo]['visual-num-muestra'];
+                    delete metaPorEnsayo[ensayo]._num_muestra_fijo;
+                }
+                let num = ensayoEstaRegistradoHoy(ensayo)
+                    ? calcularNumMuestraLoteAdicionalEnsayoRegistrado_(ensayo)
+                    : calcularNumMuestraBaseDesdeContexto(ensayo);
+                let dig = parseNumMuestraSoloDigitos(num);
+                if (!num || dig <= 0 || digUsados.has(dig)) {
+                    let n = Math.max(
+                        numMuestraMaxServidorCache,
+                        ...(digUsados.size ? digUsados : [0])
+                    ) + 1;
+                    while (digUsados.has(n)) n++;
+                    num = formatearNumMuestraAutoDesdeN(n);
+                    dig = n;
+                }
+                if (num) {
+                    digUsados.add(dig);
+                    fijarNumMuestraEnsayoSesion(ensayo, num, 'precongelarEnvio');
+                }
+            });
+            // No llamar corregirNumMuestraSiPegado_ aquí: trataba 009 como “viejo” si el max
+            // local/planilla era mayor y lo subía a 011/012 al momento de enviar.
         }
 
         function aplicarNumMuestraParaEnsayoActivo(origen) {
@@ -2087,14 +2171,27 @@ const META_SAVE_IDS = [
             const duplicadoEnOtra = fijo && Object.keys(numerosMuestraFijadosSesion).some((otro) => (
                 otro !== e && numerosMuestraFijadosSesion[otro] === fijo
             ));
-            if (fijo && !duplicadoEnOtra) {
+            const pegado = fijo && numMuestraEstaPegado_(e, fijo);
+            if (fijo && !duplicadoEnOtra && !pegado) {
                 aplicarNumMuestraEnsayo(e, fijo, true, origen || 'reservaLocalExistente');
                 return fijo;
             }
-            if (duplicadoEnOtra) delete numerosMuestraFijadosSesion[e];
+            if (duplicadoEnOtra || pegado) {
+                delete numerosMuestraFijadosSesion[e];
+                if (metaPorEnsayo[e]) {
+                    delete metaPorEnsayo[e]['visual-num-muestra'];
+                    delete metaPorEnsayo[e]._num_muestra_fijo;
+                }
+                logNumMuestra('aplicarNumMuestraParaEnsayoActivo liberar pegado', {
+                    ensayo: e,
+                    fijo,
+                    duplicadoEnOtra: !!duplicadoEnOtra,
+                    pegado: !!pegado
+                });
+            }
             const num = calcularNumMuestraDesdeServidorParaEnsayo(e);
             if (num) {
-                fijarNumMuestraEnsayoSesion(e, num, origen || 'reservarPrimeraVisita');
+                fijarNumMuestraEnsayoSesion(e, num, origen || (pegado ? 'autoDespegar' : 'reservarPrimeraVisita'));
             }
             return num;
         }
@@ -2130,6 +2227,7 @@ const META_SAVE_IDS = [
 
             const pintarNum = () => {
                 aplicarNumMuestraParaEnsayoActivo('cambioMuestraRapido');
+                corregirNumMuestraSiPegado_(e, 'cambioMuestraRapido');
                 actualizarVistaCompacta();
                 actualizarProgresoMeta();
             };
@@ -2211,14 +2309,231 @@ const META_SAVE_IDS = [
             });
         }
 
+        function liberarReservasNumMuestraUsado_(n) {
+            const k = parseNumMuestraSoloDigitos(n);
+            if (k <= 0) return;
+            Object.keys(numerosMuestraFijadosSesion).forEach((ensayo) => {
+                if (parseNumMuestraSoloDigitos(numerosMuestraFijadosSesion[ensayo]) !== k) return;
+                delete numerosMuestraFijadosSesion[ensayo];
+                if (metaPorEnsayo[ensayo]) {
+                    delete metaPorEnsayo[ensayo]['visual-num-muestra'];
+                    delete metaPorEnsayo[ensayo]._num_muestra_fijo;
+                }
+            });
+            Object.keys(metaPorEnsayo).forEach((ensayo) => {
+                if (parseNumMuestraSoloDigitos(metaPorEnsayo[ensayo]?.['visual-num-muestra']) !== k) return;
+                delete metaPorEnsayo[ensayo]['visual-num-muestra'];
+                delete metaPorEnsayo[ensayo]._num_muestra_fijo;
+            });
+        }
+
+        function maxNumMuestraEnColaPendiente_() {
+            let m = 0;
+            try {
+                cargarColaSync().forEach((reg) => {
+                    const st = String(reg?.estado || '');
+                    if (st !== 'pendiente' && st !== 'bloqueado') return;
+                    const k = parseNumMuestraSoloDigitos(reg?.num_muestra);
+                    if (k > m) m = k;
+                });
+            } catch (_) { /* ignore */ }
+            return m;
+        }
+
+        function persistirSnapshotNumeracionLocal_() {
+            try {
+                localStorage.setItem(NUM_MUESTRA_SNAPSHOT_OFFLINE_KEY, JSON.stringify({
+                    fecha: hoyIsoLocal(),
+                    max: numMuestraMaxServidorCache,
+                    proximo: proximoNumMuestraServidorCache,
+                    prefijo: String(numMuestraPrefijoCache || '').trim().toUpperCase(),
+                    ensayos: bloqueoMuestraCacheNums
+                        ? [...bloqueoMuestraCacheNums].map((e) => String(e))
+                        : []
+                }));
+            } catch (_) { /* ignore */ }
+        }
+
+        /**
+         * Alinea el max local con planilla + cola real.
+         * Baja máximos fantasma (008/009/011 quemados sin filas) que provocan saltos 009→012.
+         */
+        function reconciliarMaxLocalConPlanilla_(mxPlanilla) {
+            const mx = Number(mxPlanilla);
+            if (!Number.isFinite(mx) || mx < 0) return numMuestraMaxServidorCache;
+            const maxCola = maxNumMuestraEnColaPendiente_();
+            let floor = Math.max(Math.floor(mx), maxCola);
+            const antes = Number(numMuestraMaxServidorCache) || 0;
+            // No bajar si hay envío en curso o un fusionarMax reciente (planilla atrasada).
+            const fusionarReciente = (Date.now() - Number(ultimoFusionarMaxMs || 0)) < 25000;
+            if ((envioRegistroEnCurso || fusionarReciente) && antes > floor) {
+                floor = antes;
+            }
+            if (antes !== floor) {
+                logNumMuestra('reconciliarMaxLocalConPlanilla_', {
+                    antes,
+                    floor,
+                    mx_planilla: Math.floor(mx),
+                    maxCola,
+                    fusionarReciente
+                });
+            }
+            numMuestraMaxServidorCache = floor;
+            proximoNumMuestraServidorCache = formatearNumMuestraAutoDesdeN(floor + 1);
+            persistirSnapshotNumeracionLocal_();
+            return floor;
+        }
+
+        /** Tras enviar/encolar: el max local sube YA (online u offline) para no repetir el N°. */
         function fusionarMaxNumMuestraCampo(n) {
-            if (navigator.onLine && API_URL) return;
             const k = parseNumMuestraSoloDigitos(n);
             if (k > numMuestraMaxServidorCache) {
                 numMuestraMaxServidorCache = k;
             }
+            if (k > 0) {
+                ultimoFusionarMaxMs = Date.now();
+                proximoNumMuestraServidorCache = formatearNumMuestraAutoDesdeN(
+                    (Number(numMuestraMaxServidorCache) || 0) + 1
+                );
+                liberarReservasNumMuestraUsado_(k);
+                persistirSnapshotNumeracionLocal_();
+            }
+            // Solo sincroniza max con cola real; no “despegar” reservas (provocaba saltos).
             sincronizarMaxNumMuestraDesdeContextoLocal();
             invalidarNumerosMuestraFijadosObsoletos();
+        }
+
+        function corregirTodosNumMuestraPegados_(origen) {
+            const vistos = new Set();
+            Object.keys(numerosMuestraFijadosSesion).forEach((e) => {
+                vistos.add(e);
+                corregirNumMuestraSiPegado_(e, origen || 'barridoPegados');
+            });
+            const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+            if (activo && !vistos.has(activo)) {
+                corregirNumMuestraSiPegado_(activo, origen || 'barridoPegadosActivo');
+            }
+        }
+
+        /** true si el N° ya no sirve para esta muestra (duplicado / ya encapsulado por otra). */
+        function numMuestraEstaPegado_(ensayo, num) {
+            const e = String(ensayo || '').trim();
+            const k = parseNumMuestraSoloDigitos(num);
+            if (!e || k <= 0) return false;
+            if (ensayoEstaRegistradoHoy(e)) return false;
+
+            // No usar "k <= max" aquí: eso convertía huecos (009 con max 011) en saltos al enviar.
+            // El max solo define el siguiente libre para muestras NUEVAS sin reserva.
+
+            const clave = normalizarNumMuestraClave(num);
+            const hayDuplicadoFijo = Object.keys(numerosMuestraFijadosSesion).some((otro) => (
+                otro !== e && parseNumMuestraSoloDigitos(numerosMuestraFijadosSesion[otro]) === k
+            ));
+            if (hayDuplicadoFijo) return true;
+            if (numMuestraReservadoEnColaLocal(clave, e)) return true;
+            if (numMuestraDuplicadoEnMeta(e, k)) return true;
+
+            try {
+                const usado = buscarNumMuestraUsadoLocal(clave);
+                if (usado) {
+                    const st = String(usado.estado || '').toLowerCase();
+                    const ensUsado = String(usado.ensayo_numero || '').trim();
+                    const ensAct = String(numeroDesdeEnsayoTexto(e) || '').trim();
+                    if (st === 'registrado' || st === 'subido' || st === 'bloqueado') {
+                        // Solo pegado si ya se usó en OTRO ensayo (o el mismo ya cerrado).
+                        if (!ensUsado || ensUsado !== ensAct) return true;
+                    }
+                    if (st === 'pendiente' && ensUsado && ensAct && ensUsado !== ensAct) return true;
+                }
+            } catch (_) { /* ignore */ }
+            return false;
+        }
+
+        /** Si el N° está pegado, lo suelta y asigna el siguiente sin esperar Actualizar. */
+        function corregirNumMuestraSiPegado_(ensayo, origen) {
+            if (envioRegistroEnCurso) return '';
+            const e = String(ensayo || metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+            if (!e || ensayoEstaRegistradoHoy(e)) return '';
+            const actual = normalizarNumMuestraInput(
+                numerosMuestraFijadosSesion[e]
+                || (e === String(metaActivoEnsayo || '').trim()
+                    ? document.getElementById('visual-num-muestra')?.value
+                    : '')
+                || metaPorEnsayo[e]?.['visual-num-muestra']
+            );
+            if (!actual || !numMuestraEstaPegado_(e, actual)) return actual || '';
+
+            // Durante preparación de envío no “corrigas” reservas del lote (evita 009→011).
+            if (String(origen || '').startsWith('precongelar')) return actual;
+
+            logNumMuestra('corregirNumMuestraSiPegado_', {
+                ensayo: e,
+                pegado: actual,
+                max: numMuestraMaxServidorCache,
+                origen: origen || ''
+            });
+            delete numerosMuestraFijadosSesion[e];
+            if (metaPorEnsayo[e]) {
+                delete metaPorEnsayo[e]['visual-num-muestra'];
+                delete metaPorEnsayo[e]._num_muestra_fijo;
+            }
+            sincronizarMaxNumMuestraDesdeContextoLocal();
+            const nuevo = calcularNumMuestraBaseDesdeContexto(e);
+            if (nuevo && parseNumMuestraSoloDigitos(nuevo) > parseNumMuestraSoloDigitos(actual)) {
+                const digAntes = parseNumMuestraSoloDigitos(actual);
+                const digNuevo = parseNumMuestraSoloDigitos(nuevo);
+                fijarNumMuestraEnsayoSesion(e, nuevo, origen || 'autoDespegar');
+                actualizarVistaCompacta();
+                actualizarProgresoMeta();
+                if (
+                    digNuevo > digAntes + 1
+                    && e === String(metaActivoEnsayo || '').trim()
+                    && document.visibilityState === 'visible'
+                ) {
+                    const hasta = formatearNumMuestraAutoDesdeN(numMuestraMaxServidorCache);
+                    mostrarToast(
+                        'info',
+                        'N° muestra',
+                        'Planilla ya tiene hasta ' + (hasta || String(numMuestraMaxServidorCache))
+                        + '. Siguiente libre: ' + nuevo + '.'
+                    );
+                }
+                return nuevo;
+            }
+            return forzarSiguienteNumMuestraEnActivo_(origen || 'autoDespegarForzado');
+        }
+
+        /** Avanza el N° en pantalla YA, sin esperar a Actualizar / planilla. */
+        function forzarSiguienteNumMuestraEnActivo_(origen) {
+            const e = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+            if (!e) return '';
+            delete numerosMuestraFijadosSesion[e];
+            if (metaPorEnsayo[e]) {
+                delete metaPorEnsayo[e]['visual-num-muestra'];
+                delete metaPorEnsayo[e]._num_muestra_fijo;
+            }
+            sincronizarMaxNumMuestraDesdeContextoLocal();
+            const num = ensayoEstaRegistradoHoy(e)
+                ? calcularNumMuestraLoteAdicionalEnsayoRegistrado_(e)
+                : calcularNumMuestraBaseDesdeContexto(e);
+            if (num) {
+                fijarNumMuestraEnsayoSesion(e, num, origen || 'forzarPostEnvio');
+            } else {
+                const inp = document.getElementById('visual-num-muestra');
+                if (inp) inp.value = '';
+            }
+            actualizarVistaCompacta();
+            actualizarProgresoMeta();
+            return num || '';
+        }
+
+        function prepararNumeracionLocalTrasEnvio_() {
+            sincronizarMaxNumMuestraDesdeContextoLocal();
+            invalidarNumerosMuestraFijadosObsoletos();
+            Object.keys(numerosMuestraFijadosSesion).forEach((k) => {
+                if (!ensayoEstaRegistradoHoy(k)) delete numerosMuestraFijadosSesion[k];
+            });
+            purgarTodosNumerosMuestraEnMeta();
         }
 
         function leerMaxDesdeNumMuestraUsadosLocal() {
@@ -2846,16 +3161,16 @@ const META_SAVE_IDS = [
             ];
             const actual = String(valorPreferido != null ? valorPreferido : sel.value || '').trim();
             const valores = new Set(['']);
-            for (let i = 1; i <= 25; i++) valores.add(`Acopio ${i}`);
+            for (let i = 1; i <= 35; i++) valores.add(`Acopio ${i}`);
             ACOPIOS_EXTRA.forEach((x) => valores.add(x.value));
-            const esperadas = 1 + 25 + ACOPIOS_EXTRA.length;
+            const esperadas = 1 + 35 + ACOPIOS_EXTRA.length;
             const faltanExtra = ACOPIOS_EXTRA.some(
                 (x) => ![...sel.options].some((o) => o.value === x.value)
             );
             if (sel.options.length < esperadas || faltanExtra) {
                 const prev = actual;
                 sel.innerHTML = '<option value="">Acopio</option>';
-                for (let i = 1; i <= 25; i++) {
+                for (let i = 1; i <= 35; i++) {
                     const opt = document.createElement('option');
                     opt.value = `Acopio ${i}`;
                     opt.textContent = `Acopio ${i}`;
@@ -3033,10 +3348,12 @@ const META_SAVE_IDS = [
 
         function leerCacheRegistradosHoy() {
             try {
-                const raw = localStorage.getItem(REGISTRADOS_HOY_CACHE_KEY);
+                const key = REGISTRADOS_HOY_CACHE_KEY + ':' + (esModoRegistroAcopio_() ? 'acopio' : 'visual');
+                const raw = localStorage.getItem(key) || localStorage.getItem(REGISTRADOS_HOY_CACHE_KEY);
                 if (!raw) return null;
                 const o = JSON.parse(raw);
                 if (!o || o.fecha !== hoyIsoLocal() || !Array.isArray(o.ensayos)) return null;
+                if (o.modo && o.modo !== (esModoRegistroAcopio_() ? 'acopio' : 'visual')) return null;
                 return new Set(o.ensayos.map((x) => String(x)));
             } catch (_) {
                 return null;
@@ -3045,12 +3362,31 @@ const META_SAVE_IDS = [
 
         function guardarCacheRegistradosHoy(setNums) {
             try {
+                const modo = esModoRegistroAcopio_() ? 'acopio' : 'visual';
                 const ens = [...(setNums || new Set())].map((x) => String(x));
-                localStorage.setItem(REGISTRADOS_HOY_CACHE_KEY, JSON.stringify({
+                localStorage.setItem(REGISTRADOS_HOY_CACHE_KEY + ':' + modo, JSON.stringify({
                     fecha: hoyIsoLocal(),
+                    modo,
                     ensayos: ens
                 }));
             } catch (_) { /* ignore */ }
+        }
+
+        /** Ensayos del modo actual según respuesta estado_operativo. */
+        function ensayosRegistradosDesdeRespuestaServidor_(r) {
+            if (!r || typeof r !== 'object') return [];
+            const modo = esModoRegistroAcopio_() ? 'acopio' : 'visual';
+            if (modo === 'acopio' && Array.isArray(r.ensayos_acopio)) {
+                return r.ensayos_acopio.map((e) => String(e).trim()).filter(Boolean);
+            }
+            if (modo === 'visual' && Array.isArray(r.ensayos_visual)) {
+                return r.ensayos_visual.map((e) => String(e).trim()).filter(Boolean);
+            }
+            // Apps Script sin split: nunca aplicar la unión Visual+Acopio a Acopio.
+            if (modo === 'acopio') return [];
+            return Array.isArray(r.ensayos)
+                ? r.ensayos.map((e) => String(e).trim()).filter(Boolean)
+                : [];
         }
 
         /** Última numeración confirmada hoy; permite reservar correlativos sin internet. */
@@ -3069,6 +3405,12 @@ const META_SAVE_IDS = [
                     prefijo: String(r.num_muestra_prefijo || '').trim().toUpperCase(),
                     ensayos: Array.isArray(r.ensayos)
                         ? r.ensayos.map((e) => String(e).trim()).filter(Boolean)
+                        : [],
+                    ensayos_visual: Array.isArray(r.ensayos_visual)
+                        ? r.ensayos_visual.map((e) => String(e).trim()).filter(Boolean)
+                        : [],
+                    ensayos_acopio: Array.isArray(r.ensayos_acopio)
+                        ? r.ensayos_acopio.map((e) => String(e).trim()).filter(Boolean)
                         : []
                 }));
             } catch (_) { /* ignore */ }
@@ -3089,8 +3431,11 @@ const META_SAVE_IDS = [
                 proximoNumMuestraServidorCache = normalizarNumMuestraInput(snap.proximo)
                     || formatearNumMuestraAutoDesdeN(numMuestraMaxServidorCache + 1, snap.prefijo || undefined);
                 if (snap.prefijo) numMuestraPrefijoCache = String(snap.prefijo);
+                const ensModo = ensayosRegistradosDesdeRespuestaServidor_(snap);
                 bloqueoMuestraCacheNums = new Set(
-                    (Array.isArray(snap.ensayos) ? snap.ensayos : []).map((e) => String(e))
+                    ensModo.length
+                        ? ensModo
+                        : (Array.isArray(snap.ensayos) ? snap.ensayos : []).map((e) => String(e))
                 );
                 numMuestraSincronizadoServidor = true;
                 return true;
@@ -3106,9 +3451,16 @@ const META_SAVE_IDS = [
                 return new Set([...bloqueoMuestraCacheNums]);
             }
             try {
-                const r = await callbackJsonp(API_URL, { fecha: hoyIsoLocal() });
-                if (!r || r.ok !== true || !Array.isArray(r.ensayos)) return null;
-                const out = new Set(r.ensayos.map((e) => String(e).trim()).filter(Boolean));
+                const r = await callbackJsonp(API_URL, {
+                    estado_operativo: '1',
+                    fecha: hoyIsoLocal()
+                });
+                if (!r || r.ok !== true) return null;
+                const lista = ensayosRegistradosDesdeRespuestaServidor_(r);
+                if (!lista.length && !Array.isArray(r.ensayos_visual) && !Array.isArray(r.ensayos_acopio) && !Array.isArray(r.ensayos)) {
+                    return null;
+                }
+                const out = new Set(lista);
                 bloqueoMuestraCacheNums = out;
                 bloqueoMuestraUltimoFetchMs = now;
                 guardarCacheRegistradosHoy(out);
@@ -3216,9 +3568,10 @@ const META_SAVE_IDS = [
             await refrescarEstadoServidorOperativo(forceServer);
         }
 
-        /** Ensayos (1–10) ya guardados hoy en planilla (servidor manda la verdad si hay sync). */
+        /** Ensayos (1–10) ya guardados hoy en planilla del MODO actual (Visual u Acopio). */
         function obtenerEnsayosRegistradosHoySet() {
             const set = new Set();
+            const modoActual = esModoRegistroAcopio_() ? 'acopio' : 'visual';
             if (numMuestraSincronizadoServidor && bloqueoMuestraCacheNums) {
                 bloqueoMuestraCacheNums.forEach((n) => set.add(String(n)));
             } else {
@@ -3230,9 +3583,10 @@ const META_SAVE_IDS = [
                 cargarColaSync().forEach((reg) => {
                     const st = String(reg?.estado || '');
                     if (st !== 'pendiente' && st !== 'bloqueado') return;
-                    if (String(reg?.fecha || hoy) === hoy && reg.ensayo_numero) {
-                        set.add(String(reg.ensayo_numero));
-                    }
+                    if (String(reg?.fecha || hoy) !== hoy || !reg.ensayo_numero) return;
+                    const modoReg = String(reg?.modo_registro || reg?.modo || 'visual').trim().toLowerCase();
+                    if (modoReg !== modoActual) return;
+                    set.add(String(reg.ensayo_numero));
                 });
             } catch (_) { /* ignore */ }
             if (!numMuestraSincronizadoServidor) {
@@ -3241,12 +3595,23 @@ const META_SAVE_IDS = [
                     Object.values(map).forEach((det) => {
                         const st = String(det?.estado || '').toLowerCase();
                         const en = String(det?.ensayo_numero || '').trim();
-                        if (en && (st === 'registrado' || st === 'subido') && numMuestraUsadoEsDeHoy_(det)) {
-                            set.add(en);
-                        }
+                        if (!en || !(st === 'registrado' || st === 'subido') || !numMuestraUsadoEsDeHoy_(det)) return;
+                        const modoDet = String(det?.modo_registro || det?.modo || '').trim().toLowerCase();
+                        if (modoDet && modoDet !== modoActual) return;
+                        set.add(en);
                     });
                 } catch (_) { /* ignore */ }
             }
+            try {
+                cargarEnviosLocalesArchivados().forEach((reg) => {
+                    if (String(reg?.fecha || '') !== hoyIsoLocal()) return;
+                    const en = String(reg?.ensayo_numero || '').trim();
+                    if (!en) return;
+                    const modoReg = String(reg?.modo_registro || reg?.modo || 'visual').trim().toLowerCase();
+                    if (modoReg !== modoActual) return;
+                    set.add(en);
+                });
+            } catch (_) { /* ignore */ }
             return set;
         }
 
@@ -3284,13 +3649,30 @@ const META_SAVE_IDS = [
             return parseNumMuestraSoloDigitos(numMuestraMaxServidorCache);
         }
 
+        function ensayoNumEnColaPendiente_(ensayo) {
+            const e = String(ensayo || '').trim();
+            if (!e) return false;
+            try {
+                return cargarColaSync().some((reg) => {
+                    const st = String(reg?.estado || '');
+                    if (st !== 'pendiente' && st !== 'bloqueado') return false;
+                    return String(reg?.ensayo || '').trim() === e;
+                });
+            } catch (_) {
+                return false;
+            }
+        }
+
         function metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, ensayoActual) {
             if (ensayoActual && ensayoKey === ensayoActual) return false;
             if (ensayoEstaRegistradoHoy(ensayoKey)) return false;
-            const n = Number(numeroDesdeEnsayoTexto(ensayoKey)) || 0;
-            // Solo N° reales de muestras en secuencia o fijados (evita fantasma → saltos 091→093).
-            if (numerosMuestraFijadosSesion[ensayoKey]) return true;
-            if (n >= 1 && metaEnsayoCompletaSinNumeroParaOrden_(ensayoKey)) return true;
+            // Solo N° encapsulados en cola o muestra 8/8 lista para enviar.
+            // NO contar fijados por solo abrir/cambiar de muestra (causaba 018→021).
+            if (ensayoNumEnColaPendiente_(ensayoKey)) return true;
+            if (metaEnsayoCompletaSinNumeroParaOrden_(ensayoKey)
+                && (numerosMuestraFijadosSesion[ensayoKey] || metaPorEnsayo[ensayoKey]?.['visual-num-muestra'])) {
+                return true;
+            }
             return false;
         }
 
@@ -5368,7 +5750,7 @@ const META_SAVE_IDS = [
             ];
 
             return [
-                // Visual: 49 cols. Acopio: 51 cols. TRAZ_ACOPIO (Acopio 1–25 + Central 1/2) tras PLACA.
+                // Visual: 49 cols. Acopio: 51 cols. TRAZ_ACOPIO (Acopio 1–35 + Central 1/2) tras PLACA.
                 hoyIsoLocal(),
                 strOrEmpty(ensayoNombre),
                 numMuestraUnica,
@@ -6496,6 +6878,88 @@ const META_SAVE_IDS = [
         }
         window.archivarEnvioLocalExitoso_ = archivarEnvioLocalExitoso_;
 
+        /** Quita de la cola ítems cuyo N° ya está en planilla (evita PENDIENTES fantasma). */
+        function quitarColaPorNumsMuestra_(nums) {
+            const keys = new Set(
+                (Array.isArray(nums) ? nums : [nums])
+                    .map((n) => normalizarNumMuestraClave(n))
+                    .filter(Boolean)
+            );
+            if (!keys.size) return 0;
+            const queue = cargarColaSync();
+            const next = queue.filter((q) => !keys.has(normalizarNumMuestraClave(q?.num_muestra)));
+            const quitados = queue.length - next.length;
+            if (quitados > 0) guardarColaSync(next);
+            return quitados;
+        }
+
+        /**
+         * Cola con N° ya en planilla = envío OK (no "bloqueado").
+         * Genera PDF si falta y saca el ítem de pendientes.
+         */
+        async function cerrarColaComoYaEnPlanilla_(reg, queue, index, detalle) {
+            if (!reg || !Array.isArray(queue)) return false;
+            const ensayoPdf = String(reg.ensayo || ('Ensayo ' + reg.ensayo_numero));
+            const numReal = String(
+                detalle?.num_muestra
+                || (window.HistPdfEnvio?.numMuestraDesdeFilasPost_
+                    ? window.HistPdfEnvio.numMuestraDesdeFilasPost_(ensayoPdf, reg.rows)
+                    : '')
+                || reg.num_muestra
+                || ''
+            ).trim().toUpperCase();
+            if (numReal) reg.num_muestra = numReal;
+            if (detalle?.fecha) reg.fecha = String(detalle.fecha);
+            if (detalle?.ensayo_numero) reg.ensayo_numero = String(detalle.ensayo_numero);
+
+            const moduloPdf = String(reg.modo_registro || '').toLowerCase() === 'acopio' ? 'acopio' : 'campo';
+            let yaHayPdf = false;
+            if (window.HistPdfStore && typeof window.HistPdfStore.existe === 'function') {
+                try {
+                    yaHayPdf = await window.HistPdfStore.existe(
+                        reg.fecha, reg.ensayo_numero, reg.num_muestra, moduloPdf
+                    );
+                } catch (_) { yaHayPdf = false; }
+            }
+            if (!yaHayPdf) {
+                await asegurarPdfCampoHistorialTrasEnvio_(
+                    [ensayoPdf],
+                    reg.fecha,
+                    {
+                        num_muestra: reg.num_muestra,
+                        nums_por_ensayo: { [ensayoPdf]: reg.num_muestra },
+                        datos: reg.pdf_datos || null,
+                        payload: {
+                            ensayo: reg.ensayo,
+                            ensayo_numero: reg.ensayo_numero,
+                            num_muestra: reg.num_muestra,
+                            modo_registro: reg.modo_registro,
+                            rows: reg.rows
+                        }
+                    }
+                );
+            }
+
+            reg.estado = 'subido';
+            reg.error = '';
+            reg.actualizado_en = Date.now();
+            pushEstadoSync(reg);
+            archivarEnvioLocalExitoso_(reg);
+            registrarNumMuestraUsadoLocal(reg.num_muestra, {
+                fecha: reg.fecha,
+                ensayo_numero: reg.ensayo_numero,
+                estado: 'registrado'
+            });
+            marcarEnsayoRegistradoHoyLocal(reg.ensayo_numero);
+            fusionarMaxNumMuestraCampo(reg.num_muestra);
+            if (index >= 0 && index < queue.length) {
+                queue.splice(index, 1);
+            }
+            guardarColaSync(queue);
+            actualizarBarraHeaderEstado();
+            return true;
+        }
+
         async function borrarTodoYCacheRapido() {
             let confirmado = false;
             if (window.Swal && typeof window.Swal.fire === 'function') {
@@ -6681,12 +7145,14 @@ const META_SAVE_IDS = [
             if (llenadoJarrasState.porEnsayo) delete llenadoJarrasState.porEnsayo[enviado];
             if (llenadoJarrasState.usuarioVacio) delete llenadoJarrasState.usuarioVacio[enviado];
 
-            if (!navigator.onLine || !API_URL) {
-                sincronizarMaxNumMuestraDesdeContextoLocal();
-                invalidarNumerosMuestraFijadosObsoletos();
-                refrescarEstadoOperativoLocal();
-            } else {
-                await refrescarMaxNumMuestraDesdeServidor();
+            // N° avanza en local YA. Planilla se refresca en segundo plano (sin bloquear).
+            prepararNumeracionLocalTrasEnvio_();
+            if (navigator.onLine && API_URL) {
+                void refrescarEstadoServidorOperativo(false, {
+                    reposicionarPrimera: false,
+                    avisar: false,
+                    invalidarFijados: false
+                });
             }
 
             const siguiente = siguienteEnsayoPendienteTrasEnvio_(enviado);
@@ -6709,6 +7175,7 @@ const META_SAVE_IDS = [
             }
 
             sincronizarLogisticaAcopioDesdeEnsayo();
+            forzarSiguienteNumMuestraEnActivo_('postEnvioSiguienteMuestra');
             actualizarVistaCompacta();
             actualizarProgresoMeta();
             renderizarPanelLlenadoJarras();
@@ -6758,18 +7225,21 @@ const META_SAVE_IDS = [
             const rotulo = document.getElementById('visual-rotulo');
             if (rotulo) rotulo.value = muestraPreservada;
 
-            if (!navigator.onLine || !API_URL) {
-                sincronizarMaxNumMuestraDesdeContextoLocal();
-                invalidarNumerosMuestraFijadosObsoletos();
-                refrescarEstadoOperativoLocal();
-            } else {
-                await refrescarMaxNumMuestraDesdeServidor();
+            // N° avanza en local YA. Sin esperar Actualizar / planilla.
+            prepararNumeracionLocalTrasEnvio_();
+            if (navigator.onLine && API_URL) {
+                void refrescarEstadoServidorOperativo(false, {
+                    reposicionarPrimera: false,
+                    avisar: false,
+                    invalidarFijados: false
+                });
             }
             cargarMetaDeEnsayo(muestraPreservada);
 
             sincronizarTrazabilidadCompuesta();
             sincronizarChipsDesdeAlmacenamiento();
             sincronizarLogisticaAcopioDesdeEnsayo();
+            forzarSiguienteNumMuestraEnActivo_('postEnvioMismaMuestra');
             actualizarVistaCompacta();
             actualizarProgresoMeta();
             asegurarClamshellInicialVacio(muestraPreservada);
@@ -7181,6 +7651,7 @@ const META_SAVE_IDS = [
                 const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
                 if (activo && !ensayoEstaRegistradoHoy(activo) && !envioRegistroEnCurso) {
                     aplicarNumMuestraParaEnsayoActivo('syncPlanilla');
+                    corregirNumMuestraSiPegado_(activo, 'syncPlanilla');
                 }
                 aplicarBloqueoMuestrasCacheLocal();
                 actualizarVistaCompacta();
@@ -7275,11 +7746,17 @@ const META_SAVE_IDS = [
             });
 
             if (Number.isFinite(mx) && mx >= 0) {
-                numMuestraMaxServidorCache = Math.floor(mx);
-                proximoNumMuestraServidorCache = proxJson
-                    || formatearNumMuestraAutoDesdeN(numMuestraMaxServidorCache + 1);
+                // Alinea (sube o baja) el max local con planilla + cola. Evita saltos 009→012 por máximos fantasma.
+                reconciliarMaxLocalConPlanilla_(mx);
+                if (proxJson) {
+                    const proxDig = parseNumMuestraSoloDigitos(proxJson);
+                    if (proxDig === numMuestraMaxServidorCache + 1) {
+                        proximoNumMuestraServidorCache = proxJson;
+                    }
+                }
                 logNumMuestra('APLICAR ultimo planilla + 1', {
                     ultimo_planilla: numMuestraMaxServidorCache,
+                    mx_servidor: Math.floor(mx),
                     proximo_en_pantalla: proximoNumMuestraServidorCache
                 });
             } else {
@@ -7295,7 +7772,7 @@ const META_SAVE_IDS = [
             numMuestraSincronizadoServidor = true;
             ultimoMaxPlanillaConocido = numMuestraMaxServidorCache;
             purgarUsadosLocalTrasSyncPlanilla_();
-            sincronizarNumMuestraPantallaDesdeServidor();
+            realinearNumeracionTrasPlanillaOSync_('estadoOperativo');
         }
 
         /** Sin red: solo el último estado_operativo de esta sesión (memoria), no localStorage. */
@@ -7413,21 +7890,30 @@ const META_SAVE_IDS = [
         }
 
         /**
+         * Regla simple (lo que debe pasar siempre):
+         * 1) Con internet: planilla dice último N° → siguiente libre = max+1.
+         * 2) Cada muestra nueva toma el siguiente correlativo (1→N, 2→N+1…).
+         * 3) Al enviar se usan los N° ya asignados (no se recalculan al vuelo).
+         * 4) Offline: snapshot de antes de salir a campo; se sigue sumando solo.
+         */
+        function proximoNumMuestraLibreGlobal_(ensayoExcluir) {
+            const ultimo = leerMaxNumericoNumMuestraTodoContexto(ensayoExcluir);
+            return formatearNumMuestraAutoDesdeN(ultimo + 1);
+        }
+
+        /**
          * Regla única: N° = mayor número realmente confirmado o encapsulado + 1.
          * Una muestra solo abierta/llenada no reserva números ni crea saltos.
          */
         function calcularNumMuestraBaseDesdeContexto(ensayo) {
-            const eAct = String(ensayo || '').trim();
-            const ultimo = leerMaxNumericoNumMuestraTodoContexto(eAct);
-            return formatearNumMuestraAutoDesdeN(ultimo + 1);
+            return proximoNumMuestraLibreGlobal_(String(ensayo || '').trim());
         }
 
         /** Lote adicional del mismo ensayo ya registrado hoy: siguiente N° global (nunca vacío). */
         function calcularNumMuestraLoteAdicionalEnsayoRegistrado_(ensayo) {
             if (!numMuestraSincronizadoServidor && navigator.onLine && API_URL) return '';
             if (!numMuestraSincronizadoServidor) prepararProximoNumMuestraOffline();
-            const ultimo = leerMaxNumericoNumMuestraTodoContexto();
-            return formatearNumMuestraAutoDesdeN(ultimo + 1);
+            return proximoNumMuestraLibreGlobal_();
         }
 
         function calcularNumMuestraDesdeServidorParaEnsayo(ensayo) {
@@ -7436,7 +7922,14 @@ const META_SAVE_IDS = [
             }
             const e = String(ensayo || '').trim();
             const fijado = numerosMuestraFijadosSesion[e];
-            if (fijado) return fijado;
+            if (fijado) {
+                if (!numMuestraEstaPegado_(e, fijado)) return fijado;
+                delete numerosMuestraFijadosSesion[e];
+                if (metaPorEnsayo[e]) {
+                    delete metaPorEnsayo[e]['visual-num-muestra'];
+                    delete metaPorEnsayo[e]._num_muestra_fijo;
+                }
+            }
             if (navigator.onLine && API_URL && !numMuestraSincronizadoServidor) return '';
             if (!numMuestraSincronizadoServidor) prepararProximoNumMuestraOffline();
             const calculado = calcularNumMuestraBaseDesdeContexto(ensayo);
@@ -7537,11 +8030,10 @@ const META_SAVE_IDS = [
                     ultimoRefreshServidorOperativoMs = Date.now();
                     ultimaRespuestaEstadoServidor = r;
                     guardarSnapshotNumeracionOffline_(r);
-                    // Persistir primero los ensayos confirmados. Si luego falla
-                    // cualquier repintado, el modo offline conserva la verdad
-                    // de la última lectura de planilla.
-                    if (Array.isArray(r.ensayos)) {
-                        bloqueoMuestraCacheNums = new Set(r.ensayos.map((e) => String(e).trim()).filter(Boolean));
+                    // Ensayos del MODO actual (Visual/Acopio no se mezclan).
+                    const ensModo = ensayosRegistradosDesdeRespuestaServidor_(r);
+                    if (Array.isArray(r.ensayos_visual) || Array.isArray(r.ensayos_acopio) || Array.isArray(r.ensayos)) {
+                        bloqueoMuestraCacheNums = new Set(ensModo);
                         bloqueoMuestraUltimoFetchMs = Date.now();
                         guardarCacheRegistradosHoy(bloqueoMuestraCacheNums);
                     } else if (numMuestraSincronizadoServidor) {
@@ -7631,6 +8123,38 @@ const META_SAVE_IDS = [
             }
         }
 
+        /**
+         * Reasigna N° solo si el conflicto está respaldado por el max de planilla.
+         * Si existe_num dice “sí” pero el max aún no lo cubre → falso positivo (no quemar 008/009).
+         */
+        function reasignarSiConflictoRealEnPlanilla_(ensayo, numConflictivo, origen) {
+            const e = String(ensayo || '').trim();
+            const k = parseNumMuestraSoloDigitos(numConflictivo);
+            const maxP = Number(numMuestraMaxServidorCache) || 0;
+            if (!e || k <= 0) return { ok: false, falsoPositivo: false, num: '' };
+            if (k > maxP) {
+                logNumMuestra('conflicto falso positivo (no quemar)', {
+                    num: numConflictivo,
+                    max_planilla: maxP,
+                    origen: origen || ''
+                });
+                return { ok: true, falsoPositivo: true, num: normalizarNumMuestraInput(numConflictivo) };
+            }
+            delete numerosMuestraFijadosSesion[e];
+            if (metaPorEnsayo[e]) {
+                delete metaPorEnsayo[e]['visual-num-muestra'];
+                delete metaPorEnsayo[e]._num_muestra_fijo;
+            }
+            // No fusionarMax(conflictivo): eso subía el max y saltaba números nunca enviados.
+            const nuevo = formatearNumMuestraAutoDesdeN(maxP + 1);
+            if (nuevo) {
+                fijarNumMuestraEnsayoSesion(e, nuevo, origen || 'conflictoRealPlanilla');
+            }
+            actualizarVistaCompacta();
+            actualizarProgresoMeta();
+            return { ok: true, falsoPositivo: false, num: nuevo || '' };
+        }
+
         /** Secuencia numérica: últimos 4 caracteres (ej. C260001 → 1). */
         function parseNumMuestraSoloDigitos(v) {
             const s = String(v ?? '').trim().toUpperCase();
@@ -7694,6 +8218,22 @@ const META_SAVE_IDS = [
                 const k = parseNumMuestraSoloDigitos(raw);
                 if (k > maxN) maxN = k;
             };
+            // Online con planilla: solo max de planilla + cola. Nada de fijados fantasma.
+            const confiarSoloPlanilla = numMuestraSincronizadoServidor && navigator.onLine && !!API_URL;
+            try {
+                const queue = cargarColaSync();
+                queue.forEach((reg) => {
+                    const st = String(reg?.estado || '');
+                    if (st !== 'pendiente' && st !== 'bloqueado') return;
+                    if (excluir) {
+                        const eReg = String(reg?.ensayo || reg?.ensayo_nombre || '').trim();
+                        if (eReg && eReg === excluir) return;
+                    }
+                    subir(reg?.num_muestra);
+                });
+            } catch (_) { /* ignore */ }
+            if (confiarSoloPlanilla) return maxN;
+
             Object.entries(metaPorEnsayo).forEach(([ensayoKey, meta]) => {
                 if (excluir && ensayoKey === excluir) return;
                 if (!metaEnsayoCuentaParaCalculoNumMuestra(ensayoKey, excluir || null)) return;
@@ -7706,33 +8246,73 @@ const META_SAVE_IDS = [
                 subir(numerosMuestraFijadosSesion[ensayoKey]);
             });
             try {
-                const queue = cargarColaSync();
-                queue.forEach((reg) => {
-                    const st = String(reg?.estado || '');
+                const mapUsados = cargarNumMuestraUsadosLocal();
+                Object.keys(mapUsados).forEach((clave) => {
+                    const det = mapUsados[clave];
+                    const st = String(det?.estado || '').toLowerCase();
+                    if (st === 'cancelado') return;
                     if (st !== 'pendiente' && st !== 'bloqueado') return;
-                    // No inflar con el mismo ensayo que estamos calculando.
-                    if (excluir) {
-                        const eReg = String(reg?.ensayo || reg?.ensayo_nombre || '').trim();
-                        if (eReg && eReg === excluir) return;
-                    }
-                    subir(reg?.num_muestra);
+                    if (excluir && String(det?.ensayo || '').trim() === excluir) return;
+                    subir(clave);
                 });
             } catch (_) { /* ignore */ }
-            const confiarSoloPlanilla = numMuestraSincronizadoServidor && navigator.onLine && !!API_URL;
-            if (!confiarSoloPlanilla) {
-                try {
-                    const mapUsados = cargarNumMuestraUsadosLocal();
-                    Object.keys(mapUsados).forEach((clave) => {
-                        const det = mapUsados[clave];
-                        const st = String(det?.estado || '').toLowerCase();
-                        if (st === 'cancelado') return;
-                        if (st !== 'pendiente' && st !== 'bloqueado') return;
-                        if (excluir && String(det?.ensayo || '').trim() === excluir) return;
-                        subir(clave);
-                    });
-                } catch (_) { /* ignore */ }
-            }
             return maxN;
+        }
+
+        /**
+         * Tras sync/planilla: borra reservas fantasma y deja en pantalla max+1.
+         * Evita saltos tipo C260018 confirmado → pantalla C260021.
+         */
+        function realinearNumeracionTrasPlanillaOSync_(origen) {
+            const floor = Math.max(
+                Number(numMuestraMaxServidorCache) || 0,
+                maxNumMuestraEnColaPendiente_()
+            );
+            numMuestraMaxServidorCache = floor;
+            proximoNumMuestraServidorCache = formatearNumMuestraAutoDesdeN(floor + 1);
+            persistirSnapshotNumeracionLocal_();
+
+            // Durante envío no tocar reservas del lote (conservar N° encapsulados).
+            if (envioRegistroEnCurso) {
+                logNumMuestra('realinearNumeracionTrasPlanillaOSync_ skip fijados (envio)', {
+                    origen: origen || '',
+                    floor
+                });
+                return;
+            }
+
+            Object.keys(numerosMuestraFijadosSesion).forEach((e) => {
+                if (ensayoEstaRegistradoHoy(e)) {
+                    delete numerosMuestraFijadosSesion[e];
+                    if (metaPorEnsayo[e]) {
+                        delete metaPorEnsayo[e]['visual-num-muestra'];
+                        delete metaPorEnsayo[e]._num_muestra_fijo;
+                    }
+                    return;
+                }
+                if (ensayoNumEnColaPendiente_(e)) return;
+                delete numerosMuestraFijadosSesion[e];
+                if (metaPorEnsayo[e]) {
+                    delete metaPorEnsayo[e]['visual-num-muestra'];
+                    delete metaPorEnsayo[e]._num_muestra_fijo;
+                }
+            });
+
+            const activo = String(metaActivoEnsayo || ensayoDesdeFormulario() || '').trim();
+            if (activo && !ensayoEstaRegistradoHoy(activo) && !ensayoNumEnColaPendiente_(activo)) {
+                const siguiente = formatearNumMuestraAutoDesdeN(floor + 1);
+                if (siguiente) {
+                    fijarNumMuestraEnsayoSesion(activo, siguiente, origen || 'realinearPostSync');
+                }
+            }
+            logNumMuestra('realinearNumeracionTrasPlanillaOSync_', {
+                origen: origen || '',
+                floor,
+                activo,
+                siguiente: proximoNumMuestraServidorCache
+            });
+            actualizarVistaCompacta();
+            actualizarProgresoMeta();
         }
 
         /** Tras leer planilla: limpia N° locales ya “registrados” (evita inflar el siguiente). */
@@ -8189,20 +8769,18 @@ const META_SAVE_IDS = [
                 console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
             }
 
-            await (window.NetworkSync?.fetchApiPost
-                ? window.NetworkSync.fetchApiPost(API_URL, body)
-                : fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                }));
-
             snapshotMetaEnsayoActual();
             const ensayoPdf = String(ensayoObjetivo || payload.ensayo || ('Ensayo ' + payload.ensayo_numero));
             const datosPdfEnvio = typeof window.obtenerDatosPdfCampoParaEnsayos === 'function'
                 ? window.obtenerDatosPdfCampoParaEnsayos([ensayoPdf])
                 : null;
+
+            // POST puede abortar por timeout aunque Apps Script ya haya guardado (no-cors).
+            const postDirecto = await postCampoConRecuperacion_(body);
+            if (!postDirecto.lanzado && !postDirecto.ok) {
+                return { ok: false, estado: 'error_red', payload, pdfOk: false };
+            }
+
             const regConfirm = {
                 uid: payload.uid,
                 num_muestra: payload.num_muestra,
@@ -8216,7 +8794,18 @@ const META_SAVE_IDS = [
                     payload.fecha,
                     { num_muestra: payload.num_muestra, datos: datosPdfEnvio, payload }
                 ),
-                confirmarRegistroServidorTrasPost_(regConfirm)
+                (async () => {
+                    let c = await confirmarRegistroServidorTrasPost_(regConfirm);
+                    if (c?.estado === 'pendiente' && !postDirecto.ok) {
+                        const extras = [1500, 2500, 4000];
+                        for (let i = 0; i < extras.length; i++) {
+                            await sleepMs(extras[i]);
+                            c = await confirmarRegistroServidorTrasPost_(regConfirm);
+                            if (c?.estado === 'confirmado') break;
+                        }
+                    }
+                    return c;
+                })()
             ]);
 
             if (confirmacion?.estado === 'confirmado') {
@@ -8225,6 +8814,7 @@ const META_SAVE_IDS = [
                     ensayo_numero: payload.ensayo_numero,
                     estado: 'registrado'
                 });
+                fusionarMaxNumMuestraCampo(payload.num_muestra);
                 archivarEnvioLocalExitoso_({
                     uid: payload.uid,
                     fecha: payload.fecha,
@@ -8233,16 +8823,57 @@ const META_SAVE_IDS = [
                     ensayo: ensayoPdf,
                     modo_registro: payload.modo_registro
                 });
-                return { ok: true, estado: 'confirmado', payload, confirmacion, pdfOk };
+                quitarColaPorNumsMuestra_([payload.num_muestra]);
+                let pdfFinal = pdfOk;
+                if (!pdfFinal) {
+                    pdfFinal = await asegurarPdfCampoHistorialTrasEnvio_(
+                        [ensayoPdf],
+                        payload.fecha,
+                        { num_muestra: payload.num_muestra, datos: datosPdfEnvio, payload }
+                    );
+                }
+                return { ok: true, estado: 'confirmado', payload, confirmacion, pdfOk: pdfFinal, datosPdf: datosPdfEnvio };
             }
-            if (confirmacion?.estado === 'duplicado_codigo') {
-                return { ok: false, estado: 'duplicado_codigo', payload, confirmacion, pdfOk };
+            return { ok: false, estado: 'pendiente', payload, confirmacion, pdfOk, datosPdf: datosPdfEnvio };
+        }
+
+        /** true si el fallo del POST es timeout/abort/red (el servidor pudo haber guardado igual). */
+        function esFalloPostRecuperable_(err) {
+            if (window.NetworkSync && typeof window.NetworkSync.esErrorRed === 'function') {
+                return !!window.NetworkSync.esErrorRed(err);
             }
-            return { ok: false, estado: 'pendiente', payload, confirmacion, pdfOk };
+            const msg = String(err && (err.message || err) || '').toLowerCase();
+            return /abort|timeout|failed to fetch|network|sin internet|planilla tard|conexi/.test(msg);
+        }
+
+        /**
+         * POST a planilla. Si aborta por timeout, igual marcamos "lanzado"
+         * para poder confirmar por UID/N° (Apps Script suele terminar después).
+         */
+        async function postCampoConRecuperacion_(body, timeoutMs) {
+            const tope = Number(timeoutMs) > 0
+                ? Number(timeoutMs)
+                : Math.max(45000, Number(window.NetworkSync?.FETCH_POST_MS) || 15000);
+            try {
+                await (window.NetworkSync?.fetchApiPost
+                    ? window.NetworkSync.fetchApiPost(API_URL, body, tope)
+                    : fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    }));
+                return { ok: true, lanzado: true };
+            } catch (err) {
+                if (esFalloPostRecuperable_(err)) {
+                    return { ok: false, lanzado: true, err };
+                }
+                return { ok: false, lanzado: false, err };
+            }
         }
 
         async function confirmarRegistroServidorConReintentos(reg) {
-            // Confirmación: UID y N° muestra en paralelo (misma lógica, menos espera).
+            // Tras POST: UID o N° en planilla = confirmado (no "duplicado").
             const jobs = [];
             if (reg.uid) {
                 jobs.push(existeUidServidor(reg.uid).then((ok) => ({ kind: 'uid', ok })));
@@ -8259,10 +8890,35 @@ const META_SAVE_IDS = [
             for (let j = 0; j < resultados.length; j++) {
                 const r = resultados[j];
                 if (r.kind === 'num' && r.info && r.info.existe === true) {
-                    return { estado: 'duplicado_codigo', detalle: r.info };
+                    return { estado: 'confirmado', via: 'num_muestra', detalle: r.info };
                 }
             }
             return { estado: 'pendiente' };
+        }
+
+        /** Confirma lote: UID / primer N° / cualquier N° del lote. */
+        async function confirmarLoteCampoTrasPost_(payload) {
+            const regConfirm = {
+                uid: payload?.uid,
+                num_muestra: payload?.num_muestra,
+                fecha: payload?.fecha,
+                ensayo_numero: payload?.ensayo_numero
+            };
+            let confirmacion = await confirmarRegistroServidorTrasPost_(regConfirm);
+            if (confirmacion?.estado === 'confirmado') return confirmacion;
+            const nums = Object.values(payload?.nums_por_ensayo || {})
+                .map((n) => String(n || '').trim())
+                .filter(Boolean);
+            for (let i = 0; i < nums.length; i++) {
+                if (String(nums[i]).toUpperCase() === String(regConfirm.num_muestra || '').toUpperCase()) continue;
+                try {
+                    const info = await existeNumMuestraServidor(nums[i]);
+                    if (info && info.existe === true) {
+                        return { estado: 'confirmado', via: 'num_lote', detalle: info };
+                    }
+                } catch (_) { /* seguir */ }
+            }
+            return confirmacion || { estado: 'pendiente' };
         }
 
         /** Tras POST: sondea confirmación con esperas cortas (misma lógica, menos idle). */
@@ -8334,20 +8990,21 @@ const META_SAVE_IDS = [
             }
             if (existeInfo.existe !== true) return true;
             await refrescarEstadoServidorOperativo(true);
-            fusionarMaxNumMuestraCampo(numMuestra);
-            if (metaPorEnsayo[ensayo]) delete metaPorEnsayo[ensayo]._num_muestra_fijo;
-            const nuevo = calcularSiguienteNumMuestraParaEnsayo(ensayo);
-            aplicarNumMuestraEnsayo(ensayo, nuevo, true);
-            snapshotMetaEnsayoActual();
-            programarGuardadoMeta();
-            actualizarVistaCompacta();
-            actualizarProgresoMeta();
-            mostrarToast('info', 'N° muestra actualizado', `Se usará ${nuevo} (el anterior ya estaba registrado).`);
-            const okSegundo = await existeNumMuestraServidor(nuevo);
-            if (okSegundo && okSegundo.existe === true) {
-                await avisarNumMuestraDuplicadoConDetalle(okSegundo, 'Sigue habiendo conflicto; espera unos segundos y vuelve a enviar.');
-                return false;
+            const reasig = reasignarSiConflictoRealEnPlanilla_(ensayo, numMuestra, 'conflictoNumServidor');
+            if (reasig.falsoPositivo) {
+                // Planilla aún no tiene ese N°: no quemar correlativos; dejar enviar.
+                return true;
             }
+            if (reasig.num) {
+                snapshotMetaEnsayoActual();
+                programarGuardadoMeta();
+                mostrarToast(
+                    'info',
+                    'N° muestra actualizado',
+                    'Se usará ' + reasig.num + ' (el anterior ya estaba en planilla).'
+                );
+            }
+            // Un solo reasignado; doPost valida. Evita bucles que saltan 008/009.
             return true;
         }
 
@@ -8504,25 +9161,18 @@ const META_SAVE_IDS = [
                 console.log('[SYNC] Resumen por fila:', resumenFilasParaLog_(body.rows));
             }
 
-            await (window.NetworkSync?.fetchApiPost
-                ? window.NetworkSync.fetchApiPost(API_URL, body)
-                : fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                }));
-
+            // Snapshot PDF ANTES del POST (si luego limpia el form, aún tenemos datos).
             snapshotMetaEnsayoActual();
             const datosPdfLote = typeof window.obtenerDatosPdfCampoParaEnsayos === 'function'
                 ? window.obtenerDatosPdfCampoParaEnsayos(lista)
                 : null;
-            const regConfirm = {
-                uid: payload.uid,
-                num_muestra: payload.num_muestra,
-                fecha: payload.fecha,
-                ensayo_numero: payload.ensayo_numero
-            };
+
+            // Lotes grandes: más tiempo + si aborta, confirmar por N° en planilla.
+            const postLote = await postCampoConRecuperacion_(body, 60000);
+            if (!postLote.lanzado && !postLote.ok) {
+                return { ok: false, estado: 'error_red', payload, pdfOk: false };
+            }
+
             const [pdfOk, confirmacion] = await Promise.all([
                 asegurarPdfCampoHistorialTrasEnvio_(lista, payload.fecha, {
                     num_muestra: payload.num_muestra,
@@ -8530,7 +9180,19 @@ const META_SAVE_IDS = [
                     datos: datosPdfLote,
                     payload
                 }),
-                confirmarRegistroServidorTrasPost_(regConfirm)
+                (async () => {
+                    let c = await confirmarLoteCampoTrasPost_(payload);
+                    // Si el POST abortó por timeout, dar más tiempo a Apps Script.
+                    if (c?.estado === 'pendiente' && !postLote.ok) {
+                        const extras = [1500, 2500, 4000];
+                        for (let i = 0; i < extras.length; i++) {
+                            await sleepMs(extras[i]);
+                            c = await confirmarLoteCampoTrasPost_(payload);
+                            if (c?.estado === 'confirmado') break;
+                        }
+                    }
+                    return c;
+                })()
             ]);
 
             if (confirmacion?.estado === 'confirmado') {
@@ -8554,12 +9216,36 @@ const META_SAVE_IDS = [
                         modo_registro: payload.modo_registro
                     });
                 });
-                return { ok: true, estado: 'confirmado', payload, confirmacion, enviados: lista.length, pdfOk };
+                quitarColaPorNumsMuestra_(Object.values(payload.nums_por_ensayo || {}));
+                let pdfFinal = pdfOk;
+                if (!pdfFinal) {
+                    pdfFinal = await asegurarPdfCampoHistorialTrasEnvio_(lista, payload.fecha, {
+                        num_muestra: payload.num_muestra,
+                        nums_por_ensayo: payload.nums_por_ensayo,
+                        datos: datosPdfLote,
+                        payload
+                    });
+                }
+                return {
+                    ok: true,
+                    estado: 'confirmado',
+                    payload,
+                    confirmacion,
+                    enviados: lista.length,
+                    pdfOk: pdfFinal,
+                    datosPdf: datosPdfLote
+                };
             }
-            if (confirmacion?.estado === 'duplicado_codigo') {
-                return { ok: false, estado: 'duplicado_codigo', payload, confirmacion, pdfOk };
-            }
-            return { ok: false, estado: 'pendiente', payload, confirmacion, pdfOk };
+            // POST lanzado pero sin confirmación aún: no es fallo duro de red.
+            return {
+                ok: false,
+                estado: 'pendiente',
+                payload,
+                confirmacion,
+                pdfOk,
+                postTimeout: !postLote.ok,
+                datosPdf: datosPdfLote
+            };
         }
 
         async function encolarRegistroPendiente(ensayoObjetivo, opts) {
@@ -8610,35 +9296,63 @@ const META_SAVE_IDS = [
                         if (numInfoSrv && numInfoSrv.existe === true) {
                             if (bumpIdx < 8) {
                                 await refrescarEstadoServidorOperativo(true);
-                                if (metaPorEnsayo[ensayo]) delete metaPorEnsayo[ensayo]._num_muestra_fijo;
-                                const nuevo = calcularSiguienteNumMuestraParaEnsayo(ensayo);
-                                aplicarNumMuestraEnsayo(ensayo, nuevo, true);
-                                snapshotMetaEnsayoActual();
-                                programarGuardadoMeta();
-                                actualizarVistaCompacta();
-                                actualizarProgresoMeta();
-                                mostrarToast('info', 'N° muestra actualizado', `Se usará ${nuevo} (el código ya estaba en la planilla).`);
-                                return encolarRegistroPendiente(ensayoObjetivo, { bumpReasignaNum: bumpIdx + 1 });
+                                const reasig = reasignarSiConflictoRealEnPlanilla_(
+                                    ensayo, nmKey, 'encolarConflictoPlanilla'
+                                );
+                                if (reasig.falsoPositivo) {
+                                    quitarNumMuestraUsadoLocal(nmKey);
+                                } else if (reasig.num) {
+                                    snapshotMetaEnsayoActual();
+                                    programarGuardadoMeta();
+                                    mostrarToast(
+                                        'info',
+                                        'N° muestra actualizado',
+                                        'Se usará ' + reasig.num + ' (el código ya estaba en la planilla).'
+                                    );
+                                    return encolarRegistroPendiente(ensayoObjetivo, { bumpReasignaNum: bumpIdx + 1 });
+                                }
+                            } else {
+                                await avisarNumMuestraDuplicadoConDetalle(numInfoSrv, 'Este código ya fue usado y no se pudo reasignar automáticamente.');
+                                return { bloqueadoLocal: true };
                             }
-                            await avisarNumMuestraDuplicadoConDetalle(numInfoSrv, 'Este código ya fue usado y no se pudo reasignar automáticamente.');
-                            return { bloqueadoLocal: true };
+                        } else {
+                            quitarNumMuestraUsadoLocal(nmKey);
                         }
-                        quitarNumMuestraUsadoLocal(nmKey);
                     } else {
-                        if (bumpIdx < 8) {
-                            numMuestraMaxServidorCache = Math.max(numMuestraMaxServidorCache, parseNumMuestraSoloDigitos(nmKey));
-                            if (metaPorEnsayo[ensayo]) delete metaPorEnsayo[ensayo]._num_muestra_fijo;
-                            const nuevo = calcularSiguienteNumMuestraParaEnsayo(ensayo);
-                            aplicarNumMuestraEnsayo(ensayo, nuevo, true);
+                        const stLoc = String(localUsado.estado || '').toLowerCase();
+                        const enColaOtro = cargarColaSync().some((reg) => {
+                            const st = String(reg?.estado || '');
+                            if (st !== 'pendiente' && st !== 'bloqueado') return false;
+                            return normalizarNumMuestraClave(reg?.num_muestra || '') === nmKey
+                                && String(reg?.ensayo || '') !== ensayo;
+                        });
+                        if (!enColaOtro && (stLoc === 'registrado' || stLoc === 'subido')) {
+                            // Marca local vieja sin cola: no quemar N°; reutilizar.
+                            quitarNumMuestraUsadoLocal(nmKey);
+                        } else if (bumpIdx < 8 && enColaOtro) {
+                            numMuestraMaxServidorCache = Math.max(
+                                numMuestraMaxServidorCache,
+                                parseNumMuestraSoloDigitos(nmKey)
+                            );
+                            delete numerosMuestraFijadosSesion[ensayo];
+                            if (metaPorEnsayo[ensayo]) {
+                                delete metaPorEnsayo[ensayo]['visual-num-muestra'];
+                                delete metaPorEnsayo[ensayo]._num_muestra_fijo;
+                            }
+                            const nuevo = calcularNumMuestraBaseDesdeContexto(ensayo);
+                            if (nuevo) fijarNumMuestraEnsayoSesion(ensayo, nuevo, 'encolarConflictoCola');
                             snapshotMetaEnsayoActual();
                             programarGuardadoMeta();
                             actualizarVistaCompacta();
                             actualizarProgresoMeta();
-                            mostrarToast('info', 'N° muestra actualizado', `Se usará ${nuevo} (conflicto en historial local).`);
+                            mostrarToast('info', 'N° muestra actualizado', `Se usará ${nuevo} (conflicto en cola local).`);
                             return encolarRegistroPendiente(ensayoObjetivo, { bumpReasignaNum: bumpIdx + 1 });
+                        } else if (bumpIdx >= 8) {
+                            await avisarNumMuestraDuplicadoConDetalle(localUsado, 'Este código figura como usado localmente. Conecta a internet para validar.');
+                            return { bloqueadoLocal: true };
+                        } else {
+                            quitarNumMuestraUsadoLocal(nmKey);
                         }
-                        await avisarNumMuestraDuplicadoConDetalle(localUsado, 'Este código figura como usado localmente. Conecta a internet para validar.');
-                        return { bloqueadoLocal: true };
                     }
                 }
                 const colaMismoCodigo = queue.find((q) => {
@@ -8649,9 +9363,18 @@ const META_SAVE_IDS = [
                 if (colaMismoCodigo) {
                     if (bumpIdx < 8) {
                         await refrescarEstadoServidorOperativo(true);
-                        if (metaPorEnsayo[ensayo]) delete metaPorEnsayo[ensayo]._num_muestra_fijo;
-                        const nuevo = calcularSiguienteNumMuestraParaEnsayo(ensayo);
-                        aplicarNumMuestraEnsayo(ensayo, nuevo, true);
+                        // Solo avanzar por encima del N° en cola (sí está encapsulado), no por fantasmas.
+                        numMuestraMaxServidorCache = Math.max(
+                            numMuestraMaxServidorCache,
+                            parseNumMuestraSoloDigitos(nmKey)
+                        );
+                        delete numerosMuestraFijadosSesion[ensayo];
+                        if (metaPorEnsayo[ensayo]) {
+                            delete metaPorEnsayo[ensayo]['visual-num-muestra'];
+                            delete metaPorEnsayo[ensayo]._num_muestra_fijo;
+                        }
+                        const nuevo = calcularNumMuestraBaseDesdeContexto(ensayo);
+                        if (nuevo) fijarNumMuestraEnsayoSesion(ensayo, nuevo, 'encolarDuplicadoCola');
                         snapshotMetaEnsayoActual();
                         programarGuardadoMeta();
                         actualizarVistaCompacta();
@@ -8754,24 +9477,26 @@ const META_SAVE_IDS = [
             let huboCambios = false;
             let huboSubidaExitosa = false;
             try {
-                // Nunca reproducir una cola offline usando una numeración
-                // estimada. Primero releer la planilla; si no responde, la cola
-                // permanece local y se reintenta después.
+                // La numeración ayuda, pero NO debe bloquear el vaciado de la cola:
+                // los N° offline ya van encapsulados en cada ítem.
                 const estadoNumeracionOk = await refrescarEstadoServidorOperativo(true, {
                     reposicionarPrimera: false,
                     invalidarFijados: false,
                     avisar: false
                 });
                 if (!estadoNumeracionOk) {
-                    actualizarBarraHeaderEstado();
-                    return resumenEstadosSync();
+                    logSync('Sync cola: planilla lenta al reconectar; se intenta subir pendientes igual');
                 }
                 for (let i = 0; i < queue.length; i++) {
                     const reg = queue[i];
-                    if (!reg || String(reg.estado || '') !== 'pendiente') continue;
+                    if (!reg) continue;
+                    const estadoCola = String(reg.estado || '');
+                    // Pendiente o bloqueado (legado): si ya está en planilla, cerrar OK.
+                    if (estadoCola !== 'pendiente' && estadoCola !== 'bloqueado') continue;
 
                     const esPackingCola = String(reg.modo || reg.payload?.mode || '') === 'packing';
                     if (esPackingCola) {
+                        if (estadoCola !== 'pendiente') continue;
                         const bodyPk = reg.payload;
                         if (!bodyPk || !Array.isArray(bodyPk.packingRows) || !bodyPk.packingRows.length) {
                             reg.estado = 'bloqueado';
@@ -8808,34 +9533,44 @@ const META_SAVE_IDS = [
                         continue;
                     }
 
-                    // El N° de una cola offline es inmutable. Si ya existe, conservar
-                    // payload + UID completos como conflicto; nunca renumerar en replay.
+                    // Si el N° ya está en planilla para la MISMA fecha+ensayo (o nuestro UID),
+                    // cerrar OK. Si el N° es de otra muestra, no subir (conflicto).
                     if (reg.num_muestra) {
                         const numInfoPre = await existeNumMuestraServidor(reg.num_muestra);
                         if (numInfoPre && numInfoPre.existe === true) {
-                            reg.estado = 'bloqueado';
-                            reg.error = `NUM_MUESTRA ${reg.num_muestra} ya existe; el registro encapsulado se conservó sin cambios.`;
-                            reg.actualizado_en = Date.now();
-                            huboCambios = true;
-                            pushEstadoSync(reg);
-                            registrarNumMuestraUsadoLocal(reg.num_muestra, {
-                                fecha: String(numInfoPre?.fecha || reg.fecha || ''),
-                                ensayo_numero: String(numInfoPre?.ensayo_numero || reg.ensayo_numero || ''),
-                                estado: 'bloqueado'
-                            });
-                            await avisarNumMuestraDuplicadoConDetalle(
-                                {
-                                    num_muestra: String(numInfoPre?.num_muestra || reg.num_muestra || ''),
-                                    fecha: String(numInfoPre?.fecha || reg.fecha || ''),
-                                    ensayo_numero: String(numInfoPre?.ensayo_numero || reg.ensayo_numero || '')
-                                },
-                                'Ese N° muestra ya existe. El registro offline quedó conservado sin renumerarse.'
-                            );
-                            guardarColaSync(queue);
-                            actualizarBarraHeaderEstado();
+                            let uidOk = null;
+                            if (reg.uid) {
+                                try { uidOk = await existeUidServidor(reg.uid); } catch (_) { uidOk = null; }
+                            }
+                            const mismoEnsayo = String(numInfoPre.ensayo_numero || '') === String(reg.ensayo_numero || '');
+                            const mismaFecha = !numInfoPre.fecha
+                                || String(numInfoPre.fecha) === String(reg.fecha || '');
+                            if (uidOk === true || (mismoEnsayo && mismaFecha)) {
+                                const okCierre = await cerrarColaComoYaEnPlanilla_(reg, queue, i, numInfoPre);
+                                if (okCierre) {
+                                    i--;
+                                    huboCambios = true;
+                                    huboSubidaExitosa = true;
+                                    mostrarToast(
+                                        'success',
+                                        'Ya en planilla',
+                                        `N° ${reg.num_muestra} ya estaba guardado; se quitó de pendientes.`
+                                    );
+                                }
+                            } else {
+                                reg.estado = 'bloqueado';
+                                reg.error = `N° ${reg.num_muestra} ya pertenece a otra muestra en planilla.`;
+                                reg.actualizado_en = Date.now();
+                                huboCambios = true;
+                                pushEstadoSync(reg);
+                                guardarColaSync(queue);
+                                actualizarBarraHeaderEstado();
+                            }
                             continue;
                         }
                     }
+                    // Bloqueados viejos sin N° en planilla: no reenviar automáticamente.
+                    if (estadoCola === 'bloqueado') continue;
 
                     reg.intentos = Number(reg.intentos || 0) + 1;
                     reg.actualizado_en = Date.now();
@@ -8882,36 +9617,59 @@ const META_SAVE_IDS = [
                         console.log('[POST CAMPO JSON.stringify]', JSON.stringify(body));
                         // Apps Script Web App no expone CORS en muchos despliegues.
                         // Se envía en modo no-cors y luego se confirma por UID/NUM_MUESTRA vía JSONP.
-                        await (window.NetworkSync?.fetchApiPost
-                            ? window.NetworkSync.fetchApiPost(API_URL, body)
-                            : fetch(API_URL, {
-                                method: 'POST',
-                                mode: 'no-cors',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(body)
-                            }));
-                        const confirmacion = await confirmarRegistroServidorConReintentos(reg);
+                        const postCola = await postCampoConRecuperacion_(body, 60000);
+                        if (!postCola.lanzado && !postCola.ok) {
+                            throw postCola.err || new Error('POST cola no lanzado');
+                        }
+                        let confirmacion = await confirmarRegistroServidorTrasPost_(reg);
+                        if (confirmacion?.estado === 'pendiente' && !postCola.ok) {
+                            const extras = [1500, 2500, 4000];
+                            for (let ei = 0; ei < extras.length; ei++) {
+                                await sleepMs(extras[ei]);
+                                confirmacion = await confirmarRegistroServidorTrasPost_(reg);
+                                if (confirmacion?.estado === 'confirmado') break;
+                            }
+                        }
                         logSync('Confirmación servidor (detalle completo)', confirmacion);
                         if (confirmacion?.estado === 'confirmado') {
                             postResp = { ok: true, confirmacion_uid: true };
-                        } else if (confirmacion?.estado === 'duplicado_codigo') {
-                            postResp = {
-                                ok: false,
-                                code: 'DUPLICATE_NUM_MUESTRA',
-                                error: 'NUM_MUESTRA ya existe',
-                                num_muestra: String(confirmacion?.detalle?.num_muestra || reg.num_muestra || ''),
-                                fecha: String(confirmacion?.detalle?.fecha || reg.fecha || ''),
-                                ensayo_numero: String(confirmacion?.detalle?.ensayo_numero || reg.ensayo_numero || '')
-                            };
                         } else {
                             postResp = {
                                 ok: false,
-                                error: 'POST enviado (no-cors) pero sin confirmación del servidor todavía.'
+                                error: postCola.ok
+                                    ? 'POST enviado (no-cors) pero sin confirmación del servidor todavía.'
+                                    : 'POST con timeout; sin confirmación aún.'
                             };
                         }
                         logSync('Resultado post-confirmación (no-cors)', { uid: reg.uid, intento: reg.intentos, postResp });
                         logSync('Respuesta interna completa del flujo POST', { reg, body, confirmacion, postResp });
                     } catch (e) {
+                        // Timeout/abort: la planilla pudo haber guardado igual → verificar N°/UID.
+                        if (esFalloPostRecuperable_(e) && (reg.uid || reg.num_muestra)) {
+                            let recuperado = null;
+                            if (reg.uid) {
+                                const uidOk = await existeUidServidor(reg.uid);
+                                if (uidOk === true) recuperado = { via: 'uid' };
+                            }
+                            if (!recuperado && reg.num_muestra) {
+                                const numInfo = await existeNumMuestraServidor(reg.num_muestra);
+                                if (numInfo && numInfo.existe === true) recuperado = numInfo;
+                            }
+                            if (recuperado) {
+                                const okCierre = await cerrarColaComoYaEnPlanilla_(reg, queue, i, recuperado);
+                                if (okCierre) {
+                                    i--;
+                                    huboCambios = true;
+                                    huboSubidaExitosa = true;
+                                    mostrarToast(
+                                        'success',
+                                        'Servidor confirmó',
+                                        `Registro ${reg.num_muestra || reg.uid} ya estaba en planilla.`
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
                         reg.error = String(e?.message || e || 'Error POST');
                         reg.actualizado_en = Date.now();
                         huboCambios = true;
@@ -8985,64 +9743,44 @@ const META_SAVE_IDS = [
                         continue;
                     }
                     if (esDuplicadoServidor) {
-                        reg.estado = 'bloqueado';
-                        reg.error = postResp?.error
-                            ? String(postResp.error)
-                            : `Ya existe registro con código ${reg.num_muestra}.`;
-                        reg.actualizado_en = Date.now();
-                        huboCambios = true;
-                        pushEstadoSync(reg);
-                        logSync('Bloqueado post-confirmación por NUM_MUESTRA duplicado', {
-                            uid: reg.uid,
-                            num_muestra: reg.num_muestra
-                        });
-                        registrarNumMuestraUsadoLocal(reg.num_muestra, {
+                        const okCierre = await cerrarColaComoYaEnPlanilla_(reg, queue, i, {
+                            num_muestra: String(postResp?.num_muestra || reg.num_muestra || ''),
                             fecha: String(postResp?.fecha || reg.fecha || ''),
-                            ensayo_numero: String(postResp?.ensayo_numero || reg.ensayo_numero || ''),
-                            estado: 'bloqueado'
+                            ensayo_numero: String(postResp?.ensayo_numero || reg.ensayo_numero || '')
                         });
-                        await avisarNumMuestraDuplicadoConDetalle(
-                            {
-                                num_muestra: String(postResp?.num_muestra || reg.num_muestra || ''),
-                                fecha: String(postResp?.fecha || reg.fecha || ''),
-                                ensayo_numero: String(postResp?.ensayo_numero || reg.ensayo_numero || '')
-                            },
-                            'Ya existe ese N° muestra. El registro offline quedó conservado sin renumerarse.'
-                        );
-                        guardarColaSync(queue);
-                        actualizarBarraHeaderEstado();
+                        if (okCierre) {
+                            i--;
+                            huboCambios = true;
+                            huboSubidaExitosa = true;
+                            mostrarToast(
+                                'success',
+                                'Ya en planilla',
+                                `N° ${reg.num_muestra} ya existía; se quitó de pendientes y se aseguró el PDF.`
+                            );
+                        }
                         continue;
                     }
 
-                    // Sin confirmación clara: antes de dejar pendiente, verificar de nuevo duplicado por código.
-                    let bloqueoPorCodigo = false;
+                    // Sin confirmación clara: si el N° ya está en planilla, cerrar OK.
+                    let cerradoPorCodigo = false;
                     if (reg.num_muestra) {
                         const numInfoPost = await existeNumMuestraServidor(reg.num_muestra);
                         if (numInfoPost && numInfoPost.existe === true) {
-                            reg.estado = 'bloqueado';
-                            reg.error = `NUM_MUESTRA ${reg.num_muestra} ya existe; el registro encapsulado se conservó sin cambios.`;
-                            reg.actualizado_en = Date.now();
-                            huboCambios = true;
-                            pushEstadoSync(reg);
-                            registrarNumMuestraUsadoLocal(reg.num_muestra, {
-                                fecha: String(numInfoPost?.fecha || reg.fecha || ''),
-                                ensayo_numero: String(numInfoPost?.ensayo_numero || reg.ensayo_numero || ''),
-                                estado: 'bloqueado'
-                            });
-                            await avisarNumMuestraDuplicadoConDetalle(
-                                {
-                                    num_muestra: String(numInfoPost?.num_muestra || reg.num_muestra || ''),
-                                    fecha: String(numInfoPost?.fecha || reg.fecha || ''),
-                                    ensayo_numero: String(numInfoPost?.ensayo_numero || reg.ensayo_numero || '')
-                                },
-                                'Ese N° muestra ya existe. El registro offline quedó conservado sin renumerarse.'
-                            );
-                            guardarColaSync(queue);
-                            actualizarBarraHeaderEstado();
-                            bloqueoPorCodigo = true;
+                            const okCierre = await cerrarColaComoYaEnPlanilla_(reg, queue, i, numInfoPost);
+                            if (okCierre) {
+                                i--;
+                                huboCambios = true;
+                                huboSubidaExitosa = true;
+                                cerradoPorCodigo = true;
+                                mostrarToast(
+                                    'success',
+                                    'Ya en planilla',
+                                    `N° ${reg.num_muestra} confirmado en planilla; pendiente eliminado.`
+                                );
+                            }
                         }
                     }
-                    if (bloqueoPorCodigo) continue;
+                    if (cerradoPorCodigo) continue;
 
                     reg.estado = 'pendiente';
                     reg.error = postResp?.error
@@ -9064,9 +9802,14 @@ const META_SAVE_IDS = [
                 syncEnCurso = false;
                 actualizarBarraHeaderEstado();
                 if (huboSubidaExitosa && navigator.onLine && API_URL) {
-                    void refrescarEstadoServidorOperativo(true);
+                    void refrescarEstadoServidorOperativo(true).then((ok) => {
+                        if (ok) realinearNumeracionTrasPlanillaOSync_('syncColaOk');
+                    });
                 } else if (huboCambios) {
                     aplicarBloqueoMuestrasCacheLocal();
+                    if (huboSubidaExitosa) {
+                        realinearNumeracionTrasPlanillaOSync_('syncColaLocal');
+                    }
                 }
             }
             return resumenEstadosSync();
@@ -9802,28 +10545,60 @@ const META_SAVE_IDS = [
                     await resetearIngresoCampoTrasEnvioExitoso(ordenados[ordenados.length - 1]);
                     return;
                 }
-                if (rs.estado === 'duplicado_codigo') {
-                    await avisarNumMuestraDuplicadoConDetalle(rs?.confirmacion?.detalle || {
-                        num_muestra: String(rs?.payload?.num_muestra || ''),
-                        fecha: String(rs?.payload?.fecha || ''),
-                        ensayo_numero: String(rs?.payload?.ensayo_numero || '')
-                    }, 'Conflicto en el lote; revisa los N° muestra en planilla.');
+                if (rs.estado === 'error_red') {
+                    mostrarToast('warning', 'Error de red', 'No se pudo enviar el lote conjunto. Revisa conexión e intenta de nuevo.');
+                    return;
+                }
+                // POST pudo haber llegado a planilla aunque falte eco del servidor.
+                if (rs.pdfOk || rs.postTimeout) {
+                    const numsLote = Object.values(rs.payload?.nums_por_ensayo || {});
+                    quitarColaPorNumsMuestra_(numsLote);
+                    if (!rs.pdfOk) {
+                        await asegurarPdfCampoHistorialTrasEnvio_(ordenados, rs.payload?.fecha || hoyIsoLocal(), {
+                            nums_por_ensayo: rs.payload?.nums_por_ensayo,
+                            num_muestra: rs.payload?.num_muestra,
+                            datos: rs.datosPdf || null,
+                            payload: rs.payload
+                        });
+                    }
+                    await refrescarEstadoServidorOperativo(true);
+                    mostrarToast(
+                        'success',
+                        rs.pdfOk ? 'Enviado' : 'Enviado (confirmando)',
+                        rs.pdfOk
+                            ? 'Lote enviado y PDF guardado en el teléfono. Revisa la planilla si hace falta.'
+                            : 'El lote se envió; la planilla tardó en responder. Revisa Historial o la hoja antes de reenviar.'
+                    );
                     return;
                 }
                 mostrarToast(
-                    rs.pdfOk ? 'success' : 'warning',
-                    rs.pdfOk ? 'Enviado' : 'Envío pendiente',
-                    rs.pdfOk
-                        ? 'Lote enviado y PDF guardado en el teléfono.'
-                        : 'El lote se envió pero falta confirmación del servidor. Revisa la planilla o reintenta.'
+                    'warning',
+                    'Envío pendiente',
+                    'El lote se envió pero falta confirmación del servidor. Revisa la planilla antes de reintentar.'
                 );
             } catch (_) {
-                mostrarToast('warning', 'Error de red', 'No se pudo enviar el lote conjunto. Revisa conexión e intenta de nuevo.');
+                mostrarToast(
+                    'warning',
+                    'Envío interrumpido',
+                    'Hubo un fallo al confirmar. Revisa la planilla: si ya aparecen las filas, no reenvíes.'
+                );
             }
         }
 
         /** Cola de sync + toasts (compartido por modal resumen y botón fijo Campo). */
         async function finalizarEncoladoYSync(ensayoObjetivo) {
+            if (todasMuestrasCampoRegistradasHoy()) {
+                aplicarBloqueoEscrituraCampoPorRegistro_();
+                mostrarNubeAvisoLlenadoCompletoCampo();
+                mostrarToast(
+                    'info',
+                    esModoRegistroAcopio_() ? 'Acopio completo' : 'Visual completo',
+                    esModoRegistroAcopio_()
+                        ? 'Las 10 muestras de Acopio ya están registradas. Mañana se continúa.'
+                        : 'Las 10 muestras de Visual ya están registradas. Mañana se continúa.'
+                );
+                return;
+            }
             await prepararDeteccionEnvioCampo();
             const ensayoBase = String(ensayoObjetivo || obtenerEnsayoActivo() || 'Ensayo 1');
             const completosPrevios = obtenerEnsayosCompletosParaEnvio();
@@ -9879,11 +10654,13 @@ const META_SAVE_IDS = [
                     if (!rs.pdfOk) {
                         await asegurarPdfCampoHistorialTrasEnvio_([ensayoFinal], rs.payload?.fecha || hoyIsoLocal(), {
                             num_muestra: rs.payload?.num_muestra,
+                            datos: rs.datosPdf || null,
                             payload: rs.payload
                         });
                     }
                     marcarEnsayoRegistradoHoyLocal(String(rs.payload?.ensayo_numero || numeroDesdeEnsayoTexto(ensayoFinal)));
                     fusionarMaxNumMuestraCampo(rs.payload?.num_muestra);
+                    quitarColaPorNumsMuestra_([rs.payload?.num_muestra]);
                     mostrarToast(
                         rs.pdfOk ? 'success' : 'warning',
                         'Sincronizado',
@@ -9894,13 +10671,35 @@ const META_SAVE_IDS = [
                     await resetearIngresoCampoTrasEnvioExitoso(ensayoFinal);
                     return;
                 }
-                if (rs.estado === 'duplicado_codigo') {
-                    await avisarNumMuestraDuplicadoConDetalle(rs?.confirmacion?.detalle || {
-                        num_muestra: String(rs?.payload?.num_muestra || ''),
-                        fecha: String(rs?.payload?.fecha || ''),
-                        ensayo_numero: String(rs?.payload?.ensayo_numero || '')
-                    }, 'Ese N° muestra ya existe. El dato se conserva sin renumerarlo automáticamente.');
+                if (rs.estado === 'error_red') {
+                    mostrarToast('warning', 'Error de red', 'No se pudo enviar. Revisa conexión e intenta de nuevo.');
                     return;
+                }
+                // POST lanzado sin confirmación: si el N° ya está en planilla, no encolar fantasma.
+                const numPantalla = String(rs.payload?.num_muestra || leerNumMuestraDesdePantalla(ensayoFinal) || '').trim();
+                if (numPantalla) {
+                    const infoSrv = await existeNumMuestraServidor(numPantalla);
+                    if (infoSrv && infoSrv.existe === true) {
+                        await asegurarPdfCampoHistorialTrasEnvio_([ensayoFinal], rs.payload?.fecha || hoyIsoLocal(), {
+                            num_muestra: numPantalla,
+                            datos: rs.datosPdf || null,
+                            payload: rs.payload
+                        });
+                        archivarEnvioLocalExitoso_({
+                            uid: rs.payload?.uid,
+                            fecha: rs.payload?.fecha || hoyIsoLocal(),
+                            ensayo_numero: rs.payload?.ensayo_numero || numeroDesdeEnsayoTexto(ensayoFinal),
+                            num_muestra: numPantalla,
+                            ensayo: ensayoFinal,
+                            modo_registro: rs.payload?.modo_registro
+                        });
+                        quitarColaPorNumsMuestra_([numPantalla]);
+                        fusionarMaxNumMuestraCampo(numPantalla);
+                        marcarEnsayoRegistradoHoyLocal(String(rs.payload?.ensayo_numero || numeroDesdeEnsayoTexto(ensayoFinal)));
+                        mostrarToast('success', 'Enviado', 'Registro en planilla. Se quitó de pendientes.');
+                        await resetearIngresoCampoTrasEnvioExitoso(ensayoFinal);
+                        return;
+                    }
                 }
                 mostrarToast(
                     rs.pdfOk ? 'success' : 'info',
@@ -9911,12 +10710,41 @@ const META_SAVE_IDS = [
                 );
                 return;
             } catch (_) {
+                const numCatch = String(leerNumMuestraDesdePantalla(ensayoFinal) || '').trim();
+                if (numCatch && navigator.onLine) {
+                    try {
+                        const infoCatch = await existeNumMuestraServidor(numCatch);
+                        if (infoCatch && infoCatch.existe === true) {
+                            snapshotMetaEnsayoActual();
+                            const datosCatch = typeof window.obtenerDatosPdfCampoParaEnsayos === 'function'
+                                ? window.obtenerDatosPdfCampoParaEnsayos([ensayoFinal])
+                                : null;
+                            await asegurarPdfCampoHistorialTrasEnvio_([ensayoFinal], hoyIsoLocal(), {
+                                num_muestra: numCatch,
+                                datos: datosCatch
+                            });
+                            archivarEnvioLocalExitoso_({
+                                fecha: hoyIsoLocal(),
+                                ensayo_numero: numeroDesdeEnsayoTexto(ensayoFinal),
+                                num_muestra: numCatch,
+                                ensayo: ensayoFinal,
+                                modo_registro: modoRegistroPostBody_()
+                            });
+                            quitarColaPorNumsMuestra_([numCatch]);
+                            fusionarMaxNumMuestraCampo(numCatch);
+                            marcarEnsayoRegistradoHoyLocal(numeroDesdeEnsayoTexto(ensayoFinal));
+                            mostrarToast('success', 'Ya en planilla', 'El registro ya estaba guardado; no quedó pendiente.');
+                            await resetearIngresoCampoTrasEnvioExitoso(ensayoFinal);
+                            return;
+                        }
+                    } catch (_2) { /* seguir a encolar */ }
+                }
                 const encoladoError = await encolarRegistroPendiente(ensayoFinal);
                 actualizarBarraHeaderEstado();
                 if (encoladoError && !encoladoError.bloqueadoLocal) {
                     const pdfOk = encoladoError.pdf_local_ok;
                     mostrarToast(
-                        pdfOk ? 'warning' : 'warning',
+                        'warning',
                         'Conexión inestable',
                         pdfOk
                             ? 'Falló el envío directo; quedó en cola con PDF local guardado.'
@@ -9930,6 +10758,18 @@ const META_SAVE_IDS = [
         /** Desde la pantalla principal: persiste meta + guía/placa, borrador y envío a cola/servidor. */
         async function guardarRegistroYEnviarDesdePantalla() {
             if (envioRegistroEnCurso) return;
+            if (todasMuestrasCampoRegistradasHoy()) {
+                aplicarBloqueoEscrituraCampoPorRegistro_();
+                mostrarNubeAvisoLlenadoCompletoCampo();
+                mostrarToast(
+                    'info',
+                    esModoRegistroAcopio_() ? 'Acopio completo' : 'Visual completo',
+                    esModoRegistroAcopio_()
+                        ? 'Las 10 muestras de Acopio ya están registradas. Mañana se continúa.'
+                        : 'Las 10 muestras de Visual ya están registradas. Mañana se continúa.'
+                );
+                return;
+            }
             envioRegistroEnCurso = true;
             const btn = document.getElementById('btn-guardar-enviar-campo');
             setButtonLoading(btn, true, 'Enviando...');
@@ -10169,6 +11009,27 @@ const META_SAVE_IDS = [
             if (fabMenu && !fabMenu.contains(e.target)) establecerMenuFlotanteAbierto(false);
         };
 
+        let syncReintentoOnlineTimer_ = null;
+        function programarReintentosSyncTrasOnline_() {
+            if (syncReintentoOnlineTimer_) {
+                try { clearTimeout(syncReintentoOnlineTimer_); } catch (_) { /* ignore */ }
+                syncReintentoOnlineTimer_ = null;
+            }
+            const esperas = [1800, 4500, 10000];
+            let paso = 0;
+            const correr = () => {
+                if (!navigator.onLine) return;
+                if (pendingsSyncCount() <= 0) return;
+                void Promise.resolve(sincronizarPendientes()).finally(() => {
+                    paso += 1;
+                    if (paso < esperas.length && navigator.onLine && pendingsSyncCount() > 0) {
+                        syncReintentoOnlineTimer_ = setTimeout(correr, esperas[paso]);
+                    }
+                });
+            };
+            syncReintentoOnlineTimer_ = setTimeout(correr, esperas[0]);
+        }
+
         window.addEventListener('online', () => {
             offlineAlertShown = false;
             cerrarAlertaModoOfflineSiAbierta();
@@ -10194,7 +11055,9 @@ const META_SAVE_IDS = [
                 actualizarVistaCompacta();
                 actualizarProgresoMeta();
             });
-            sincronizarPendientes();
+            // Subir cola ya; si la red aún “calienta”, reintentar a los 1.8s / 4.5s / 10s.
+            void sincronizarPendientes();
+            programarReintentosSyncTrasOnline_();
         });
         window.addEventListener('offline', () => {
             actualizarHeaderConexionUI();
@@ -10403,6 +11266,8 @@ const META_SAVE_IDS = [
                 if (borradorActivo) {
                     reaplicarMetaFormularioCampo_(metaActivoEnsayo || ensayoDesdeFormulario());
                 }
+                aplicarBloqueoMuestrasCacheLocal();
+                setTimeout(evaluarAvisoLlenadoCompletoCampo, 120);
             }
         }
 
@@ -10439,12 +11304,17 @@ const META_SAVE_IDS = [
             actualizarBarraHeaderEstado();
             if (!navigator.onLine || !API_URL) {
                 refrescarEstadoOperativoLocal();
+                corregirTodosNumMuestraPegados_('visibleOffline');
+                setTimeout(evaluarAvisoLlenadoCompletoCampo, 80);
                 return;
             }
             void refrescarEstadoServidorOperativo(false, {
                 reposicionarPrimera: false,
                 invalidarFijados: false,
                 avisar: false
+            }).then(() => {
+                corregirTodosNumMuestraPegados_('visibleOnline');
+                setTimeout(evaluarAvisoLlenadoCompletoCampo, 80);
             });
         }
 

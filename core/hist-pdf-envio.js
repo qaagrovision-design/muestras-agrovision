@@ -89,14 +89,20 @@
         if (!ensayos.length || !datos?.muestras?.length) return false;
         const modulo = String(datos.modoRegistro || opts.modo_registro || '').toLowerCase() === 'acopio' ? 'acopio' : 'campo';
         const fecha = window.HistPdfStore.normalizarFecha(fechaIso) || window.HistPdfStore.normalizarFecha(datos.fecha);
+        let intentados = 0;
         let guardados = 0;
         for (let i = 0; i < ensayos.length; i++) {
             const ensayo = ensayos[i];
             const muestrasFilt = (datos.muestras || []).filter((m) => String(m?.ensayo || '').trim() === ensayo);
-            if (!muestrasFilt.length) continue;
+            if (!muestrasFilt.length) {
+                console.warn('[HistPDF] guardarCampo: sin datos de muestra', { ensayo });
+                intentados++;
+                continue;
+            }
             const datosUno = Object.assign({}, datos, { muestras: muestrasFilt });
             const ensayoNum = numeroDesdeEnsayoTexto(ensayo);
             const num = resolverNumMuestraPdfEnsayo_(ensayo, datosUno, numsPorEnsayo, opts);
+            intentados++;
             if (!ensayoNum || !num) {
                 console.warn('[HistPDF] guardarCampo: falta N° muestra', { ensayo, numsPorEnsayo });
                 continue;
@@ -116,7 +122,8 @@
             });
             if (ok) guardados++;
         }
-        return guardados > 0;
+        // Lote: OK solo si TODAS las muestras del envío quedaron con PDF (antes bastaba 1).
+        return intentados > 0 && guardados === intentados;
     }
 
     async function guardarCampo(ensayosLista, fechaIso, opts) {

@@ -8024,6 +8024,53 @@
             transition: opacity 280ms ease, transform 280ms ease;
         }
 
+        /* Nube centrada: cupo 10/10 Visual o Acopio */
+        .campo-nube-aviso.campo-nube-aviso--centro {
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -46%) scale(0.96);
+            width: min(90vw, 340px);
+        }
+        .campo-nube-aviso.campo-nube-aviso--centro.is-visible {
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .campo-nube-aviso.campo-nube-aviso--centro.is-hiding {
+            transform: translate(-50%, -48%) scale(0.98);
+        }
+        .campo-nube-aviso.campo-nube-aviso--centro .campo-nube-aviso__inner::after {
+            display: none;
+        }
+
+        /* Día Visual/Acopio completo (10/10): no editar ni enviar ese modo */
+        body.campo-escritura-bloqueada .container,
+        body.campo-escritura-bloqueada #cards-container,
+        body.campo-escritura-bloqueada .form-card,
+        body.campo-escritura-bloqueada .tiempos-card,
+        body.campo-escritura-bloqueada .control-equitativo-bar,
+        body.campo-escritura-bloqueada .logistica-acopio-block {
+            pointer-events: none;
+            opacity: 0.72;
+            filter: grayscale(0.08);
+        }
+        body.campo-escritura-bloqueada #btn-guardar-enviar-campo,
+        body.campo-escritura-bloqueada .fab-menu,
+        body.campo-escritura-bloqueada .fab-main {
+            pointer-events: none;
+            opacity: 0.55;
+        }
+        body.campo-escritura-bloqueada #main-bottom-nav,
+        body.campo-escritura-bloqueada .campo-nube-aviso,
+        body.campo-escritura-bloqueada .header-status-card,
+        body.campo-escritura-bloqueada #header-tipo-registro {
+            pointer-events: auto;
+            opacity: 1;
+            filter: none;
+        }
+        body.campo-cupo-visual-completo #visual-meta-muestra,
+        body.campo-cupo-acopio-completo #visual-meta-muestra {
+            pointer-events: none;
+        }
+
         .campo-nube-aviso.is-visible {
             opacity: 1;
             transform: translateX(-50%) translateY(0) scale(1);

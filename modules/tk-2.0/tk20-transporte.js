@@ -1,7 +1,7 @@
 /** TK-2.0: modal placa, guía remisión y acopio (como Campo). */
 (function initTk20Transporte() {
     const F = window.Tk20Fields;
-    const NUM_ACOPIOS = 25;
+    const NUM_ACOPIOS = 35;
     const ACOPIOS_EXTRA = [
         { value: 'Acopio Central 1', label: 'Acopio C1' },
         { value: 'Acopio Central 2', label: 'Acopio C2' }
